@@ -49,16 +49,17 @@ function platformName() {
   if (/Linux/i.test(ua)) return 'Linux';
   return '当前平台';
 }
-// Four different things go wrong and each needs its own sentence: a format this
-// platform cannot decode, a format Leaf does not recognise, a file that is no
-// longer there, and bytes that are damaged. The note answers what happens next
-// or reassures that nothing was lost -- never how loading works.
+// Each failure needs its own sentence: a format this platform cannot decode, a
+// format Leaf does not recognise, a file that is no longer there, one over the
+// size limit, and bytes that are damaged. The note answers what happens next or
+// reassures that nothing was lost -- never how loading works.
 function failureText(kind, target) {
   const file = fileNameOf(target);
   const ext = (file.match(/\.([^.]+)$/)?.[1] || '').toUpperCase();
   if (kind === 'unsupported-here') return [`无法预览 ${ext} 图片：${file}`, `${platformName()} 版暂不支持这个格式，图片已存入文档旁的 assets 目录`];
   if (kind === 'format') return [`无法预览：${file}`, '暂不支持这个图片格式，转换成 PNG 或 JPEG 后可显示'];
   if (kind === 'missing') return [`找不到图片：${file}`, '文件可能已被移动、重命名或删除'];
+  if (kind === 'large') return [`图片太大：${file}`, '超过 32 MB 上限，压缩或转换格式后再插入'];
   if (kind === 'desktop') return [`无法预览：${file}`, '本地图片需在桌面版打开'];
   if (kind === 'path') return [`无法预览：${file}`, '这个图片路径不受支持'];
   return [`无法加载：${file}`, '图片内容可能已损坏，或读取超时'];
@@ -121,7 +122,9 @@ export async function loadImage(img) {
     if (local) {
       let bytes;
       try { bytes = new Uint8Array(await readLocal(decodeURIComponent(target))); }
-      catch { throw fail('missing'); }
+      // "Missing" is the everyday case, but the reader also refuses oversized
+      // files, and that needs its own sentence rather than a wrong accusation.
+      catch (error) { throw fail(/32 MB/.test(String(error?.message)) ? 'large' : 'missing'); }
       try { type = mime(bytes); }
       catch { throw fail('format'); }
       url = URL.createObjectURL(new Blob([bytes], { type })); revoke = true;
