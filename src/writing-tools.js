@@ -2,7 +2,7 @@ import { StateEffect } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import { isolateHistory } from '@codemirror/commands';
-import { safeTarget, markdownLink, setResourceReader, refreshImages } from './resources.js';
+import { safeTarget, markdownLink, setResourceReader, setResourceRevealer, refreshImages } from './resources.js';
 import { htmlToMarkdown } from './html-markdown.js';
 import { renderPrintDocument } from './print-document.js';
 import './writing.css';
@@ -13,7 +13,10 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
   view.dispatch({ effects: StateEffect.appendConfig.of(EditorView.updateListener.of(update => {
     if (update.docChanged) for (const b of bookmarks) { b.from=update.changes.mapPos(b.from,1); b.to=update.changes.mapPos(b.to,-1); if(b.to<b.from)b.to=b.from; }
   })) });
-  if (desktop) setResourceReader(relative => invoke('read_resource', { relative }));
+  if (desktop) {
+    setResourceReader(relative => invoke('read_resource', { relative }));
+    setResourceRevealer(relative => invoke('reveal_resource', { relative }));
+  }
   const remember = range => { const selection=range||view.state.selection.main; const b={from:selection.from,to:selection.to}; bookmarks.add(b); return b; };
   function insert(text, b) {
     view.dispatch({changes:{from:b.from,to:b.to,insert:text},selection:{anchor:b.from+text.length},userEvent:'input',annotations:isolateHistory.of('full')}); view.focus();
@@ -60,7 +63,10 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
           const name=typeof file==='string'?file.split(/[\\/]/).pop():file.name||'screenshot.png';
           const source=typeof file==='string'?{source:file}:{data:Array.from(new Uint8Array(await file.arrayBuffer()))};
           const relative=await invoke('import_attachment',{name,...source});
-          const isImage=/\.(png|jpe?g|gif|webp|bmp)$/i.test(name);
+          // HEIC and HEIF are iPhone photos and only some platforms decode them;
+          // SVG is text with no magic bytes. Both arrive as pictures everywhere
+          // they are supported, and fall back to the placeholder where they are not.
+          const isImage=/\.(png|jpe?g|gif|webp|bmp|heic|heif|svg)$/i.test(name);
           links.push(markdownLink(isImage?name.replace(/\.[^.]+$/,''):name,encodeURI(relative),isImage));
         }
         const before=view.state.doc.sliceString(0,b.from), after=view.state.doc.sliceString(b.to);

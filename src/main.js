@@ -54,7 +54,6 @@ const state = {
 
 const iconPaths = {
   ...uiIconPaths,
-  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L5 21"/>',
   attach: '<path d="m9 12 6-6a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l9-9"/>',
   link: '<path d="m10 13 4-4m-6 6-2 2a3 3 0 0 1-4-4l5-5a3 3 0 0 1 4 0m2 8a3 3 0 0 0 4 0l5-5a3 3 0 0 0-4-4l-2 2"/>',
   paste: '<path d="M9 4H5v17h14V4h-4"/><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M8 11h8M8 15h6"/>',
@@ -1842,6 +1841,12 @@ window.addEventListener('drop', async (event) => {
 
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateAppearance);
 setInterval(checkExternalChanges, 3000);
+
+// A placeholder that cannot reach its file reports here: the status line is the
+// one place a persistent message belongs, and it keeps the reason visible.
+document.addEventListener('leaf-image-reveal-failed', event => {
+  setStatus(`无法在文件管理器中显示：${event.detail}`, 'error');
+});
 
 updateAppearance();
 updateDocumentChrome();

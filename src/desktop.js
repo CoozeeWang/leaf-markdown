@@ -46,7 +46,7 @@ export function desktopSave(as = false, manual = true) {
 }
 export function desktopRename(name) { return session.rename(name); }
 export function desktopRun(action) { return session.run(action); }
-export async function chooseAttachments(image) { return open({ multiple: true, ...(image ? { filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }] } : {}) }); }
+export async function chooseAttachments(image) { return open({ multiple: true, ...(image ? { filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "svg"] }] } : {}) }); }
 export async function desktopExportBundle() {
   if (!session?.path && !await session.save()) return null;
   const directory = await open({directory:true,multiple:false,title:'选择导出文件夹'});

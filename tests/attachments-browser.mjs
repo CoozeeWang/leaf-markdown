@@ -10,7 +10,7 @@ try{
   window.ed=createLeafEditor({parent:document.querySelector('#editor'),doc:'abc'});ed.view.dispatch({selection:{anchor:3}});
   window.imports=[];window.saveOK=false;window.failImport=false;window.statuses=[];
   window.writing=setupWriting({editor:ed,desktop:true,icon:()=>'',status:s=>statuses.push(s),editable:()=>true,toggleSource:()=>{},choose:async()=>['/source/photo.png'],save:async()=>saveOK,serialized:async f=>f(),invoke:async(cmd,args)=>{
-    if(cmd==='import_attachment'){if(failImport)throw Error('disk full');imports.push(args);if(window.delay)await new Promise(r=>window.resume=r);return 'assets/photo.png';}
+    if(cmd==='import_attachment'){if(failImport)throw Error('disk full');imports.push(args);if(window.delay)await new Promise(r=>window.resume=r);return 'assets/'+args.name;}
     throw Error('missing');
   }});
  });
@@ -24,5 +24,16 @@ try{
  assert.equal(await page.evaluate(()=>ed.getValue()),'Xabc\n\n![photo](assets/photo.png)','pending insertion follows edits while import waits');
  await page.evaluate(()=>ed.undo());assert.equal(await page.evaluate(()=>ed.getValue()),'Xabc','one undo removes only attachment reference');
  assert.equal(await page.evaluate(()=>imports.length),1,'undo never deletes imported files');
+ // An iPhone photo is a picture, so it arrives as one -- the old whitelist made
+ // it a bare link. HEIC only decodes on some platforms, but how it is written
+ // does not depend on where it is opened.
+ // The import above left the mock waiting on a resume that will never come.
+ await page.evaluate(()=>{window.delay=false;return writing.attachments(['/source/IMG_1234.HEIC']);});
+ assert.match(await page.evaluate(()=>ed.getValue()),/!\[IMG_1234\]\(assets\/IMG_1234\.HEIC\)/,'HEIC is inserted as an image, not a link');
+ // The same placeholder has to appear when the file itself cannot be read:
+ // move the caret off the line first, or the editor shows the source instead.
+ await page.evaluate(()=>ed.view.dispatch({selection:{anchor:0}}));
+ await page.waitForSelector('.leaf-image-status[data-kind="missing"]');
+ assert.match(await page.evaluate(()=>document.querySelector('.leaf-image-status-head').textContent),/找不到图片/,'an unreadable file explains itself instead of vanishing');
  assert.deepEqual(errors,[]);console.log('PASS attachment initial save cancellation, write failure, pending edits and undo preserving files');
 }finally{await browser.close();}
