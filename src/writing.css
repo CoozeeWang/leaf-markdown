@@ -6,11 +6,16 @@
    the same mark as an image, the file name, and one line on what to do next.
    Neutral surface and line -- a gap in the text is not an error to shout about. */
 .leaf-image-status[data-kind] {
-  display:flex; align-items:flex-start; gap:8px; width:fit-content; max-width:100%;
+  /* Same width whatever the file name: several placeholders in one document
+     should read as one kind of thing, not three different boxes. The width
+     lives on the holder -- a percentage inside a shrink-to-fit inline-block
+     resolves against the very box being sized. */
+  display:flex; align-items:flex-start; gap:8px; width:100%;
   padding:12px 16px; border:1px solid var(--line,#dedfd7); border-radius:8px;
   background:var(--surface,#fafaf7); font-size:13px; line-height:1.5; color:var(--text,#353b38);
 }
 .leaf-image-status-icon { flex:none; display:flex; margin-top:1px; color:var(--muted,#697164); }
+.leaf-image:has(.leaf-image-status[data-kind]) { width:min(100%,480px); }
 .leaf-image-status-icon svg { display:block; }
 .leaf-image-status-head { display:block; font-weight:500; }
 .leaf-image-status-note { display:block; margin-top:4px; font-size:12px; color:var(--muted,#697164); }
