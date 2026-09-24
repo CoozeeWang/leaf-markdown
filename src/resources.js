@@ -96,7 +96,12 @@ function renderFailure(status, img, kind) {
       img.dispatchEvent(new CustomEvent('leaf-image-reveal-failed', { bubbles: true, detail: name }));
     });
   };
-  card.addEventListener('click', open);
+  // The preview widget turns every press inside it into a caret move and then
+  // swaps itself for source text, which would destroy the card before its click
+  // ever fires. Catching the press on the way down keeps the card alive.
+  card.addEventListener('mousedown', event => {
+    event.preventDefault(); event.stopPropagation(); open();
+  });
   card.addEventListener('keydown', event => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault(); open();
