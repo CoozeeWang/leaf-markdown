@@ -1,0 +1,91 @@
+import { chromium, launchOptions, artifactPath } from './browser-runtime.mjs';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { analyzeMarkdown } from '../src/markdown-model.js';
+const browser = await chromium.launch(launchOptions);
+try {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto('http://127.0.0.1:41732');
+  await page.waitForSelector('#welcomeNewButton');
+  await page.click('#welcomeNewButton');
+  assert.equal(await page.locator('#headingNumberSetting').isChecked(), false);
+  await page.click('#displayButton');await page.click('#headingNumberSetting');await page.click('#displayButton');
+  await page.reload();
+  assert.equal(await page.locator('#headingNumberSetting').isChecked(), true);
+  await page.click('#welcomeNewButton');
+  await page.evaluate(async () => {
+    const { createLeafEditor } = await import('/src/editor.js');
+    document.querySelector('#editor').replaceChildren();
+    window.testEditor = createLeafEditor({ parent: document.querySelector('#editor'),
+      doc: '---\nversion: v0.1 # 保留注释\nupdated: 2026-09-02\n---\n\n## 测试章节\n\n| 概念 | 说明 |\n| --- | --- |\n| 示例 | 这是需要自动换行的一段说明文字。 |\n\n- 第一项\n- 第二项\n\n正文。' });
+    window.testEditor.setFileName('验收文档.md');
+  });
+  await page.waitForSelector('.leaf-yaml');
+  const unchanged = await page.evaluate(() => testEditor.getValue());
+  await page.evaluate(() => testEditor.setHeadingNumbers(true));
+  assert.equal(await page.locator('#editor .cm-leaf-heading-2').getAttribute('data-heading-number'), '1.');
+  assert.equal(await page.locator('#editor .cm-leaf-heading-2').evaluate(node => getComputedStyle(node, '::before').content), '"1."');
+  assert.equal(await page.evaluate(() => testEditor.getValue()), unchanged);
+  await page.evaluate(() => testEditor.setHeadingNumbers(false));
+  assert.equal(await page.locator('#editor [data-heading-number]').count(), 0);
+  assert.equal(await page.locator('.leaf-default-title h1').textContent(), '验收文档');
+  await page.getByRole('textbox', { name: 'version', exact: true }).fill('v0.2');
+  assert.ok((await page.evaluate(() => testEditor.getValue())).includes('version: "v0.2" # 保留注释'));
+  await page.getByRole('button', { name: '添加文档属性', exact: true }).click();
+  await page.getByRole('textbox', { name: '新属性名', exact: true }).fill('status');
+  await page.getByRole('textbox', { name: '新属性值', exact: true }).fill('draft');
+  await page.locator('.brand').click(); // Properties commit when leaving the new row.
+  await page.waitForFunction(() => testEditor.getValue().includes('"status": "draft"'));
+  assert.ok((await page.evaluate(() => testEditor.getValue())).includes('"status": "draft"'));
+  await page.locator('textarea[data-row="1"][data-col="0"]').fill('修改单元格');
+  assert.ok((await page.evaluate(() => testEditor.getValue())).includes('| 修改单元格 |'));
+  assert.equal(await page.locator('textarea[data-row="1"][data-col="0"]').inputValue(), '修改单元格');
+  await page.locator('textarea[data-row="1"][data-col="0"]').press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.col), '1');
+  await page.keyboard.press('ControlOrMeta+Alt+ArrowDown');
+  assert.equal(await page.locator('.leaf-table tr').count(), 3);
+  await page.locator('textarea[data-row="1"][data-col="1"]').focus();
+  await page.keyboard.press('ControlOrMeta+Alt+ArrowRight');
+  assert.equal(await page.locator('.leaf-table tr').first().locator('textarea').count(), 3);
+  await page.locator('.leaf-table td').last().hover();
+  await page.getByRole('button', { name: '列操作', exact: true }).click();
+  await page.getByRole('button', { name: '删除此列', exact: true }).click();
+  assert.equal(await page.locator('.leaf-table tr').first().locator('textarea').count(), 2);
+  assert.equal(await page.getByRole('button', { name: '将默认标题写入正文，然后编辑', exact: true }).count(),0);
+  assert.equal(await page.locator('.leaf-default-title').count(),1);
+  assert.ok(!(await page.evaluate(() => testEditor.getValue())).includes('# 验收文档'));
+  await page.locator('.leaf-table').getByRole('button', { name: '编辑 Markdown 源码', exact: true }).click();
+  assert.equal(await page.locator('.leaf-table').count(), 0);
+  await page.getByRole('button', { name: '返回实时渲染' }).click();
+  assert.equal(await page.locator('.leaf-table').count(), 1);
+  await page.screenshot({ path: artifactPath('leaf-structured-preview.png'), fullPage: true });
+  await page.evaluate(() => { testEditor.setValue('# 标题\n\n- [ ] 完成测试\n\n正文'); testEditor.view.dispatch({ selection: { anchor: testEditor.getValue().length } }); });
+  await page.getByRole('checkbox', { name: '完成任务' }).check();
+  assert.ok((await page.evaluate(() => testEditor.getValue())).includes('- [x]'));
+  await page.evaluate(() => testEditor.focus());
+  await page.keyboard.press('ControlOrMeta+z');
+  assert.ok((await page.evaluate(() => testEditor.getValue())).includes('- [ ]'));
+  await page.evaluate(() => { testEditor.setValue('# 标题\n\n- 列表'); testEditor.view.dispatch({ selection: { anchor: testEditor.getValue().length } }); testEditor.focus(); });
+  await page.keyboard.press('Enter');
+  assert.ok((await page.evaluate(() => testEditor.getValue())).endsWith('\n- '));
+  await page.keyboard.type('next');
+  await page.keyboard.press('Tab');
+  assert.ok((await page.evaluate(() => testEditor.getValue())).includes('\n  - next'));
+  if (process.env.LEAF_REFERENCE) {
+    const source = await readFile(process.env.LEAF_REFERENCE, 'utf8');
+    await page.evaluate(source => testEditor.setValue(source), source);
+    assert.equal(await page.evaluate(() => testEditor.getValue()), source);
+    // CodeMirror mounts only the visible blocks; the model still covers the full document.
+    const tables = analyzeMarkdown(source).blocks.filter(b => b.kind === 'table').length;
+    assert.ok(tables > 0);
+    await page.screenshot({ path: artifactPath('leaf-reference-preview.png') });
+    await page.setViewportSize({ width: 760, height: 850 });
+    await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
+    await page.screenshot({ path: artifactPath('leaf-reference-dark.png') });
+    console.log(`Reference loaded unchanged; ${tables} tables parsed`);
+  }
+  assert.deepEqual(errors, []);
+  console.log('Structured browser checks passed');
+} finally { await browser.close(); }

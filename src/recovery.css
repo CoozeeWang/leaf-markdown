@@ -1,0 +1,44 @@
+.recovery-dialog { width: min(900px, calc(100vw - 40px)); max-height: calc(100dvh - 48px); display: flex; flex-direction: column; gap: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--ui-radius-dialog); padding: var(--ui-dialog-padding); color: var(--text); background: var(--surface-strong); box-shadow: var(--shadow); }
+.recovery-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: rgba(20,24,20,.3); }
+.recovery-dialog header, .recovery-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
+.recovery-dialog h2 { margin: 0; font-size: var(--ui-dialog-title); }
+.recovery-dialog p { margin: 0; font-size: 13px; line-height: 1.6; flex-shrink: 0; }
+.recovery-dialog button { border: 1px solid var(--line); padding: 8px 12px; border-radius: var(--ui-radius); min-height: var(--ui-control); font-size: 13px; }
+.recovery-dialog button:disabled { opacity: .45; cursor: default; }
+.recovery-dialog [data-apply] { color: var(--surface-strong); background: var(--accent-strong); border-color: var(--accent-strong); }
+.recovery-dialog [data-apply]:hover:not(:disabled) { background: var(--accent); }
+.recovery-dialog :is([data-clear], [data-delete-record]) { color: var(--danger); border-color: var(--line); background: transparent; }
+.recovery-dialog :is([data-clear], [data-delete-record]):hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.recovery-layout { display: grid; grid-template-columns: minmax(230px, 1fr) minmax(0, 2fr); gap: 12px; min-height: 0; height: min(380px, 48vh); flex-shrink: 1; }
+.recovery-layout[hidden], .recovery-confirm[hidden] { display: none; }
+.recovery-list, .recovery-layout textarea { width: 100%; min-width: 0; min-height: 0; height: 100%; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface); overflow: auto; overscroll-behavior: contain; }
+.recovery-list { padding: 4px; }
+.recovery-list [role=row] { padding: 12px 10px; border-radius: var(--ui-radius-menu-item); cursor: default; }
+.recovery-list [role=row] + [role=row] { margin-top: 4px; }
+.recovery-list [role=row]:hover { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+.recovery-list [aria-selected=true] { background: var(--accent-soft); color: var(--accent-strong); }
+.recovery-version-title { display: block; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recovery-list [aria-selected=true] .recovery-version-title { white-space: normal; overflow-wrap: anywhere; line-height: 1.6; }
+.recovery-version-detail { display: block; margin-top: 4px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.recovery-list:focus-visible, .recovery-layout textarea:focus-visible { border-color: var(--accent); outline: none; box-shadow: none; }
+.recovery-layout textarea { padding: 10px; resize: none; font: 13px/1.6 ui-monospace, monospace; white-space: pre; }
+.recovery-status { overflow-wrap: anywhere; min-height: 1.6em; max-height: 3.2em; overflow: auto; }
+.recovery-dialog footer { border-top: 1px solid var(--line); padding-top: 12px; }
+.recovery-dialog .recovery-help { color: var(--muted); font-size: 11px; }
+.recovery-confirm { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; background: rgba(20,24,20,.3); }
+.recovery-clear-dialog strong { font-weight: 500; }
+.recovery-clear-dialog footer { border-top: 0; padding-top: 0; }
+.recovery-clear-dialog [data-confirm-clear] { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+.recovery-clear-dialog [data-confirm-clear]:hover { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+.recovery-clear-dialog button:focus-visible { outline: none; border-color: var(--accent); background: var(--accent-soft); }
+@media (max-width: 740px) { .recovery-dialog { padding: 16px; gap: 8px; } .recovery-layout { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1.5fr); height: 340px; gap: 8px; } }
+
+.recovery-layout textarea:focus { border-color: var(--accent); outline: none; box-shadow: none; }
+.recovery-list [aria-selected=true] .recovery-version-detail { color: var(--accent-strong); }
+
+.recovery-list [role=row] { display: grid; grid-template-columns: minmax(0, 1fr) 28px; gap: 6px; align-items: start; }
+.recovery-dialog :is([data-clear], [data-delete-record]) { width: 28px; height: 28px; min-height: 28px; padding: 5px; display: grid; place-items: center; color: var(--muted); border-color: transparent; margin-top: -4px; }
+.recovery-dialog :is([data-clear], [data-delete-record]):hover:not(:disabled) { color: var(--danger); }
+.recovery-dialog > footer { justify-content: flex-end; }
+
+.recovery-delete-cell:has([data-clear]) > [data-delete-record] { display: none; }

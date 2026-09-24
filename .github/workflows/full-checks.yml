@@ -1,0 +1,115 @@
+name: Full platform tests (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 'Branch, tag or commit to test'
+        type: string
+        required: true
+        default: main
+      platform:
+        description: 'Platform to test; use both only when needed'
+        type: choice
+        options: [windows, macos, both]
+        default: windows
+      suite:
+        description: 'Test suites to run'
+        type: choice
+        options: [all, browser, native]
+        default: all
+permissions:
+  contents: read
+concurrency:
+  group: full-tests-${{ inputs.source_ref }}-${{ inputs.platform }}-${{ inputs.suite }}
+  cancel-in-progress: true
+jobs:
+  frontend:
+    if: inputs.suite == 'all' || inputs.suite == 'browser'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.platform == 'both' && '["windows-latest","macos-latest"]' || inputs.platform == 'macos' && '["macos-latest"]' || '["windows-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium webkit
+      - run: npm run check
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-results-${{ matrix.os }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+  native:
+    if: inputs.suite == 'all' || inputs.suite == 'native'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.platform == 'both' && '["windows-latest","macos-latest"]' || inputs.platform == 'macos' && '["macos-latest"]' || '["windows-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+      - run: npm ci
+      - run: npm run build
+      - run: cargo test --locked --all-targets
+        working-directory: src-tauri
+      - name: Detect optional Windows native probe
+        id: probe
+        shell: bash
+        run: |
+          if [[ -f tests/windows-native-smoke.mjs ]] && grep -q '^native-smoke' src-tauri/Cargo.toml; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          fi
+      - run: npm run desktop:build -- --no-bundle
+        if: runner.os != 'Windows' || steps.probe.outputs.available != 'true'
+      - run: npm run desktop:build -- --no-bundle --features native-smoke
+        if: runner.os == 'Windows' && steps.probe.outputs.available == 'true'
+      - name: Ensure WebView2 runtime
+        if: runner.os == 'Windows' && steps.probe.outputs.available == 'true'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile "$env:RUNNER_TEMP/webview2.exe"
+          $installer = Start-Process "$env:RUNNER_TEMP/webview2.exe" -ArgumentList '/silent', '/install' -Wait -PassThru
+          Write-Output "WebView2 installer exit code: $($installer.ExitCode)"
+      - name: Windows native window smoke test
+        if: runner.os == 'Windows' && steps.probe.outputs.available == 'true'
+        timeout-minutes: 5
+        run: node tests/windows-native-smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Windows'
+        with:
+          name: windows-native-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Windows' && steps.probe.outputs.available == 'true'
+        with:
+          name: windows-native-probe
+          path: src-tauri/target/release/leaf.exe
+          if-no-files-found: ignore
+          retention-days: 3

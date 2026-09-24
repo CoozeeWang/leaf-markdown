@@ -1,0 +1,24 @@
+.leaf-image { display:inline-block; max-width:100%; vertical-align:middle; }
+.leaf-image img { display:block; max-width:100%; max-height:600px; object-fit:contain; }
+.leaf-image img[hidden] { display:none; }
+.leaf-image-status:not(:empty) { display:inline-block; padding:8px 12px; border:1px dashed currentColor; border-radius:6px; font-size:.85em; color:var(--muted,#637064); }
+.leaf-writing-dialog { width:min(480px,calc(100vw - 32px)); background:var(--surface-strong); color:var(--text); padding:24px; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); }
+.leaf-writing-dialog h2 { margin:0 0 16px; font-size:18px; }
+.leaf-writing-dialog label { display:block; margin:12px 0; }
+.leaf-writing-dialog input, .leaf-writing-dialog select { display:block; width:100%; margin-top:6px; padding:8px; background:var(--surface); color:inherit; border:1px solid var(--line); border-radius:6px; }
+.leaf-writing-dialog footer { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+.leaf-writing-dialog button { padding:7px 14px; color:inherit; background:var(--surface); border:1px solid var(--line); border-radius:6px; }
+.leaf-writing-backdrop { position:fixed; inset:0; z-index:1000; background:#0004; display:flex; align-items:center; justify-content:center; }
+.cm-source-mode .cm-content { font-family:Menlo,monospace; }
+@media print { .leaf-image img { max-height:220mm; } }
+
+.format-toolbar #sourceToggle { width:auto; gap:4px; padding:0 7px; font-size:12px; }
+
+.leaf-writing-dialog select { appearance:none; -webkit-appearance:none; box-shadow:none; background-image:none; min-height:38px; padding-right:28px; }
+.leaf-writing-dialog label:has(select) { position:relative; }
+.leaf-writing-dialog label:has(select)::after { content:'⌄'; position:absolute; right:10px; bottom:8px; pointer-events:none; }
+#readingToggle { width:auto; gap:6px; padding:0 10px; font-size:13px; }
+.mode-popover { position:fixed; width:160px; box-shadow:none; z-index:100; }
+.mode-popover button { display:flex; gap:8px; align-items:center; width:100%; padding:9px 12px; border:0; background:transparent; color:var(--text); text-align:left; }
+.mode-popover button[aria-checked="true"] { background:var(--accent-soft); }
+.mode-popover svg { width:18px; height:18px; }

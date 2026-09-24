@@ -1,0 +1,37 @@
+name: Checks
+on:
+  push:
+    branches: ['**']
+    paths: &check_paths
+      - '.github/workflows/**'
+      - 'package*.json'
+      - 'index.html'
+      - 'vite.config.*'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'public/**'
+      - 'tests/**'
+      - 'scripts/**'
+  pull_request:
+    paths: *check_paths
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+jobs:
+  lightweight:
+    # Same-repository branches already receive push checks; avoid duplicate PR runs.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build

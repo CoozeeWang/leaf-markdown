@@ -1,0 +1,20 @@
+import {chromium,launchOptions,artifactPath} from './browser-runtime.mjs';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch(launchOptions);
+try{const page=await browser.newPage({viewport:{width:1100,height:820}});await page.goto('http://127.0.0.1:41732');await page.click('#welcomeNewButton');
+const source='## 代码与表格\n\n```js\nconst note = { title: "林间工作笔记", description: "这是一段用于检查代码自动换行的较长说明文字。" };\nconsole.log(note.title);\n```\n\n| 项目名称 | 当前状态 | 负责人 | 更新时间 | 备注说明 | 文件路径 |\n| --- | --- | --- | --- | --- | --- |\n| 正文排版审核 | 待确认 | 示例用户 | 2026-09-13 | 保留中文与 English words 的可读性 | /Documents/Leaf/review.md |\n| 列表与引用 | 已修改 | 示例用户 | 2026-09-13 | 窄窗口也需要看清全部内容 | /Documents/Leaf/notes.md |';
+await page.locator('.cm-content').fill(source);await page.keyboard.press('ArrowLeft');await page.locator('.brand').click();await page.locator('.cm-scroller').evaluate(e=>e.scrollTop=0);
+assert.ok(await page.locator('.cm-leaf-code-block').count()>0);await page.screenshot({path:artifactPath('code-table-edit.png')});
+await page.setViewportSize({width:720,height:480});
+const wrap=page.locator('.leaf-table-scroll');await wrap.scrollIntoViewIfNeeded();assert.equal(await wrap.evaluate(el=>el.scrollWidth>el.clientWidth),true);await wrap.evaluate(el=>el.scrollLeft=el.scrollWidth);assert.ok(await wrap.evaluate(el=>el.scrollLeft)>0);
+await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();await page.locator('#readingPane').evaluate(e=>e.scrollTop=0);
+assert.equal(await page.locator('.reading-code-label').innerText(),'js');
+const readWrap=page.locator('.reading-table-scroll');await readWrap.scrollIntoViewIfNeeded();assert.equal(await readWrap.evaluate(el=>el.scrollWidth>el.clientWidth),true);await readWrap.evaluate(el=>el.scrollLeft=el.scrollWidth);assert.ok(await readWrap.evaluate(el=>el.scrollLeft)>0);
+assert.equal(await page.locator('#readingPane').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);
+await page.screenshot({path:artifactPath('code-table-narrow.png')});
+await page.evaluate(()=>document.documentElement.dataset.theme='dark');await page.waitForTimeout(200);await page.screenshot({path:artifactPath('code-table-dark.png')});
+await page.setViewportSize({width:1100,height:820});await page.evaluate(()=>document.documentElement.dataset.theme='light');await page.waitForTimeout(200);await page.locator('#readingPane').evaluate(e=>e.scrollTop=0);await page.screenshot({path:artifactPath('code-table-reading.png')});
+assert.equal(await page.evaluate(async()=>{const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');return EditorView.findFromDOM(document.querySelector('.cm-content')).state.doc.toString();}),source);
+const exportShape=await page.evaluate(async(source)=>{const {renderPrintDocument}=await import('/src/print-document.js');const root=document.createElement('div');renderPrintDocument(root,source);return [root.querySelectorAll('.reading-table-scroll,.reading-code-label').length,root.querySelector('pre').textContent];},source);assert.equal(exportShape[0],0);assert.ok(exportShape[1].startsWith('const note'));
+console.log('PASS code labels/background, local table scrolling in both modes, no document overflow, export structure and source preservation');
+}finally{await browser.close();}

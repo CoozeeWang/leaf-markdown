@@ -1,0 +1,50 @@
+import { chromium, launchOptions, artifactPath } from './browser-runtime.mjs';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch(launchOptions);
+try {
+ const page=await browser.newPage({viewport:{width:1400,height:900}}),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('http://127.0.0.1:41732');
+ assert.equal(await page.locator('.sidebar-rail:visible').count(),0);
+ await page.click('#welcomeNewButton');
+ await page.evaluate(async()=>{
+  const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');
+  window.v=EditorView.findFromDOM(document.querySelector('.cm-content'));
+  v.dispatch({changes:{from:0,to:v.state.doc.length,insert:'# 阅读与思考\n\n这是一篇带有注释的文档[^1]。\n\n## 行业观察\n\n左右边栏可以独立展开、调整宽度。\n\n## 延伸阅读\n\n[^1]: '+ '这条较长的注释用来检查调整宽度后的换行和高度。'.repeat(10)}});
+ });
+ assert.equal(await page.locator('.topbar #outlineButton, .topbar #notesButton').count(),0);
+ for (const id of ['outline','notes']) assert.equal((await page.locator(`#${id}Button`).boundingBox()).width,32);
+ await page.click('#outlineButton');await page.click('#notesButton');
+ for (const id of ['outline','notes']) assert.equal(await page.locator(`#${id}Button`).isVisible(),false);
+ const width=async id=>(await page.locator(`#${id}Drawer`).boundingBox()).width;
+ const drag=async(id,delta)=>{
+  const box=await page.locator(`.${id}-resizer`).boundingBox();
+  await page.mouse.move(box.x+3,box.y+120);await page.mouse.down();
+  await page.mouse.move(box.x+3+delta,box.y+120,{steps:10});await page.mouse.up();
+  await page.waitForTimeout(100);
+ };
+ await drag('outline',70);assert.equal(await width('outline'),350);
+ await drag('notes',-110);assert.equal(await width('notes'),410);
+ await page.locator('.notes-resizer').focus();await page.keyboard.press('ArrowLeft');assert.equal(await width('notes'),420);
+ await page.locator('.notes-resizer').dblclick();assert.equal(await width('notes'),300);
+ await drag('notes',-100);assert.equal(await width('notes'),400);
+ assert.ok(await page.locator('.note-body').evaluate(el=>el.clientHeight>=el.scrollHeight-1));
+ await page.screenshot({path:artifactPath('leaf-sidebars-open.png')});
+ for (const id of ['outline','notes']) await page.click(`[data-close="${id}"]`);
+ assert.equal(await page.locator('.sidebar-rail:visible').count(),2);
+ await page.screenshot({path:artifactPath('leaf-sidebars-closed.png')});
+ await page.reload();await page.click('#welcomeNewButton');
+ await page.click('#outlineButton');await page.click('#notesButton');
+ assert.equal(await width('outline'),350);assert.equal(await width('notes'),400);
+ await page.setViewportSize({width:1050,height:900});await page.waitForTimeout(100);
+ assert.ok((await page.locator('#editor').boundingBox()).width>=360);
+ await page.setViewportSize({width:700,height:900});await page.waitForTimeout(100);
+ assert.equal(await page.locator('.outline-drawer.visible, .notes-drawer.visible').count(),1);
+ await page.click('#outlineButton');assert.equal(await page.locator('.notes-drawer.visible').count(),0);
+ await page.click('#notesButton');assert.equal(await page.locator('.outline-drawer.visible').count(),0);
+ assert.ok((await width('notes'))<=636);
+ await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();
+ assert.equal(await page.locator('.notes-drawer.visible').count(),1);
+ assert.deepEqual(errors,[]);
+ console.log('sidebars-browser: PASS rails, drag, keyboard, reset, persistence, note wrapping and narrow layout');
+} finally {await browser.close();}

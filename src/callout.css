@@ -1,0 +1,46 @@
+.leaf-callout { --callout-ink: #16634b; --callout-fill: #eef5f0; border-left: 3px solid var(--callout-ink); border-radius: 7px; background: var(--callout-fill); margin: 1em 0; padding: 12px 16px; color: var(--text, #353b38); overflow-wrap: anywhere; }
+.leaf-callout-widget { font-size: var(--editor-font-size); }
+.leaf-callout-widget > .leaf-callout { margin: 0; }
+.leaf-callout-widget.leaf-block-selected > .leaf-callout { outline: 2px solid var(--accent, #16634b); outline-offset: 2px; }
+.leaf-callout-widget .leaf-callout-title { position: relative; display: flex; align-items: center; gap: 8px; min-height: 1.6em; margin: -12px -16px 10px; padding: 10px 16px 9px; background: color-mix(in srgb, var(--callout-ink) 10%, var(--callout-fill)); }
+.leaf-callout-type-control { position: relative; flex: 0 0 22px; width: 22px; height: 1.6em; display: inline-flex; align-items: center; justify-content: center; }
+.leaf-callout-type-control select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.leaf-callout-type-control:focus-within { outline: 1px solid var(--callout-ink); border-radius: 4px; }
+.leaf-callout-widget summary.leaf-callout-title > .leaf-callout-preview { display: inline; }
+.leaf-callout-widget summary.leaf-callout-title.is-editing > .leaf-callout-preview { display: none; }
+.leaf-callout-edit textarea { display: none; width: 100%; box-sizing: border-box; resize: none; border: 0; border-radius: 4px; padding: 0; background: transparent; color: inherit; font: inherit; line-height: inherit; }
+.leaf-callout-edit.is-editing > textarea { display: block; }
+.leaf-callout-edit.is-editing > .leaf-callout-preview { display: none; }
+.leaf-callout-preview { cursor: text; min-height: 1.6em; }
+.leaf-callout-edit textarea:focus { outline: none; box-shadow: none; }
+.leaf-callout-widget > div > .leaf-callout { margin: 0; }
+.leaf-callout[data-type="info"],.leaf-callout[data-type="todo"] { --callout-ink: #236a9a; --callout-fill: #eef4f8; }
+.leaf-callout[data-type="warning"],.leaf-callout[data-type="question"] { --callout-ink: #926122; --callout-fill: #fbf4e7; }
+.leaf-callout[data-type="danger"],.leaf-callout[data-type="failure"],.leaf-callout[data-type="bug"] { --callout-ink: #ab4932; --callout-fill: #fbefeb; }
+.leaf-callout[data-type="example"],.leaf-callout[data-type="abstract"] { --callout-ink: #7952a1; --callout-fill: #f4eff9; }
+.leaf-callout-title { color: var(--callout-ink); font-weight: 600; line-height: 1.6; }
+.leaf-callout-title > .leaf-callout-preview { flex: 1; min-width: 0; }
+summary.leaf-callout-title { cursor: pointer; }
+.leaf-callout-title strong { color: inherit; }
+.leaf-callout-body > :first-child { margin-top: .5em; }
+.leaf-callout-body > :last-child { margin-bottom: 0; }
+.leaf-callout-body p { margin: .6em 0; }
+.leaf-callout-body ul,.leaf-callout-body ol { padding-left: 1.6em; }
+.leaf-callout-body pre { white-space: pre-wrap; padding: 10px; background: var(--code,#edf2f6); }
+.leaf-callout-body code { color: var(--code-text,#236a9a); }
+.leaf-callout-body strong { color: var(--strong,#ab4932); }
+.leaf-callout-body em { color: var(--emphasis,#9b4684); }
+.leaf-callout-body mark { background: var(--highlight-bg,#ffe39a); color: var(--highlight-text,#684800); }
+.leaf-callout-body table { border-collapse: collapse; table-layout: fixed; width: 100%; }
+.leaf-callout-body td,.leaf-callout-body th { padding: 6px; border: 1px solid var(--line,#d5ded7); vertical-align: top; }
+[data-theme="dark"] .leaf-callout { --callout-fill: #26332e; --callout-ink: #83bda4; }
+@media print {
+  .leaf-callout { break-inside: avoid; page-break-inside: avoid; }
+  .leaf-callout-title { break-after: avoid; page-break-after: avoid; }
+}
+
+.leaf-callout-type-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; line-height: 0; vertical-align: middle; }
+.leaf-callout-badge { display: block; flex: 0 0 auto; }
+div.leaf-callout-title { display: flex; align-items: center; gap: 8px; }
+summary.leaf-callout-title > .leaf-callout-type-icon { margin-right: 8px; }
+.leaf-callout-widget .leaf-callout-title > .leaf-callout-preview { line-height: 1.6; }

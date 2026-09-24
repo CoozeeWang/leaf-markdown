@@ -1,0 +1,44 @@
+import { chromium, launchOptions, artifactPath } from './browser-runtime.mjs';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch(launchOptions);
+try {
+ const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('http://127.0.0.1:41732');await page.click('#welcomeNewButton');
+ await page.click('#commandsButton');await page.fill('#paletteInput','文档属性');await page.getByRole('option',{name:'文档属性',exact:true}).click();
+ await page.getByRole('textbox',{name:'新属性名',exact:true}).waitFor();
+ await page.keyboard.press('ControlOrMeta+z');
+ const editIcon=await page.locator('#readingToggle').innerHTML();
+ const source='---\nversion: v1\n---\n\n# 标题\n\n**重点** 和 ==高亮==\n\n| 列一 | 列二 |\n| --- | --- |\n| A<br>B | C |\n\n> [!note] 提示\n> 内容\n\n## 子标题\n\n正文';
+ await page.locator('.cm-content').fill(source);
+ await page.click('#commandsButton');await page.fill('#paletteInput','文档属性');await page.getByRole('option',{name:'文档属性',exact:true}).click();
+ assert.ok(await page.locator('.leaf-property-body').isVisible());
+ const getSource=()=>page.evaluate(async()=>{
+  const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');
+  return EditorView.findFromDOM(document.querySelector('.cm-content')).state.doc.toString();
+ });
+ await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();
+ assert.ok(await page.locator('#readingPane').isVisible());
+ assert.notEqual(await page.locator('#readingToggle').innerHTML(),editIcon);
+ assert.ok((await page.locator('#readingToggle').getAttribute('aria-label')).includes('阅读'));
+ await page.click('#commandsButton');await page.fill('#paletteInput','文档属性');await page.getByRole('option',{name:'文档属性',exact:true}).click();
+ assert.ok(await page.locator('.reading-document .print-properties').isVisible());
+ await page.locator('#readingPane').focus();
+ assert.equal(await page.locator('.reading-document h1[data-source-line]').innerText(),'标题');
+ assert.equal(await page.locator('.reading-document table').count(),1);
+ assert.equal(await page.locator('.reading-document .leaf-callout').count(),1);
+ assert.equal(await page.locator('.reading-document mark').innerText(),'高亮');
+ assert.equal(await page.locator('.reading-document h2[data-source-line]').getAttribute('data-source-line'),String(source.split('\n').indexOf('## 子标题')+1));
+ await page.keyboard.type('SHOULD_NOT_EDIT');
+ await page.keyboard.press('ControlOrMeta+r');
+ assert.equal(await page.locator('#readingToggle').getAttribute('aria-label'),'视图模式：源码');
+ await page.keyboard.press('ControlOrMeta+r');
+ assert.equal(await page.locator('#readingPane').isVisible(),false);
+ assert.equal(await page.locator('#readingToggle').innerHTML(),editIcon);
+ assert.equal(await getSource(),source);
+ await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();
+ assert.equal(await getSource(),source);
+ await page.keyboard.press('ControlOrMeta+z');
+ assert.notEqual(await getSource(),source);
+ assert.deepEqual(errors,[]);
+ console.log('PASS read/edit shortcuts, rendering, source preservation, undo');
+} finally {await browser.close();}

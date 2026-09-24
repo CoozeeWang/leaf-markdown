@@ -1,0 +1,60 @@
+name: Internal test packages
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 'Branch, tag or commit to package'
+        type: string
+        required: true
+        default: main
+      platform:
+        description: 'Build one installer; Mac builds should normally run locally'
+        type: choice
+        options: [windows, macos-arm64, macos-intel]
+        default: windows
+permissions:
+  contents: read
+concurrency:
+  group: packages-${{ inputs.source_ref }}-${{ inputs.platform }}
+  cancel-in-progress: true
+jobs:
+  package:
+    runs-on: ${{ inputs.platform == 'windows' && 'windows-latest' || 'macos-latest' }}
+    timeout-minutes: 40
+    env:
+      LEAF_BUILD_TARGET: ${{ inputs.platform == 'windows' && 'x86_64-pc-windows-msvc' || inputs.platform == 'macos-intel' && 'x86_64-apple-darwin' || 'aarch64-apple-darwin' }}
+      LEAF_BUILD_CONFIG: ${{ inputs.platform == 'windows' && 'src-tauri/tauri.windows.conf.json' || 'src-tauri/tauri.macos.conf.json' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.LEAF_BUILD_TARGET }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ env.LEAF_BUILD_TARGET }}
+          cache-on-failure: true
+      - name: Record source commit
+        id: source
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm test
+      - name: Build installer
+        shell: bash
+        run: npm run desktop:build -- --target "$LEAF_BUILD_TARGET" --config "$LEAF_BUILD_CONFIG"
+      - name: Generate checksums
+        shell: bash
+        run: node scripts/package-checksums.mjs "$LEAF_BUILD_TARGET"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Leaf-${{ env.LEAF_BUILD_TARGET }}-${{ steps.source.outputs.sha }}
+          path: test-results/packages/
+          if-no-files-found: error
+          retention-days: 7

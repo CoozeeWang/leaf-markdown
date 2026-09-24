@@ -1,0 +1,113 @@
+.reading-pane { flex:1; min-width:0; height:100%; overflow:auto; background:var(--canvas); }
+.reading-pane[hidden], .reading-mode .editor-host { display:none; }
+/* Reading keeps copy and the two controls that describe what is on screen. The
+   显示 switchboard belongs here: 正文上方的文件名 and 标题多级编号 both change
+   the reading view, and the other switches stay reachable so their disabled
+   state can say why they do not apply while reading. It is the only entry point
+   left for those switches, so it must not be filtered out in this mode. */
+.reading-mode .format-toolbar > :not(#richCopy):not(#displayButton):not(#appearanceButton) { display:none; }
+.reading-mode .format-toolbar { justify-content:flex-end; gap:8px; }
+.reading-mode .format-toolbar #richCopy { margin-left:0; }
+.reading-mode .format-toolbar #richCopy::before { display:none; }
+.reading-document { max-width:calc(var(--content-width) + 64px); margin:0 auto; padding:36px 32px 100px; color:var(--text); font:var(--editor-font-size)/1.85 var(--ui-font); overflow-wrap:anywhere; user-select:text; }
+.shell[data-font="serif"] .reading-document { font-family:Georgia,"Songti SC",serif; }
+.shell[data-font="mono"] .reading-document { font-family:var(--ui-mono); }
+.reading-document :is(h1,h2,h3,h4,h5,h6) { line-height:1.45; margin:calc(var(--editor-font-size) * .7) 0; font-weight:600; scroll-margin-top:32px; }
+.reading-document > :first-child { margin-top:0; }
+.reading-document h1 { color:var(--heading-primary); font-size:1.76em; }
+.reading-document h2 { color:var(--heading-secondary); font-size:1.38em; }
+.reading-document h3 { color:var(--heading-3); font-size:1.16em; }
+.reading-document h4 { color:var(--heading-4); font-size:1.05em; }
+.reading-document h5 { color:var(--heading-5); font-size:1.05em; }
+.reading-document h6 { color:var(--heading-6); font-size:1.05em; }
+.reading-document p { margin:1em 0; }
+.reading-document strong { color:var(--strong); font-weight:600; }
+.reading-document em { color:var(--emphasis); }
+.reading-document :is(h1,h2,h3,h4,h5,h6) strong { color:inherit; }
+.reading-document code { font-family:var(--ui-mono); font-size:.88em; color:var(--code-text); background:var(--code); padding:.1em .3em; border-radius:4px; }
+.reading-document pre { white-space:pre-wrap; padding:16px; background:var(--code); border-radius:8px; }
+.reading-document pre code { padding:0; }
+.reading-document mark { color:var(--highlight-text); background:var(--highlight-bg); }
+.reading-document :is(sup,sub) { font-size:.75em; line-height:0; }
+.reading-document sup { vertical-align:super; }
+.reading-document sub { vertical-align:sub; }
+.reading-document a { color:var(--link); }
+.reading-document li { margin:0; padding-bottom:.25em; }
+.reading-document li p { margin:0; }
+.reading-document li p + p { margin-top:calc(var(--editor-font-size) * .7); }
+.reading-document li::marker { color:var(--accent); }
+.reading-document blockquote { margin:1em 0; border-left:2px solid color-mix(in srgb, var(--accent) 60%, var(--line)); padding:8px 12px 8px 16px; background:var(--quote-bg); }
+.reading-document table { width:100%; table-layout:fixed; border-collapse:collapse; font-size:.92em; margin:1.2em 0; }
+.reading-document :is(th,td) { border:1px solid var(--line); padding:9px 12px; vertical-align:top; overflow-wrap:anywhere; }
+.reading-document th { background:var(--accent-soft); }
+.reading-document hr { border:0; border-top:1px solid var(--line); margin:2em 0; }
+.reading-document .print-properties { border:0; background:color-mix(in srgb, var(--accent-soft) 35%, var(--canvas)); border-radius:8px; padding:12px 16px; margin-bottom:24px; }
+.reading-document .print-properties h2 { font-size:14px; margin:0; color:var(--muted); }
+.reading-document .print-properties dt { color:var(--muted); font-size:12px; font-weight:400; }
+.reading-document .print-properties dd { color:var(--text); font-size:13px; }
+
+/* Reading is a normal mode: use persistent, quiet cues instead of WebKit's
+   default focus outline around the entire document. Descendant links and
+   controls retain their own keyboard focus indicators. */
+#readingPane:focus { outline:none; }
+.reading-mode #readingToggle { background:var(--accent-soft); color:var(--accent-strong); border-color:transparent; }
+.reading-mode #readingPane { box-shadow:inset 0 0 0 2px color-mix(in srgb, var(--accent) 50%, var(--canvas)); }
+.reading-document dl { display:grid; grid-template-columns:minmax(80px,30%) 1fr; gap:8px; font-size:14px; }
+.reading-document dd { margin:0; }
+/* One shared block rhythm; adjacent margins collapse instead of adding up. */
+.reading-document > :is(p,ul,ol,blockquote,pre,table,.leaf-callout,hr) { margin-block: calc(var(--editor-font-size) * .7); }
+.reading-document > :first-child { margin-top: 0; }
+.reading-document blockquote > :first-child { margin-top: 0; }
+.reading-document blockquote > :last-child { margin-bottom: 0; }
+.reading-document ul { list-style-type:disc; }
+.reading-document ul ul { list-style-type:circle; }
+.reading-document ul ul ul { list-style-type:square; }
+.reading-document :is(ul,ol) { padding-left:calc(var(--editor-font-size) * 2); }
+.reading-document li > :is(ul,ol) { border-left:1px solid var(--line); }
+.reading-document ol > li::marker { font-size:14px; font-weight:500; }
+.reading-document ul > li::marker { font-size:1.05em; }
+.reading-document ul ul ul > li::marker { font-size:1.1em; }
+.reading-document li, .reading-document :is(h1,h2,h3,h4,h5,h6) { position:relative; }
+.leaf-reading-fold { position:absolute; left:-22px; top:0; padding:0; width:18px; font:14px/1.85 var(--ui-font); color:var(--muted); }
+.leaf-reading-fold[aria-expanded="false"] svg { transform:rotate(-90deg); }
+.reading-document li > .leaf-reading-fold { left:-44px; width:18px; height:26px; display:flex; align-items:center; justify-content:center; }
+.reading-document [hidden] { display:none!important; }
+/* A footnote reference is a superscript number; the definitions move to one list
+   at the end of the document. The PDF cannot put notes at the foot of each page
+   -- that needs a paginator -- so both views share this one shape. */
+.reading-document .footnote-ref { font-size:.72em; line-height:0; vertical-align:super; }
+.reading-document .footnote-ref a { color:var(--link); text-decoration:none; padding:0 .12em; }
+.reading-document .print-footnotes { margin-top:2.6em; padding-top:1.2em; border-top:1px solid var(--line); font-size:.9em; color:var(--muted); }
+.reading-document .print-footnotes-title { margin:0 0 .7em; font-size:.95em; color:var(--muted); letter-spacing:.06em; }
+.reading-document .print-footnotes-list { padding-left:var(--footnote-marker-width, 3ch); }
+.reading-document .print-footnotes-list > li { margin:.5em 0; }
+.reading-document .print-footnotes-list > li::marker { color:var(--muted); }
+.reading-document .footnote-text { color:var(--text); }
+.reading-document .print-footnotes-list > li:target { background:var(--accent-soft); border-radius:4px; }
+.reading-document .footnote-text > :first-child { margin-top:0; }
+.reading-document .footnote-text > :last-child { margin-bottom:0; }
+.reading-document .footnote-backref { display:inline-flex; align-items:center; justify-content:center; min-width:28px; min-height:28px; margin-left:.4em; padding:0 4px; border-radius:4px; color:var(--accent); text-decoration:none; vertical-align:baseline; }
+.reading-document .footnote-backref:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* Keep the five unordered-list levels consistent with the editing view. */
+.reading-document ul > li::marker { content:'●  '; font-size:.75em; }
+.reading-document ul ul > li::marker { content:'○  '; font-size:.75em; }
+.reading-document ul ul ul > li::marker { content:'■  '; font-size:.75em; }
+.reading-document ul ul ul ul > li::marker { content:'□  '; font-size:.75em; }
+.reading-document ul ul ul ul ul > li::marker { content:'–  '; font-size:.75em; }
+
+.reading-document > .leaf-file-name-title + :is(h1,h2,h3,h4,h5,h6) { margin-top: 24px; }
+
+
+.reading-document blockquote > p + p { margin-top:calc(var(--editor-font-size) * .7); }
+.reading-document li > :is(ul,ol) { margin-block:0; }
+
+.reading-document pre { padding:12px 16px; }
+.reading-code-label { display:block; font:11px/1.85 var(--ui-mono); color:var(--muted); margin-bottom:4px; }
+.reading-table-scroll { overflow-x:auto; max-width:100%; margin-block:calc(var(--editor-font-size) * .7); overscroll-behavior-x:contain; }
+.reading-table-scroll:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.reading-document .reading-table-scroll table { min-width:var(--table-min-width,0px); margin:0; line-height:1.65; }
+.reading-document .reading-table-scroll :is(th,td) { padding:9px 11px; height:48px; }
+.reading-document .reading-table-scroll tr:nth-child(odd) td { background:color-mix(in srgb, var(--canvas) 55%, var(--surface)); }
+.reading-document { width:100%; min-width:0; }
+.reading-table-scroll { display:block; width:100%; min-width:0; }

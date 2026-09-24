@@ -1,0 +1,31 @@
+[package]
+name = "leaf"
+version = "0.4.0-beta.2"
+edition = "2021"
+license = "MIT"
+
+[features]
+# Enables a local CDP connection only in native CI probe builds.
+native-smoke = ["tauri/devtools"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+# Moves a replaced document into the system trash so a confirmed overwrite
+# stays recoverable instead of destroying the original outright.
+trash = "5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSString", "NSURL"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+tauri-plugin-single-instance = "2"

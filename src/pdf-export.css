@@ -1,0 +1,60 @@
+:root { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color: #353b38; background: #eeefeb; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+.export-toolbar { position: sticky; top: 0; display: flex; align-items: center; gap: 24px; padding: 16px 28px; background: #fcfbf8; border-bottom: 1px solid #dce1da; font-size: 13px; }
+.export-toolbar > div { margin-right: auto; }
+.export-toolbar small { display: block; color: #737c73; margin-top: 4px; }
+.export-toolbar label { white-space: nowrap; }
+.export-toolbar button { border: 0; border-radius: 8px; background: #16634b; color: white; padding: 10px 16px; cursor: pointer; }
+.export-help { text-align: center; color: #637064; font-size: 12px; padding: 0 16px; }
+.print-document { width: min(100%, 210mm); padding: 18mm; margin: 24px auto; background: white; font-size: 11pt; line-height: 1.8; overflow-wrap: anywhere; }
+.print-document h1,.print-document h2,.print-document h3,.print-document h4,.print-document h5,.print-document h6 { line-height: 1.45; margin: 1.5em 0 .65em; font-weight: 600; break-after: avoid; page-break-after: avoid; }
+.print-document > :first-child { margin-top: 0; }
+.print-document h1 { color: #16634b; font-size: 22pt; }
+.print-document h2 { color: #00777c; font-size: 17pt; }
+.print-document h3 { color: #295fac; font-size: 14pt; }
+.print-document h4 { color: #7952a1; font-size: 12pt; }
+.print-document h5 { color: #956023; font-size: 11.5pt; }
+.print-document h6 { color: #607424; font-size: 11pt; }
+.print-document p { margin: .7em 0; orphans: 3; widows: 3; }
+.print-document strong { color: #ab4932; font-weight: 600; }
+.print-document em { color: #9b4684; }
+.print-document h1 strong,.print-document h2 strong,.print-document h3 strong { color: inherit; }
+.print-document code { font-family: Menlo, monospace; color: #236a9a; background: #edf2f6; font-size: .88em; padding: .08em .25em; border-radius: 3px; }
+.print-document mark { color: #684800; background: #ffe39a; padding: .08em .15em; }
+.print-document :is(sup,sub) { font-size: .75em; line-height: 0; }
+.print-document sup { vertical-align: super; }
+.print-document sub { vertical-align: sub; }
+.print-document pre { white-space: pre-wrap; background: #f2f5f4; padding: 12px; font-size: 9pt; }
+.print-document pre code { padding: 0; background: transparent; }
+.print-document ul,.print-document ol { padding-left: 1.7em; }
+.print-document li { margin: .25em 0; }
+.print-document li p { margin: .25em 0; }
+.print-document li::marker { color: #16634b; }
+.print-document blockquote { margin: 1em 0; border-left: 2px solid #80a691; padding: .2em 1em; background: #f3f6f3; }
+.print-document table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 1.2em 0; font-size: 9.5pt; }
+.print-document th,.print-document td { border: 1px solid #d5ded7; padding: 7px 9px; vertical-align: top; overflow-wrap: anywhere; }
+.print-document th { background: #eaf1eb; font-weight: 600; }
+.print-document tr { break-inside: avoid; page-break-inside: avoid; }
+.print-document thead { display: table-header-group; }
+.print-document hr { border: 0; border-top: 1px solid #d5ded7; margin: 1.5em 0; }
+.leaf-inline-link { color: #16748b; text-decoration: underline; }
+.print-properties { border: 1px solid #d5ded7; border-radius: 8px; padding: 12px 18px; margin-bottom: 1.5em; }
+.print-properties h2 { font-size: 11pt; margin: 0; }
+.print-properties dl { display: grid; grid-template-columns: 30% 1fr; gap: 6px; font-size: 10pt; }
+.print-properties dd { margin: 0; }
+.print-document .footnote-ref { font-size: .72em; line-height: 0; vertical-align: super; }
+.print-document .footnote-ref a { color: #16748b; text-decoration: none; }
+.print-document .print-footnotes { margin-top: 2.2em; padding-top: 1em; border-top: 1px solid #d5ded7; font-size: 9pt; color: #5d6b60; }
+.print-document .print-footnotes-title { font-size: 10pt; margin: 0 0 .7em; color: #5d6b60; letter-spacing: .06em; }
+.print-document .print-footnotes-list { padding-left: var(--footnote-marker-width, 3ch); }
+.print-document .print-footnotes-list > li { margin: .4em 0; break-inside: avoid; page-break-inside: avoid; }
+.print-document .footnote-text > :first-child { margin-top: 0; }
+.print-document .footnote-text > :last-child { margin-bottom: 0; }
+.print-document .footnote-backref { margin-left: .35em; color: #16634b; text-decoration: none; }
+@page { size: A4; margin: 18mm; }
+@media print {
+  :root { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .export-toolbar,.export-help,#export-error { display: none !important; }
+  .print-document { width: auto; padding: 0; margin: 0; }
+}

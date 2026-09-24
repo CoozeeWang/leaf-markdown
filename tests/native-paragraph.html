@@ -1,0 +1,28 @@
+<!doctype html><html><meta charset="utf-8"><div id="editor" style="height:700px"></div><script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import '/src/style.css';
+window.startTest=async()=>{
+ let onEdit=()=>{};
+ const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:'上段\n\n文',onChange:()=>onEdit()}),view=editor.view;
+ setInterval(()=>view.measure(),40);
+ view.dispatch({selection:{anchor:5}});view.focus();
+ const pause=()=>new Promise(r=>setTimeout(r,200));
+ await pause();
+ const initialY=view.coordsAtPos(5).top;
+ let count=0;
+ let trusted=false;
+ view.contentDOM.addEventListener('keydown',event=>{trusted=event.isTrusted},true);
+ onEdit=async()=>{
+  try {
+   if(!trusted)throw Error('expected native key');
+   count++;await pause();
+   const expected=['上段\n\n','上段','上',''][count-1];
+   if(editor.getValue()!==expected)throw Error(`Backspace ${count}: wrong source`);
+   if(count===1&&Math.abs(view.coordsAtPos(4).top-initialY)>2)throw Error('empty paragraph caret shifted');
+   document.title=count===4?'LeafTest PASS native paragraph caret and Backspace':`LeafKey ${count}`;
+  }catch(error){document.title='LeafTest FAIL '+error.message}
+ };
+ document.title='LeafKey 0';
+};
+document.title='LeafSource';
+</script></html>

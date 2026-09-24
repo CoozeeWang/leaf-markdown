@@ -1,0 +1,38 @@
+<!doctype html><html><meta charset="utf-8"><div id="editor" style="height:700px"></div><script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import {EditorView} from '@codemirror/view';
+import {analyzeMarkdown} from '/src/markdown-model.js';
+import '/src/style.css';
+const pause=()=>new Promise(r=>setTimeout(r,200));
+window.startTest=async source=>{
+ try {
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:source});
+  // Hidden WKWebViews throttle animation frames. Pump layout explicitly while
+  // native keyDown still exercises WebKit's real textarea editing path.
+  setInterval(()=>editor.view.measure(),50);
+  await pause();
+  const table=analyzeMarkdown(source).blocks.find(b=>b.kind==='table');
+  editor.view.dispatch({effects:EditorView.scrollIntoView(table.from,{y:'start'})});
+  await pause();
+  const input=document.querySelector('textarea[data-row="4"][data-col="3"]');
+  if(!input) throw Error(`table not in viewport: ${JSON.stringify({vp:editor.view.viewport,box:editor.view.dom.getBoundingClientRect().toJSON(),scroll:editor.view.scrollDOM.scrollTop,tables:document.querySelectorAll('.leaf-table').length,from:table.from})}`);
+  input.previousElementSibling.click();
+  input.scrollIntoView({block:'center'});
+  input.setSelectionRange(8,8);
+  let count=0;
+  input.addEventListener('input',async event=>{
+   try {
+    if(!event.isTrusted) throw Error('expected native keyboard input');
+    count++;
+    await pause();
+    if(!input.isConnected || document.activeElement!==input || input.selectionStart!==8-count)
+      throw Error(`delete ${count}: connected=${input.isConnected}, focus=${document.activeElement.tagName}, caret=${input.selectionStart}`);
+    document.title=count===4?'LeafTest PASS native long-table Backspace x4':`LeafKey ${count}`;
+   }catch(error){document.title='LeafTest FAIL '+error.message}
+  });
+  await pause();
+  document.title='LeafKey 0';
+ }catch(error){document.title='LeafTest FAIL '+error.message}
+};
+document.title='LeafSource';
+</script></html>

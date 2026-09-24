@@ -1,0 +1,2 @@
+# Use Cargo's standard crates.io registry for reproducible contributor/CI setup.
+# Configure a mirror in your own Cargo home if your network requires one.
