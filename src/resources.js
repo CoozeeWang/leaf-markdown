@@ -124,7 +124,8 @@ export async function loadImage(img) {
       try { bytes = new Uint8Array(await readLocal(decodeURIComponent(target))); }
       // "Missing" is the everyday case, but the reader also refuses oversized
       // files, and that needs its own sentence rather than a wrong accusation.
-      catch (error) { throw fail(/32 MB/.test(String(error?.message)) ? 'large' : 'missing'); }
+      // Tauri rejects commands with a bare string, not an Error.
+      catch (error) { throw fail(/32 MB/.test(String(error?.message ?? error)) ? 'large' : 'missing'); }
       try { type = mime(bytes); }
       catch { throw fail('format'); }
       url = URL.createObjectURL(new Blob([bytes], { type })); revoke = true;
