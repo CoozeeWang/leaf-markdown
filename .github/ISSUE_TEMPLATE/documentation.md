@@ -24,9 +24,11 @@ What should the documentation say or explain instead?
 If you have a proposed wording or structure, describe it here.
 
 ## Environment
-- Leaf version or commit: <!-- If the documentation depends on a specific version, provide it here. -->
-- Interface language: Chinese or English
-- Operating system: <!-- If relevant, include the operating system and version. -->
+Complete this section only if the documentation issue depends on a specific version, language, or operating system.
+
+- Leaf version or commit:
+- Interface language:
+- Operating system:
 
 ## Evidence or references
 You may attach redacted screenshots, recordings, or links to relevant references.

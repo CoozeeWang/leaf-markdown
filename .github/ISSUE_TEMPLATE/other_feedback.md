@@ -25,9 +25,11 @@ Please describe who is affected and how this affects their work.
 If you have an idea for a solution, describe it here. A complete implementation proposal is not required.
 
 ## Environment
-- Leaf version or commit: <!-- If this feedback depends on a specific version, provide it here. -->
-- Interface language: Chinese or English
-- Operating system: <!-- If relevant, include the operating system and version. -->
+Complete this section only if the feedback depends on a specific version, language, or operating system.
+
+- Leaf version or commit:
+- Interface language:
+- Operating system:
 
 ## Evidence or references
 You may attach redacted screenshots, recordings, interaction sketches, or links to reference software.

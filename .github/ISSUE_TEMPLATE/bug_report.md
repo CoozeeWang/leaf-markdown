@@ -10,8 +10,10 @@ assignees: ''
 Describe what happened in one sentence.
 
 ## Environment
-- Leaf version or commit: <!-- The settings panel shows the version and the build stamp at its bottom. -->
-- Interface language: Chinese or English
+Complete this section with the version, interface language, and operating system used when the problem occurred.
+
+- Leaf version or commit:
+- Interface language:
 - Operating system:
 
 ## Steps to reproduce

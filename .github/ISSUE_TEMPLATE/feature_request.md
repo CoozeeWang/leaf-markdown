@@ -22,9 +22,12 @@ Please describe what you would like Leaf to do. Include what users would see, ho
 - [ ]
 - [ ]
 
-- Leaf version or commit: <!-- If this feature is specific to a version, please provide it; otherwise, you may leave this blank. -->
-- Interface language: Chinese or English
-- Operating system: <!-- If relevant, include the operating system and version. -->
+## Environment (if relevant)
+Complete this section only if the request depends on a specific version, language, or operating system.
+
+- Leaf version or commit:
+- Interface language:
+- Operating system:
 
 ## Alternatives considered
 Are there other ways to achieve the same goal today? What limitations do those alternatives have?
