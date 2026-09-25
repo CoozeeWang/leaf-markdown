@@ -1,7 +1,27 @@
 .leaf-image { display:inline-block; max-width:100%; vertical-align:middle; }
 .leaf-image img { display:block; max-width:100%; max-height:600px; object-fit:contain; }
 .leaf-image img[hidden] { display:none; }
-.leaf-image-status:not(:empty) { display:inline-block; padding:8px 12px; border:1px dashed currentColor; border-radius:6px; font-size:.85em; color:var(--muted,#637064); }
+.leaf-image-status:not(:empty) { display:inline-block; font-size:12px; line-height:1.5; color:var(--muted,#697164); }
+/* A picture that cannot be drawn gets a placeholder instead of a bare line:
+   the same mark as an image, the file name, and one line on what to do next.
+   Neutral surface and line -- a gap in the text is not an error to shout about. */
+.leaf-image-status[data-kind] {
+  /* Same width whatever the file name: several placeholders in one document
+     should read as one kind of thing, not three different boxes. The width
+     lives on the holder -- a percentage inside a shrink-to-fit inline-block
+     resolves against the very box being sized. */
+  display:flex; align-items:flex-start; gap:8px; width:100%;
+  padding:12px 16px; border:1px solid var(--line,#dedfd7); border-radius:8px;
+  background:var(--surface,#fafaf7); font-size:13px; line-height:1.5; color:var(--text,#353b38);
+}
+.leaf-image-status-icon { flex:none; display:flex; margin-top:1px; color:var(--muted,#697164); }
+.leaf-image:has(.leaf-image-status[data-kind]) { width:min(100%,480px); }
+.leaf-image-status-icon svg { display:block; }
+.leaf-image-status-head { display:block; font-weight:500; }
+.leaf-image-status-note { display:block; margin-top:4px; font-size:12px; color:var(--muted,#697164); }
+.leaf-image-status[data-clickable] { cursor:pointer; }
+.leaf-image-status[data-clickable]:hover { background:var(--surface-strong,#ffffff); }
+.leaf-image-status[data-clickable]:focus-visible { outline:none; border-color:var(--accent,#607b68); }
 .leaf-writing-dialog { width:min(480px,calc(100vw - 32px)); background:var(--surface-strong); color:var(--text); padding:24px; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); }
 .leaf-writing-dialog h2 { margin:0 0 16px; font-size:18px; }
 .leaf-writing-dialog label { display:block; margin:12px 0; }
@@ -11,6 +31,8 @@
 .leaf-writing-backdrop { position:fixed; inset:0; z-index:1000; background:#0004; display:flex; align-items:center; justify-content:center; }
 .cm-source-mode .cm-content { font-family:Menlo,monospace; }
 @media print { .leaf-image img { max-height:220mm; } }
+/* On paper the placeholder is read as text, so it drops the card. */
+@media print { .leaf-image-status[data-kind] { display:block; padding:0; border:0; background:none; } }
 
 .format-toolbar #sourceToggle { width:auto; gap:4px; padding:0 7px; font-size:12px; }
 

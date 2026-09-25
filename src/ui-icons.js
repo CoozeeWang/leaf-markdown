@@ -22,6 +22,9 @@ export const uiIconPaths = {
   redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H10a5 5 0 0 0 0 10h3"/>',
   // Text lines with a raised numeral, the shape a footnote makes on a page.
   footnote: '<path d="M4 11h8M4 15h13M4 19h13"/><path d="M17 5.4 19 4.1V10"/>',
+  // A frame with a horizon: the shared mark for pictures and attachments, and
+  // for the placeholder that stands in when one of them cannot be drawn.
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L5 21"/>',
   // One eye for the group of switches that decide what the document shows:
   // the glyph names the category, and every entry behind it is on or off.
   eye: '<path d="M2.6 12S6.2 5.6 12 5.6 21.4 12 21.4 12 17.8 18.4 12 18.4 2.6 12 2.6 12Z"/><circle cx="12" cy="12" r="3.1"/>',

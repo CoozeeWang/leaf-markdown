@@ -159,6 +159,24 @@ fn import_attachment(app: tauri::AppHandle, window: tauri::WebviewWindow, name: 
     let data = match (data, source) { (Some(data), None) => data, (None, Some(path)) => resources::bytes(std::path::Path::new(&path))?, _ => return Err("附件来源无效".into()) };
     resources::import_managed(&doc, &name, &data, Some(&app.path().app_data_dir().map_err(|e| e.to_string())?.join("removed-images-v1")))
 }
+// Shows the attachment in the file manager instead of opening it: a picture the
+// webview cannot decode is still a real file the reader may want to find.
+#[tauri::command(async)]
+fn reveal_resource(app: tauri::AppHandle, window: tauri::WebviewWindow, relative: String) -> Result<(), String> {
+    let doc = resource_document(&app, window.label())?;
+    let path = resources::resolve(&doc, &relative)?;
+    if !path.exists() { return Err("文件已不在原位置".into()); }
+    #[cfg(target_os = "macos")]
+    { std::process::Command::new("open").arg("-R").arg(&path).spawn().map_err(|e| e.to_string())?; }
+    #[cfg(target_os = "windows")]
+    {
+        // Quoting the path keeps spaces in folder names from splitting the argument.
+        std::process::Command::new("explorer").arg(format!("/select,\"{}\"", path.to_string_lossy())).spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    { return Err("当前平台不支持在文件管理器中显示".into()); }
+    Ok(())
+}
 #[tauri::command(async)]
 fn read_resource(app: tauri::AppHandle, window: tauri::WebviewWindow, relative: String) -> Result<Vec<u8>, String> {
     let doc = resource_document(&app, window.label())?;
@@ -177,7 +195,7 @@ fn open_link(app: tauri::AppHandle, window: tauri::WebviewWindow, target: String
         let path = resources::resolve(&doc, &target)?;
         let ext = path.extension().and_then(|v| v.to_str()).unwrap_or("").to_ascii_lowercase();
         if matches!(ext.as_str(), "md" | "markdown" | "mdown") { return open_document(app, Some(path.to_string_lossy().into_owned())); }
-        if !matches!(ext.as_str(), "pdf" | "txt" | "png" | "jpg" | "jpeg" | "gif" | "webp") { return Err("此附件类型请在文件管理器中打开".into()); }
+        if !matches!(ext.as_str(), "pdf" | "txt" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "heic" | "heif" | "svg") { return Err("此附件类型请在文件管理器中打开".into()); }
         path.to_string_lossy().into_owned()
     };
     #[cfg(target_os = "macos")]
@@ -582,7 +600,7 @@ fn main() {
     }));
     builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, export_bundle, read_resource, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open])
+        .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, reveal_resource, export_bundle, read_resource, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             native_shortcuts::install(app.handle().clone());
