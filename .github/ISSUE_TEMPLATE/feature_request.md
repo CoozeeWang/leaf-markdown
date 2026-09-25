@@ -1,38 +1,37 @@
 ---
 name: Feature request
-about: 提议一个新的功能或交互改进
+about: Suggest a new feature or interaction improvement
 title: '[Feature] '
 labels: enhancement
 assignees: ''
 ---
 
-## 动机
-请用一两句话说明现在遇到了什么问题，以及这个功能对用户有什么帮助。
+## Motivation
+Please explain in one or two sentences what problem this feature would solve and how it would help users.
 
-## 建议的行为
-请描述希望 Leaf 增加的功能，尽量说明用户会看到什么、怎样操作，以及操作完成后应发生什么。
+## Proposed behavior
+Please describe what you would like Leaf to do. Include what users would see, how they would interact with it, and what should happen after the action is completed.
 
-## 使用场景
+## Use cases
 1.
 2.
 3.
 
-## 验收标准
+## Acceptance criteria
 - [ ]
 - [ ]
 - [ ]
 
-## 环境
-- Leaf version or commit: <!-- 如果这个功能只适用于特定版本，请填写；也可以留空。 -->
+- Leaf version or commit: <!-- If this feature is specific to a version, please provide it; otherwise, you may leave this blank. -->
 - Interface language: Chinese or English
-- Operating system: <!-- 如果与平台有关，请填写具体系统和版本。 -->
+- Operating system: <!-- If relevant, include the operating system and version. -->
 
-## 替代方案
-目前是否有其他操作可以完成同一目标？这些方案有什么不足？
+## Alternatives considered
+Are there other ways to achieve the same goal today? What limitations do those alternatives have?
 
-## 证据或参考
-可以附上脱敏后的截图、录屏、交互草图或参考软件链接。
-请勿上传真实音频、真实转录稿、密码、API 密钥、凭据或包含私人路径的截图。
+## Evidence or references
+You may attach redacted screenshots, recordings, interaction sketches, or links to reference software.
+Do not upload real audio, real transcripts, passwords, API keys, credentials, or screenshots containing private paths.
 
-## 补充说明
-请填写其他有助于理解需求的信息，例如与现有功能的关系、兼容性要求或需要特别避免的行为。
+## Additional context
+Add any other information that may help explain the request, such as how it relates to existing features, compatibility requirements, or behaviors that should be avoided.
