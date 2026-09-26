@@ -29,18 +29,26 @@ try {
       .reduce((a, n) => Math.min(a, ...[...n.getClientRects()].filter(r => r.width > 0).map(r => r.left), Infinity), Infinity);
     const br = b.getBoundingClientRect(), lr = line.getBoundingClientRect();
     const svg = b.querySelector('svg')?.getBoundingClientRect() ?? null;
-    return { position: getComputedStyle(b).position, arrowLeft: br.left, arrowRight: br.right, lineLeft: lr.left, textLeft, svgRight: svg?.right ?? null };
+    return {
+      position: getComputedStyle(b).position,
+      paddingLeft: getComputedStyle(line).paddingLeft,
+      arrowLeft: br.left, arrowRight: br.right, lineLeft: lr.left, textLeft,
+      svgLeft: svg?.left ?? null, svgRight: svg?.right ?? null,
+    };
   }));
 
-  // With numbering on, every rendered arrow is parked in the reserved gutter:
-  // absolute, inside the line box, and clear of the heading number and text.
+  // With numbering on, the heading line neither moves nor indents: the number
+  // starts exactly where the text always started. The arrow leaves the inline
+  // flow and parks in its usual gutter slot just left of that position, so
+  // arrow and number can never overlap whatever the number's width.
   const numbered = await layout();
   assert.ok(numbered.length >= 5, `expected rendered arrows, got ${numbered.length}`);
   for (const item of numbered) {
     assert.equal(item.position, 'absolute');
-    assert.ok(item.arrowLeft >= item.lineLeft, 'arrow stays inside its own line');
-    assert.ok(item.arrowRight <= item.textLeft - 3, `arrow slot (${item.arrowRight}) overlaps heading text (${item.textLeft})`);
-    assert.ok(item.svgRight <= item.textLeft - 3, 'arrow glyph clears the heading text');
+    assert.equal(item.paddingLeft, '6px', 'numbered headings must not indent');
+    assert.ok(item.arrowLeft < item.lineLeft, 'arrow sits in the margin, outside the text column');
+    assert.ok(item.arrowRight <= item.textLeft, `arrow slot (${item.arrowRight}) crosses the number (${item.textLeft})`);
+    assert.ok(item.svgRight <= item.textLeft - 3, 'arrow glyph clears the number');
   }
   // Every arrow shares one gutter position, whatever the number's width.
   const lefts = numbered.map(i => i.arrowLeft);
@@ -58,23 +66,29 @@ try {
   assert.ok(scrolled.length >= 1, 'arrows render after scrolling');
   for (const item of scrolled) {
     assert.equal(item.position, 'absolute');
+    assert.equal(item.paddingLeft, '6px', 'numbered headings must not indent');
     assert.ok(Math.abs(item.arrowLeft - lefts[0]) < 1, 'two-digit number keeps the same gutter');
-    assert.ok(item.arrowRight <= item.textLeft - 3, `arrow slot (${item.arrowRight}) overlaps heading text (${item.textLeft})`);
+    assert.ok(item.svgRight <= item.textLeft - 3, 'arrow glyph clears the number');
   }
 
-  // Numbering off: the arrow returns to the inline slot, ending a few pixels
-  // before the heading text instead of touching it.
+  // Numbering off: the arrow is back inline at its original slot, flush with
+  // the heading text, and the glyph still clears it.
   await page.evaluate(() => { window.foldEditor.setHeadingNumbers(false); const s = document.querySelector('#editor .cm-scroller'); s.scrollTop = 0; });
   await page.waitForTimeout(150);
   const plain = await layout();
   assert.ok(plain.length >= 5, `expected rendered arrows, got ${plain.length}`);
   for (const item of plain) {
     assert.equal(item.position, 'static');
-    assert.ok(item.arrowRight <= item.textLeft - 3, `arrow slot (${item.arrowRight}) touches heading text (${item.textLeft})`);
+    assert.equal(item.paddingLeft, '6px');
+    assert.ok(item.arrowRight <= item.textLeft, `arrow slot (${item.arrowRight}) overlaps heading text (${item.textLeft})`);
     assert.ok(item.svgRight <= item.textLeft - 3, 'arrow glyph clears the heading text');
   }
   await arrows().first().hover();
   assert.equal(await arrows().first().evaluate(b => getComputedStyle(b).backgroundColor), 'rgba(0, 0, 0, 0)');
+
+  // The arrow keeps the same visual spot whether or not numbering is on.
+  const glyphDrift = Math.abs((numbered[0].svgLeft + numbered[0].svgRight) - (plain[0].svgLeft + plain[0].svgRight));
+  assert.ok(glyphDrift < 6, `arrow glyph moved ${glyphDrift / 2}px between numbered and plain`);
 
   // The arrow still folds and unfolds.
   await page.screenshot({ path: artifactPath('leaf-heading-fold-arrow.png') });
