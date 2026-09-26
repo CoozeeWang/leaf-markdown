@@ -5,6 +5,7 @@ import { Compartment, EditorSelection, EditorState, StateEffect, StateField } fr
 import { renderBlock, sourceBlock, propertiesFolded, toggleProperties } from './structured-preview.js';
 import { labels as calloutLabels, titleSlotInSource, bodyToSource } from './callout.js';
 import { footnoteIndex, footnoteLabelFollow, footnoteRenumber, footnoteReferenceDeletion, footnoteLabelMap } from './footnote-state.js';
+import { orderedListRenumber } from './list-order.js';
 import { planFootnoteInsertion, planFootnoteDeletion, indexFootnotes, displayNotes, footnoteBodyText, appendDefinition } from './footnotes.js';
 import { uiIcon } from './ui-icons.js';
 import {
@@ -1064,6 +1065,7 @@ export function createLeafEditor(options) {
       footnoteRenumber,
       footnoteReferenceDeletion,
       footnoteLabelFollow,
+      orderedListRenumber,
       outlineFolding,
       blankMarkers.init(() => !!options.showBlankMarkers),
       headingNumbers.init(() => !!options.showHeadingNumbers),
