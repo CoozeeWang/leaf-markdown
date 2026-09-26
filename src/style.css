@@ -337,7 +337,14 @@ button.leaf-list-marker { cursor:pointer; }
    gutter slot just left of that position, so arrow and number can never
    overlap regardless of the number's width (issue #11). */
 .cm-editor .cm-line.cm-leaf-heading[data-heading-number]:has(> .leaf-heading-fold) { position:relative; }
-.cm-editor .cm-line.cm-leaf-heading[data-heading-number]:has(> .leaf-heading-fold) > .leaf-heading-fold { position:absolute; left:calc(var(--leaf-selection-inset) - 20px); top:0; bottom:0; margin-left:0; display:inline-flex; align-items:center; justify-content:center; }
+/* The inline arrow aligns on the text baseline (vertical-align:middle), which
+   sits below the padded line-box center by an amount that grows with the
+   heading size. translateY calibrates each level so the parked arrow keeps
+   the exact vertical relationship it has without numbering. */
+.cm-editor .cm-line.cm-leaf-heading[data-heading-number]:has(> .leaf-heading-fold) > .leaf-heading-fold { position:absolute; left:calc(var(--leaf-selection-inset) - 20px); top:50%; height:20px; margin:-10px 0 0; display:inline-flex; align-items:center; justify-content:center; transform:translateY(calc(var(--editor-font-size) * .08)); }
+.cm-editor .cm-line.cm-leaf-heading-1[data-heading-number]:has(> .leaf-heading-fold) > .leaf-heading-fold { transform:translateY(calc(var(--editor-font-size) * .44)); }
+.cm-editor .cm-line.cm-leaf-heading-2[data-heading-number]:has(> .leaf-heading-fold) > .leaf-heading-fold { transform:translateY(calc(var(--editor-font-size) * .17)); }
+.cm-editor .cm-line.cm-leaf-heading-3[data-heading-number]:has(> .leaf-heading-fold) > .leaf-heading-fold { transform:translateY(calc(var(--editor-font-size) * .09)); }
 .cm-foldPlaceholder { border:0; background:var(--accent-soft); color:var(--accent-strong); border-radius:4px; }
 .leaf-block-source { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 5px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
 .leaf-callout-widget .leaf-callout-title { padding-right: 16px; }

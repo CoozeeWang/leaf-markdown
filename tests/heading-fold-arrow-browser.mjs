@@ -16,6 +16,9 @@ try {
     window.foldEditor = createLeafEditor({ parent: document.querySelector('#editor'), doc: source, showHeadingNumbers: true });
     window.foldEditor.view.dispatch({ selection: { anchor: source.length } });
   }, source);
+  // The generic button rule transitions `transform`; let it settle before
+  // measuring arrow geometry.
+  await page.waitForTimeout(300);
 
   const arrows = () => page.locator('#editor .cm-leaf-heading > .leaf-heading-fold');
 
@@ -33,6 +36,7 @@ try {
       position: getComputedStyle(b).position,
       paddingLeft: getComputedStyle(line).paddingLeft,
       arrowLeft: br.left, arrowRight: br.right, lineLeft: lr.left, textLeft,
+      arrowCenterY: (br.top + br.bottom) / 2 - lr.top,
       svgLeft: svg?.left ?? null, svgRight: svg?.right ?? null,
     };
   }));
@@ -72,11 +76,15 @@ try {
   }
 
   // Numbering off: the arrow is back inline at its original slot, flush with
-  // the heading text, and the glyph still clears it.
+  // the heading text, and the glyph still clears it. Its vertical position
+  // must match the numbered state within a pixel on every rendered heading.
   await page.evaluate(() => { window.foldEditor.setHeadingNumbers(false); const s = document.querySelector('#editor .cm-scroller'); s.scrollTop = 0; });
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(300);
   const plain = await layout();
   assert.ok(plain.length >= 5, `expected rendered arrows, got ${plain.length}`);
+  for (let i = 0; i < Math.min(numbered.length, plain.length); i++) {
+    assert.ok(Math.abs(numbered[i].arrowCenterY - plain[i].arrowCenterY) < 1, `arrow moved vertically between numbered (${numbered[i].arrowCenterY}) and plain (${plain[i].arrowCenterY})`);
+  }
   for (const item of plain) {
     assert.equal(item.position, 'static');
     assert.equal(item.paddingLeft, '6px');
