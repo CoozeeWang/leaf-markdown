@@ -13,6 +13,27 @@ test('the first item keeps its number, so an explicit start survives',()=>{
  assert.deepEqual(orderedListNumberChanges('5. 五\n6. 六'),[]);
 });
 
+// Deleting the item a list opened on hands its start number down the list: a
+// list that read 1, 2, 3 opens again at 1 instead of drifting to 2, 3.
+const deletion=(text,from,to)=>({text,map:position=>position,removed:[{from,to}]});
+test('deleting the opening item renumbers the rest from the start it had',()=>{
+ const before='1. 一\n2. 二\n3. 三';
+ assert.deepEqual(orderedListNumberChanges('2. 二\n3. 三',null,deletion(before,0,6)),
+  [{from:0,to:1,insert:'1'},{from:5,to:6,insert:'2'}]);
+ // A list the writer started at 5 keeps that start.
+ const five='5. 五\n6. 六\n7. 七';
+ assert.deepEqual(orderedListNumberChanges('6. 六\n7. 七',null,deletion(five,0,6)),
+  [{from:0,to:1,insert:'5'},{from:5,to:6,insert:'6'}]);
+});
+
+test('a start the writer typed on a surviving first item is not handed down',()=>{
+ const before='1. 一\n2. 二';
+ assert.deepEqual(orderedListNumberChanges('5. 一\n2. 二',null,deletion(before,3,4)),
+  [{from:5,to:6,insert:'6'}]);
+ assert.deepEqual(orderedListNumberChanges('5. 一\n2. 二',null,{...deletion(before,3,4),removed:[]}),
+  [{from:5,to:6,insert:'6'}]);
+});
+
 test('nested lists renumber within their own level only',()=>{
  const source='1. 一\n3. 三\n   7. 甲\n   9. 乙\n4. 四';
  // The outer 三 closes to 2 and 四 to 3; the inner list keeps its own start 7

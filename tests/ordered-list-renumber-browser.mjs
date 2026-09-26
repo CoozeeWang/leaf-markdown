@@ -25,11 +25,16 @@ try{
  await page.click('#undoButton');assert.equal(await source(),'1. 第一项\n2. 第二项\n3. 第三项\n4. 第四项');
  await page.click('#redoButton');assert.equal(await source(),'1. 第一项\n2. 第三项\n3. 第四项');
 
- // Deleting the first item leaves the written start in charge: the list keeps
- // counting from the marker that now opens it.
+ // Deleting the item that opened the list hands its start down: the rest of the
+ // list counts again from 1.
  await setup('1. 第一项\n2. 第二项\n3. 第三项');await page.locator('.cm-content').click();await page.keyboard.press('ArrowLeft');
  await deleteLine('1. 第一项');await page.keyboard.press('Backspace');
- assert.equal(await source(),'2. 第二项\n3. 第三项');
+ assert.equal(await source(),'1. 第二项\n2. 第三项');
+
+ // A list the writer started at 5 keeps that start when its first item goes.
+ await setup('5. 五\n6. 六\n7. 七');await page.locator('.cm-content').click();await page.keyboard.press('ArrowLeft');
+ await deleteLine('5. 五');await page.keyboard.press('Backspace');
+ assert.equal(await source(),'5. 六\n6. 七');
 
  // Deleting the last item only takes that item away.
  await setup('1. 一\n2. 二\n3. 三');await page.locator('.cm-content').click();await page.keyboard.press('ArrowLeft');
