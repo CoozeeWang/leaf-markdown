@@ -47,7 +47,7 @@ import { leafMarkdownExtensions } from './markdown-extensions.js';
 import { structuredPreview, documentName, fileNameTitle, toggleFileNameTitle } from './structured-preview.js';
 import { renderInline, citationSignature, citationLabel } from './inline-preview.js';
 import { paragraphBlankLineChanges } from './blank-lines.js';
-import { frontmatter } from './markdown-model.js';
+import { frontmatter, bodyStart } from './markdown-model.js';
 import { paragraphDeletion, selectedParagraphDeletion } from './paragraph-delete.js';
 import {outlineFolding} from './outline-folding.js';
 import { classifyInlineTag, pairInlineTags } from './inline-html.js';
@@ -986,6 +986,10 @@ export function createLeafEditor(options) {
     '&': { height: '100%' },
     '.cm-scroller': { overflow: 'auto' },
     '.cm-content': { minHeight: '100%' },
+    // Set on the scroller while a drag is over the property block, which is not
+    // a drop target. CodeMirror keeps its drop cursor in editor state, so hiding
+    // it here is what keeps the drag from offering a position nothing can use.
+    '.cm-leaf-no-drop .cm-dropCursor': { display: 'none' },
   });
 
   const updateListener = EditorView.updateListener.of((update) => {
@@ -1042,6 +1046,11 @@ export function createLeafEditor(options) {
     { key: 'Shift-Tab', run: indentLess },
   ]);
 
+  // The first position in the body, just past the property block's closing rule.
+  // Everything the caret does — typing, paste, toolbar commands, a file dropped
+  // at a point — writes where the caret is, so this is the line no edit crosses.
+  // Only a document opening with a horizontal rule can have one to guard.
+  const guardedTop = doc => /^(?:\uFEFF)?---/.test(doc.sliceString(0, 4)) ? bodyStart(doc.toString()) : 0;
   const state = EditorState.create({
     doc: options.doc || '',
     extensions: [
@@ -1105,6 +1114,29 @@ export function createLeafEditor(options) {
         return true;
       } }),
       appKeymap,
+      // The property block owns the top of the document. A caret inside it — or
+      // in front of the opening rule — is a caret whose next keystroke, paste,
+      // toolbar command or dropped file would land in the YAML and stop the
+      // block from parsing, turning the properties into prose with no way back.
+      // Every edit in Leaf follows the caret, so keeping the caret out of that
+      // range is what keeps the block intact. The caret moves to the first
+      // position in the body rather than the edit being refused: a dropped file
+      // has already been copied into the document's assets by the time this
+      // runs, and refusing would leave it behind. Selections are left alone —
+      // replacing one that reaches into the block is how it gets rewritten or
+      // deleted — and source mode and the block's own YAML editor write here on
+      // purpose.
+      EditorState.transactionFilter.of(tr => {
+        if (suppressChanges || tr.startState.field(sourceMode) || tr.startState.field(structuredPreview).yamlSource) return tr;
+        const floor = guardedTop(tr.newDoc);
+        if (!floor) return tr;
+        const selection = tr.selection ?? tr.startState.selection.map(tr.changes);
+        const ranges = selection.ranges.map(range => range.empty && range.from < floor
+          ? EditorSelection.cursor(floor) : range);
+        if (ranges.every((range, index) => range === selection.ranges[index])) return tr;
+        return { changes: tr.changes, selection: EditorSelection.create(ranges, selection.mainIndex),
+          effects: tr.effects, annotations: tr.annotations, scrollIntoView: tr.scrollIntoView };
+      }),
       // Complete the delimiters before any rendering/atomic selection pass.
       // An intermediate opening delimiter could otherwise consume the article
       // up to a later horizontal rule and replace it with one giant YAML widget.
@@ -1143,6 +1175,16 @@ export function createLeafEditor(options) {
 
   const view = new EditorView({ state, parent: options.parent });
   view.dom.addEventListener("leaf-image-ready", () => view.requestMeasure());
+  // Dragging a file over the property block must not offer a position there: the
+  // drop lands in the body instead, so a cursor drawn over the block would point
+  // somewhere nothing can go. Source mode shows the YAML as text and stays free.
+  for (const type of ['dragover', 'dragleave', 'dragend', 'drop']) {
+    view.contentDOM.addEventListener(type, event => {
+      const over = event.type === 'dragover' && !view.state.field(sourceMode)
+        && (view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? 0) < guardedTop(view.state.doc);
+      view.scrollDOM.classList.toggle('cm-leaf-no-drop', over);
+    });
+  }
 
 
   return {
@@ -1199,7 +1241,9 @@ export function createLeafEditor(options) {
       // the old document.
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: value },
-        selection: EditorSelection.cursor(0),
+        // A document opens in its body: the property block guards the top, and a
+        // caret left in front of it would write into the YAML on the first key.
+        selection: EditorSelection.cursor(bodyStart(value)),
         effects: [documentName.of(view.state.field(structuredPreview).name), setLineEnding.of(endingOf(value)), toggleProperties.of(false)],
         scrollIntoView: true,
       });
@@ -1213,7 +1257,7 @@ export function createLeafEditor(options) {
       // Filters must not renumber or otherwise normalize the stored source.
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value },
         effects: setLineEnding.of(endingOf(value)),
-        selection: EditorSelection.cursor(0), filter: false,
+        selection: EditorSelection.cursor(bodyStart(value)), filter: false,
         userEvent: 'input.restore', annotations: isolateHistory.of('full') });
       view.focus();
     },

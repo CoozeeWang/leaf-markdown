@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeMarkdown, frontmatter, rowCells, scalarSource, titleInsertion } from '../src/markdown-model.js';
+import { analyzeMarkdown, frontmatter, rowCells, scalarSource, titleInsertion, bodyStart } from '../src/markdown-model.js';
 import { parser } from '@lezer/markdown';
 import { leafMarkdownExtensions } from '../src/markdown-extensions.js';
 
@@ -33,6 +33,19 @@ test('title insertion occurs after frontmatter and does not remove it', () => {
   const source = '---\nversion: v1\n---\n\nBody';
   const change = titleInsertion(source, '测试.md');
   assert.equal(source.slice(0, change.from) + change.insert + source.slice(change.from), '---\nversion: v1\n---\n\n# 测试\n\n\n\nBody');
+});
+test('the first body position is past the closing rule, and only there', () => {
+  assert.equal(bodyStart('---\nversion: v1\n---\n\nBody'), '---\nversion: v1\n---\n'.length);
+  assert.equal(bodyStart('---\r\nversion: v1\r\n---\r\n\r\nBody'), '---\r\nversion: v1\r\n---\r\n'.length);
+  assert.equal(bodyStart('---\nversion: v1\n---'), '---\nversion: v1\n---'.length);
+  assert.equal(bodyStart('Body'), 0);
+  assert.equal(bodyStart('---\n这是一段正文。\n---\n\nBody'), 0, 'prose between two rules is not a block to guard');
+  // An insert at the floor keeps the block; one position earlier breaks it.
+  for (const source of ['---\nversion: v1\n---\n\nBody', '---\r\nversion: v1\r\n---\r\n\r\nBody']) {
+    const at = bodyStart(source);
+    assert.ok(frontmatter(source.slice(0, at) + 'X' + source.slice(at)), source);
+    assert.equal(frontmatter(source.slice(0, at - 1) + 'X' + source.slice(at - 1)), null, source);
+  }
 });
 test('table cell ranges preserve escaped pipes, blanks, and alignment', () => {
   assert.deepEqual(rowCells('| x\\|y |  |').map(c => c.value), ['x|y', '']);

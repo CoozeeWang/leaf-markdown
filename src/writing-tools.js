@@ -3,6 +3,7 @@ import { EditorView } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import { isolateHistory } from '@codemirror/commands';
 import { safeTarget, markdownLink, setResourceReader, setResourceRevealer, refreshImages } from './resources.js';
+import { bodyStart } from './markdown-model.js';
 import { htmlToMarkdown } from './html-markdown.js';
 import { renderPrintDocument } from './print-document.js';
 import './writing.css';
@@ -51,7 +52,14 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
   async function attachments(files, image=true, point=null) {
     if (!editable()) return;
     if (!desktop) {status('本地附件导入请使用 Leaf 桌面版','error');return;}
-    if(point){const pos=view.posAtCoords({x:point.x/devicePixelRatio,y:point.y/devicePixelRatio});if(pos!==null)view.dispatch({selection:{anchor:pos}});}
+    // A drop on the property block cannot write into it: the editor moves the
+    // caret to the first position in the body, and the file goes there instead.
+    // Say so, because the file no longer lands where it was dropped.
+    if(point){const pos=view.posAtCoords({x:point.x/devicePixelRatio,y:point.y/devicePixelRatio});
+      if(pos!==null){
+        if(pos<bodyStart(view.state.doc.toString()))status('文档属性不能插入内容，已放到正文开头','saved');
+        view.dispatch({selection:{anchor:pos}});
+      }}
     const b=remember();
     try {
       if(!files){const paths=await choose(image);if(!paths)return;files=Array.isArray(paths)?paths:[paths];}
