@@ -328,7 +328,18 @@ button.leaf-list-marker { cursor:pointer; }
 .leaf-list-marker { font-size:12px; }
 .leaf-list-marker[data-circle] { font-size:11.5px; line-height:22.2px; }
 .leaf-list-marker[aria-expanded="false"] { color:var(--heading-primary); background:var(--accent-soft); border-radius:4px; }
-.leaf-heading-fold { display:inline-block; width:20px; margin-left:-20px; padding:0; font:14px var(--ui-font); color:var(--muted); vertical-align:middle; }
+/* The arrow pulls a few pixels past its slot and keeps a right margin, so
+   the glyph floats left of the heading with a visible gap; text-align centers
+   the glyph inside the slot. */
+.leaf-heading-fold { display:inline-block; width:20px; margin-left:-24px; margin-right:4px; padding:0; text-align:center; font:14px var(--ui-font); color:var(--muted); vertical-align:middle; }
+/* The fold arrow is a transparent gutter glyph, not a pill button: hovering
+   it must not paint the generic button wash (issue #12). */
+.leaf-heading-fold:hover { background:transparent; }
+/* Numbered headings reserve a left gutter. The fold arrow parks in the
+   gutter and the number follows it, so arrow and number can never overlap
+   regardless of the number's width (issue #11). */
+.cm-editor .cm-line.cm-leaf-heading[data-heading-number] { position:relative; padding-left:calc(var(--leaf-selection-inset) + 24px); }
+.cm-editor .cm-line.cm-leaf-heading[data-heading-number] > .leaf-heading-fold { position:absolute; left:var(--leaf-selection-inset); top:0; bottom:0; margin-left:0; display:inline-flex; align-items:center; justify-content:center; }
 .cm-foldPlaceholder { border:0; background:var(--accent-soft); color:var(--accent-strong); border-radius:4px; }
 .leaf-block-source { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 5px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
 .leaf-callout-widget .leaf-callout-title { padding-right: 16px; }
