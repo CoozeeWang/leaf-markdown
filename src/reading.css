@@ -69,6 +69,8 @@
 .reading-document ul ul ul > li::marker { font-size:1.1em; }
 .reading-document li, .reading-document :is(h1,h2,h3,h4,h5,h6) { position:relative; }
 .leaf-reading-fold { position:absolute; left:-22px; top:0; padding:0; width:18px; font:14px/1.85 var(--ui-font); color:var(--muted); }
+/* Same gutter glyph as the editor: hovering paints no button wash (issue #12). */
+.leaf-reading-fold:hover { background:transparent; }
 .leaf-reading-fold[aria-expanded="false"] svg { transform:rotate(-90deg); }
 .reading-document li > .leaf-reading-fold { left:-44px; width:18px; height:26px; display:flex; align-items:center; justify-content:center; }
 .reading-document [hidden] { display:none!important; }
