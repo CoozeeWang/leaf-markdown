@@ -52,13 +52,12 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
   async function attachments(files, image=true, point=null) {
     if (!editable()) return;
     if (!desktop) {status('本地附件导入请使用 Leaf 桌面版','error');return;}
-    // A drop on the property block cannot write into it: the editor moves the
-    // caret to the first position in the body, and the file goes there instead.
-    // Say so, because the file no longer lands where it was dropped.
+    // File imports also protect YAML/source mode and pending bookmarks: neither
+    // a source caret nor a selection of the properties may replace the block.
     if(point){const pos=view.posAtCoords({x:point.x/devicePixelRatio,y:point.y/devicePixelRatio});
       if(pos!==null){
         if(pos<bodyStart(view.state.doc.toString()))status('文档属性不能插入内容，已放到正文开头','saved');
-        view.dispatch({selection:{anchor:pos}});
+        view.dispatch({selection:{anchor:Math.max(pos, bodyStart(view.state.doc.toString()))}});
       }}
     const b=remember();
     try {
@@ -77,6 +76,8 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
           const isImage=/\.(png|jpe?g|gif|webp|bmp|heic|heif|svg)$/i.test(name);
           links.push(markdownLink(isImage?name.replace(/\.[^.]+$/,''):name,encodeURI(relative),isImage));
         }
+        const floor=bodyStart(view.state.doc.toString());
+        b.from=Math.max(b.from,floor); b.to=Math.max(b.to,b.from);
         const before=view.state.doc.sliceString(0,b.from), after=view.state.doc.sliceString(b.to);
         const prefix=before&&!before.endsWith('\n\n')?(before.endsWith('\n')?'\n':'\n\n'):'';
         const suffix=after&&!after.startsWith('\n\n')?(after.startsWith('\n')?'\n':'\n\n'):'';

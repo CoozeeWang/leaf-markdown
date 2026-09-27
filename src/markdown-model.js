@@ -37,12 +37,9 @@ export function frontmatter(source) {
   return { kind: 'yaml', from: 0, to: match[0].length, fields, valid: !parsed.errors.length && (isMap(parsed.contents) || !firstContent) };
 }
 
-// The first position that is outside the property block. One character written
-// before it — inside the YAML, on the closing rule, or in front of the opening
-// one — stops the block from parsing, and the properties silently become
-// ordinary prose with no way back. Inserts aimed at the guarded range belong
-// here instead; the newline after the closing rule is part of the block, so a
-// position on that line is still inside it.
+// The first body position is after the closing delimiter's newline. When a
+// property-only document ends at the delimiter, an insertion at this offset
+// must add a newline before text; the offset alone does not create a body line.
 export function bodyStart(source, yaml = frontmatter(source)) {
   if (!yaml) return 0;
   const after = source.slice(yaml.to, yaml.to + 2);

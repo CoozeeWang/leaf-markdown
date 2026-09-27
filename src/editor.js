@@ -48,6 +48,7 @@ import { structuredPreview, documentName, fileNameTitle, toggleFileNameTitle } f
 import { renderInline, citationSignature, citationLabel } from './inline-preview.js';
 import { paragraphBlankLineChanges } from './blank-lines.js';
 import { frontmatter, bodyStart } from './markdown-model.js';
+import { protectPropertyInsertions } from './properties-insert-guard.js';
 import { paragraphDeletion, selectedParagraphDeletion } from './paragraph-delete.js';
 import {outlineFolding} from './outline-folding.js';
 import { classifyInlineTag, pairInlineTags } from './inline-html.js';
@@ -1017,6 +1018,18 @@ export function createLeafEditor(options) {
     }
   });
 
+  const prepareBodyLine = view => {
+    if (view.state.field(sourceMode) || view.state.field(structuredPreview).yamlSource) return false;
+    const source = view.state.doc.toString(), yaml = frontmatter(source);
+    if (!yaml || yaml.to !== source.length || !view.state.selection.main.empty) return false;
+    // A block widget occupying the entire document has no editable DOM line.
+    // Make one only on input, leaving the opened/saved source untouched before
+    // the user edits. Composition also needs a real line before WebKit starts.
+    view.dispatch({changes:{from:source.length,insert:'\n'},selection:{anchor:source.length+1},userEvent:'input.type'});
+    view.focus();
+    return true;
+  };
+
   const appKeymap = keymap.of([
     { key: 'Mod-e', run: () => (options.onExport?.(), true) },
     { key: 'Mod-Shift-s', run: () => (options.onSaveAs?.(), true) },
@@ -1046,13 +1059,12 @@ export function createLeafEditor(options) {
     { key: 'Shift-Tab', run: indentLess },
   ]);
 
-  // The first position in the body, just past the property block's closing rule.
-  // Everything the caret does — typing, paste, toolbar commands, a file dropped
-  // at a point — writes where the caret is, so this is the line no edit crosses.
-  // Only a document opening with a horizontal rule can have one to guard.
+  // Positions are CodeMirror offsets (normalized LF), not raw CRLF offsets.
   const guardedTop = doc => /^(?:\uFEFF)?---/.test(doc.sliceString(0, 4)) ? bodyStart(doc.toString()) : 0;
+  const initialDoc = (options.doc || '').replace(/\r\n?/g, '\n');
   const state = EditorState.create({
     doc: options.doc || '',
+    selection: {anchor: bodyStart(initialDoc)},
     extensions: [
       lineNumberCompartment.of(options.showLineNumbers ? leafLineNumbers() : []),
       historyCompartment.of(history()),
@@ -1097,6 +1109,8 @@ export function createLeafEditor(options) {
       // macOS Option+number produces symbols (e.g. ¡), not event.key "1".
       // Match the physical number row, without intercepting IME composition.
       EditorView.domEventHandlers({
+        compositionstart(_event, view) { prepareBodyLine(view); return false; },
+        paste(_event, view) { prepareBodyLine(view); return false; },
         copy(event, view) {
           if (!view.state.selection.ranges.every(range => range.empty)) return false;
           event.preventDefault(); return true;
@@ -1106,6 +1120,10 @@ export function createLeafEditor(options) {
           event.preventDefault(); return true;
         },
         keydown(event, view) {
+        if (!event.metaKey && !event.ctrlKey && !event.altKey
+          && (event.key.length === 1 || event.key === 'Enter')) {
+          if (prepareBodyLine(view) && event.key === 'Enter') { event.preventDefault(); return true; }
+        }
         if (event.isComposing || !event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return false;
         const digit = /^Digit([0-6])$/.exec(event.code);
         if (!digit) return false;
@@ -1114,20 +1132,12 @@ export function createLeafEditor(options) {
         return true;
       } }),
       appKeymap,
-      // The property block owns the top of the document. A caret inside it — or
-      // in front of the opening rule — is a caret whose next keystroke, paste,
-      // toolbar command or dropped file would land in the YAML and stop the
-      // block from parsing, turning the properties into prose with no way back.
-      // Every edit in Leaf follows the caret, so keeping the caret out of that
-      // range is what keeps the block intact. The caret moves to the first
-      // position in the body rather than the edit being refused: a dropped file
-      // has already been copied into the document's assets by the time this
-      // runs, and refusing would leave it behind. Selections are left alone —
-      // replacing one that reaches into the block is how it gets rewritten or
-      // deleted — and source mode and the block's own YAML editor write here on
-      // purpose.
+      // Keep preview carets in the body. Selections can still replace or delete
+      // the entire block; explicit YAML/source editing remains free.
       EditorState.transactionFilter.of(tr => {
         if (suppressChanges || tr.startState.field(sourceMode) || tr.startState.field(structuredPreview).yamlSource) return tr;
+        const protectedSpec = protectPropertyInsertions(tr);
+        if (protectedSpec !== tr) return protectedSpec;
         const floor = guardedTop(tr.newDoc);
         if (!floor) return tr;
         const selection = tr.selection ?? tr.startState.selection.map(tr.changes);
@@ -1178,17 +1188,22 @@ export function createLeafEditor(options) {
   // Dragging a file over the property block must not offer a position there: the
   // drop lands in the body instead, so a cursor drawn over the block would point
   // somewhere nothing can go. Source mode shows the YAML as text and stays free.
+  const setDropPoint = point => {
+    const floor = guardedTop(view.state.doc);
+    const over = !!point && !!floor && (view.posAtCoords(point) ?? 0) < floor;
+    view.scrollDOM.classList.toggle('cm-leaf-no-drop', over);
+  };
   for (const type of ['dragover', 'dragleave', 'dragend', 'drop']) {
     view.contentDOM.addEventListener(type, event => {
-      const over = event.type === 'dragover' && !view.state.field(sourceMode)
-        && (view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? 0) < guardedTop(view.state.doc);
-      view.scrollDOM.classList.toggle('cm-leaf-no-drop', over);
+      setDropPoint(event.type === 'dragover' && !view.state.field(sourceMode)
+        ? {x: event.clientX, y: event.clientY} : null);
     });
   }
 
 
   return {
     view,
+    setDropPoint,
     setReading(value) { reading = value; },
     createProperties() { openYamlProperties(view); },
     // The region is a block widget, so it is only in the DOM while it is near
@@ -1243,7 +1258,7 @@ export function createLeafEditor(options) {
         changes: { from: 0, to: view.state.doc.length, insert: value },
         // A document opens in its body: the property block guards the top, and a
         // caret left in front of it would write into the YAML on the first key.
-        selection: EditorSelection.cursor(bodyStart(value)),
+        selection: EditorSelection.cursor(bodyStart(view.state.toText(value).toString())),
         effects: [documentName.of(view.state.field(structuredPreview).name), setLineEnding.of(endingOf(value)), toggleProperties.of(false)],
         scrollIntoView: true,
       });
@@ -1257,7 +1272,7 @@ export function createLeafEditor(options) {
       // Filters must not renumber or otherwise normalize the stored source.
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value },
         effects: setLineEnding.of(endingOf(value)),
-        selection: EditorSelection.cursor(bodyStart(value)), filter: false,
+        selection: EditorSelection.cursor(bodyStart(view.state.toText(value).toString())), filter: false,
         userEvent: 'input.restore', annotations: isolateHistory.of('full') });
       view.focus();
     },
