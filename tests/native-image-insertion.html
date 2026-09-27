@@ -1,0 +1,57 @@
+<!doctype html><html><meta charset="utf-8">
+<nav class="format-toolbar"><span class="toolbar-spacer"></span></nav>
+<div id="editor" style="height:700px"></div>
+<script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import {setupWriting} from '/src/writing-tools.js';
+import '/src/style.css';
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const source='---\ntitle: Native image insertion\n---\n\n'+Array.from({length:45},(_,i)=>`Paragraph ${i+1}: existing body.`).join('\n\n');
+window.startTest=async()=>{
+ try {
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:source}),view=editor.view;
+  const writing=setupWriting({editor,desktop:true,icon:()=>'',status:()=>{},editable:()=>true,
+   save:async()=>true,choose:async()=>[],serialized:fn=>fn(),
+   // Real WKWebView preview/layout/keyboard, synthetic import and image bytes.
+   // This does not stand in for a Finder drag or native file chooser.
+   invoke:async(command,args)=>{
+    if(command==='import_attachment')return 'assets/'+args.name;
+    if(command==='read_resource'){
+     await pause(400);
+     return Array.from(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="600"><rect width="120" height="600" fill="#607b68"/></svg>'));
+    }
+    throw Error('fixture command unavailable');
+   }});
+  const at=source.indexOf('Paragraph 25:');
+  view.dispatch({selection:{anchor:at},effects:view.constructor.scrollIntoView(at,{y:'center'})});view.focus();
+  await pause(200);
+  await writing.attachments(['/fixture/native.svg']);
+  const head=view.state.selection.main.head,next=editor.getValue();
+  if(view.state.doc.lineAt(head).text!=='')throw Error('caret is not in a new empty paragraph');
+  if(!next.slice(0,head).endsWith('![native](assets/native.svg)\n\n')||!next.slice(head).startsWith('\n\nParagraph 25:'))throw Error('image or following body has wrong separators');
+  if(view.scrollDOM.scrollTop<300)throw Error('insertion jumped to the document top');
+  const until=Date.now()+5000;
+  while(!document.querySelector('img[data-loaded="yes"]')){
+   if(Date.now()>until)throw Error('preview did not load');await pause(50);
+  }
+  await pause(250);
+  const viewport=view.scrollDOM.getBoundingClientRect(),caret=view.coordsAtPos(head);
+  if(caret.top<viewport.top||caret.bottom>viewport.bottom)throw Error(`loaded image pushed caret out of view (${JSON.stringify({focus:view.hasFocus,documentFocus:document.hasFocus(),active:document.activeElement?.className,caretTop:caret.top,caretBottom:caret.bottom,viewportTop:viewport.top,viewportBottom:viewport.bottom,scroll:view.scrollDOM.scrollTop})})`);
+  editor.undo();if(editor.getValue()!==source)throw Error('image undo changed body or properties');
+  editor.redo();if(editor.getValue()!==next)throw Error('image redo changed insertion');
+  const resume=view.state.selection.main.head;
+  view.dispatch({changes:{from:resume,insert:'OK'},selection:{anchor:resume+2},userEvent:'input.type'});view.focus();
+  view.contentDOM.addEventListener('keydown',event=>{
+   setTimeout(()=>{
+    try {
+     if(!event.isTrusted)throw Error('expected native AppKit Backspace');
+     if(editor.getValue()!==next.slice(0,resume)+'O'+next.slice(resume))throw Error('typing/backspace changed image or original body');
+     document.title='LeafTest PASS WKWebView delayed image preview, new paragraph, scroll, undo/redo and trusted continuation Backspace';
+    }catch(error){document.title='LeafTest FAIL '+error.message;}
+   },200);
+  },{capture:true,once:true});
+  document.title='LeafKey 0';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};
+document.title='LeafSource';
+</script></html>

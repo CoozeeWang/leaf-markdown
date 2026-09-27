@@ -27,6 +27,14 @@ Cargo 使用标准 crates.io。需要网络镜像时，在个人 Cargo 配置中
 
 Cargo uses crates.io. Configure network mirrors in your own Cargo configuration. Native WebKit fixtures only execute on macOS.
 
+macOS 图片插入隔离检查：先在仓库根目录启动 `npm run dev -- --host 127.0.0.1 --port 41732 --strictPort`，再在 `src-tauri` 执行：
+
+```sh
+cargo run --locked --example native-table-keys -- ../tests/native-image-insertion.html http://127.0.0.1:41732/tests/native-image-insertion.html --foreground
+```
+
+`--foreground` 会短暂激活测试窗口，以真实焦点验证延迟图片加载后的光标可见性和 AppKit 退格。图片导入和资源字节是合成的；这不代替 Finder 拖放、原生文件选择器或 Windows 真机验收。省略此参数时保留原有后台键盘检查行为。
+
 ## 开发与打包 / Development and packaging
 
 ```sh

@@ -5,6 +5,7 @@ import { isolateHistory } from '@codemirror/commands';
 import { safeTarget, markdownLink, setResourceReader, setResourceRevealer, refreshImages } from './resources.js';
 import { bodyStart } from './markdown-model.js';
 import { fileDropTarget } from './file-drop.js';
+import { attachmentInsertion } from './attachment-insertion.js';
 import { htmlToMarkdown } from './html-markdown.js';
 import { renderPrintDocument } from './print-document.js';
 import './writing.css';
@@ -12,16 +13,36 @@ import { shortcutText } from './platform-shortcuts.js';
 
 export function setupWriting({ editor, desktop, invoke, save, choose, serialized, editable, status, icon, }) {
   const view = editor.view, bookmarks = new Set();
+  let insertionFollow=null;
   view.dispatch({ effects: StateEffect.appendConfig.of(EditorView.updateListener.of(update => {
     if (update.docChanged) for (const b of bookmarks) { b.from=update.changes.mapPos(b.from,1); b.to=update.changes.mapPos(b.to,-1); if(b.to<b.from)b.to=b.from; }
+    if(insertionFollow&&(update.docChanged||update.selectionSet||(update.focusChanged&&!view.hasFocus)))insertionFollow.stop();
   })) });
   if (desktop) {
     setResourceReader(relative => invoke('read_resource', { relative }));
     setResourceRevealer(relative => invoke('reveal_resource', { relative }));
   }
   const remember = range => { const selection=range||view.state.selection.main; const b={from:selection.from,to:selection.to}; bookmarks.add(b); return b; };
-  function insert(text, b) {
-    view.dispatch({changes:{from:b.from,to:b.to,insert:text},selection:{anchor:b.from+text.length},userEvent:'input',annotations:isolateHistory.of('full')}); view.focus();
+  function insert(text, b, anchor=b.from+text.length, scrollIntoView=false) {
+    view.dispatch({changes:{from:b.from,to:b.to,insert:text},selection:{anchor},scrollIntoView,userEvent:'input',annotations:isolateHistory.of('full')}); view.focus();
+  }
+  function followImageLoad(anchor, resources) {
+    insertionFollow?.stop();
+    if(!resources.length)return;
+    const pending=new Set(resources),controller=new AbortController();
+    const follow={stop:()=>{controller.abort();clearTimeout(timeout);if(insertionFollow===follow)insertionFollow=null;}};
+    const timeout=setTimeout(follow.stop,16000);
+    insertionFollow=follow;
+    // A decoded image can grow after the insertion transaction was scrolled.
+    // Follow only that insertion, and stop as soon as the user takes control.
+    for(const event of ['wheel','pointerdown','keydown'])document.addEventListener(event,follow.stop,{capture:true,signal:controller.signal});
+    window.addEventListener('blur',follow.stop,{signal:controller.signal});
+    view.dom.addEventListener('leaf-image-ready',event=>{
+      if(!pending.delete(event.target.dataset?.resource))return;
+      const selection=view.state.selection.main;
+      if(view.hasFocus&&selection.empty&&selection.head===anchor)view.dispatch({effects:EditorView.scrollIntoView(anchor,{y:'nearest'})});
+      if(!pending.size)follow.stop();
+    },{signal:controller.signal});
   }
   function currentLink() {
     let node=null;
@@ -64,7 +85,7 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
       if(!files.length)return;
       if(!await save())return;
       await serialized(async()=>{
-        const links=[];
+        const links=[],images=[];
         for(const file of files){
           const name=typeof file==='string'?file.split(/[\\/]/).pop():file.name||'screenshot.png';
           const source=typeof file==='string'?{source:file}:{data:Array.from(new Uint8Array(await file.arrayBuffer()))};
@@ -73,14 +94,14 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
           // SVG is text with no magic bytes. Both arrive as pictures everywhere
           // they are supported, and fall back to the placeholder where they are not.
           const isImage=/\.(png|jpe?g|gif|webp|bmp|heic|heif|svg)$/i.test(name);
-          links.push(markdownLink(isImage?name.replace(/\.[^.]+$/,''):name,encodeURI(relative),isImage));
+          const target=encodeURI(relative).replace(/[()]/g,c=>c==='('?'%28':'%29');
+          links.push(markdownLink(isImage?name.replace(/\.[^.]+$/,''):name,target,isImage));
+          if(isImage)images.push(target);
         }
         const floor=bodyStart(view.state.doc.toString());
         b.from=Math.max(b.from,floor); b.to=Math.max(b.to,b.from);
-        const before=view.state.doc.sliceString(0,b.from), after=view.state.doc.sliceString(b.to);
-        const prefix=before&&!before.endsWith('\n\n')?(before.endsWith('\n')?'\n':'\n\n'):'';
-        const suffix=after&&!after.startsWith('\n\n')?(after.startsWith('\n')?'\n':'\n\n'):'';
-        insert(prefix+links.join('\n\n')+suffix,b); refreshImages();
+        const {text,anchor}=attachmentInsertion(view.state.doc.toString(),b,links);
+        insert(text,b,anchor,true); followImageLoad(anchor,images); refreshImages();
       });
     } catch(error){status(`附件导入失败：${error.message||error}`,'error');}
     finally{bookmarks.delete(b);}

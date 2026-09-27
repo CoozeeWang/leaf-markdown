@@ -43,7 +43,7 @@ try{
  // The same drop over ordinary body text stays where it was aimed.
  await page.evaluate(p=>writing.attachments(['/source/second.png'],true,p),
    await page.evaluate(()=>{const r=ed.view.coordsAtPos(ed.view.state.doc.length-1);return {x:r.left,y:r.top+4};}));
- assert.ok(await page.evaluate(()=>ed.getValue().endsWith('![second](assets/second.png)')),'a drop in the body is not moved');
+ assert.ok(await page.evaluate(()=>ed.getValue().endsWith('![second](assets/second.png)\n\n')),'a drop in the body is not moved');
  // Dragging over the block offers no insertion point; the body still does.
  const over=p=>page.evaluate(p=>{
    ed.view.contentDOM.dispatchEvent(new DragEvent('dragover',{clientX:p.x,clientY:p.y,bubbles:true,cancelable:true}));
