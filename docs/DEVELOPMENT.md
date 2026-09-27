@@ -23,6 +23,10 @@ Rust 测试在 `src-tauri` 中运行：
 cargo test --locked --all-targets
 ```
 
+空行整理的规则见[空行整理说明](BLANK-LINES.md)。相关回归为 `blank-lines.test.js`、`blank-lines-browser.mjs` 和 `paragraph-blank-lines-browser.mjs`：覆盖补减空行、首尾清理、嵌套列表和受保护内容，并检查按钮、快捷键、一次撤销／重做、重复整理、预览及保存后重新打开的一致性。保存检查使用模拟文件接口，不代替桌面版真实文件验收。
+
+macOS 原生空行整理检查使用同一开发服务器，在 `src-tauri` 中运行 `cargo run --locked --example native-table-keys -- ../tests/native-blank-lines.html http://127.0.0.1:41732/tests/native-blank-lines.html`。它在实际 WKWebView 中检查整理、预览／源码切换、保存回调、撤销／重做和 CRLF 保留；不代替安装版真实文件保存与重新打开的验收。
+
 Cargo 使用标准 crates.io。需要网络镜像时，在个人 Cargo 配置中设置，不修改项目的公共配置。macOS 原生 WebKit 示例只在 macOS 执行；其他平台编译时显示不支持提示。
 
 Cargo uses crates.io. Configure network mirrors in your own Cargo configuration. Native WebKit fixtures only execute on macOS.
