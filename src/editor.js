@@ -49,7 +49,7 @@ import { renderInline, citationSignature, citationLabel } from './inline-preview
 import { paragraphBlankLineChanges } from './blank-lines.js';
 import { frontmatter, bodyStart } from './markdown-model.js';
 import { protectPropertyInsertions } from './properties-insert-guard.js';
-import { fileDropTarget, fileDropFeedback, setFileDropTarget } from './file-drop.js';
+import { fileDropTarget, fileDropFeedback, setFileDropTarget, setFileDragging } from './file-drop.js';
 import { paragraphDeletion, selectedParagraphDeletion } from './paragraph-delete.js';
 import {outlineFolding} from './outline-folding.js';
 import { classifyInlineTag, pairInlineTags } from './inline-html.js';
@@ -1193,7 +1193,7 @@ export function createLeafEditor(options) {
   const setDropPoint = point => {
     const target = point ? fileDropTarget(view,point) : null;
     view.scrollDOM.classList.toggle('cm-leaf-no-drop',!!target?.protected);
-    view.dispatch({effects:setFileDropTarget.of(target && !target.protected ? target.pos : null)});
+    view.dispatch({effects:[setFileDropTarget.of(target && !target.protected ? target.pos : null),setFileDragging.of(!!point)]});
   };
   for (const type of ['dragover', 'dragleave', 'dragend', 'drop']) {
     view.contentDOM.addEventListener(type, event => {

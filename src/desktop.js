@@ -1,6 +1,7 @@
 import { createDocumentSession } from './document-session.js';
 import {localResourcePaths} from './resource-paths.js';
 import { fileNameFromPath } from './file-path.js';
+import { nativeDropPoint } from './native-drop-point.js';
 import { isTauri, invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
@@ -129,13 +130,14 @@ export async function initDesktop(callbacks) {
   let draggedPaths=[];
   await window.onDragDropEvent(async ({ payload }) => {
     if(payload.paths)draggedPaths=payload.paths;
-    hooks.drag?.(payload.type==='enter'||payload.type==='over', payload.position,draggedPaths);
+    const point=nativeDropPoint(payload.position);
+    hooks.drag?.(payload.type==='enter'||payload.type==='over', point,draggedPaths);
     if(payload.type==='leave'||payload.type==='drop')draggedPaths=[];
     if (payload.type === 'drop') {
       const docs = payload.paths.filter(path => /\.(md|markdown|mdown)$/i.test(path));
       for (const file of docs) await invoke('open_document', { path: file });
       const attachments = payload.paths.filter(path => !docs.includes(path));
-      if (attachments.length) await hooks.attach?.(attachments, payload.position);
+      if (attachments.length) await hooks.attach?.(attachments, point);
     }
   });
   const path = await invoke('initial_path');

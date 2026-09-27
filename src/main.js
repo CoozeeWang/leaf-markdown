@@ -1902,7 +1902,7 @@ if (desktop) {
       const opening=files.some(path=>/\.(md|markdown|mdown)$/i.test(path))||!welcomeScreen.hidden;
       dropOverlay.classList.toggle('visible',active&&opening);
       // Native Tauri drag events do not pass through contentDOM's dragover.
-      editor.setDropPoint(active&&!opening&&!state.reading&&point ? {x:point.x/devicePixelRatio,y:point.y/devicePixelRatio} : null);
+      editor.setDropPoint(active&&!opening&&!state.reading ? point : null);
     },
     saved(content, name, path) { const changed = state.resourcePath !== path; state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); if (changed) refreshImages(); },
   }).catch(error => setStatus(`桌面初始化失败：${error}`, 'error')).finally(() => {

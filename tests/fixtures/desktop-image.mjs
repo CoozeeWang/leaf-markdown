@@ -1,6 +1,10 @@
 // Synthetic desktop IPC fixture; this does not replace native platform tests.
-export async function desktopImageFixture(page, source) {
-  await page.addInitScript(doc => {
+export async function desktopImageFixture(page, source, {platform}={}) {
+  await page.addInitScript(({doc,platform}) => {
+    if(platform){
+      Object.defineProperty(navigator,'platform',{configurable:true,value:platform});
+      Object.defineProperty(navigator,'userAgentData',{configurable:true,value:{platform}});
+    }
     const callbacks=new Map(),listeners=new Map();let id=0;
     window.isTauri=true;window.imports=[];window.writes=[];window.disk=doc;
     window.emitNative=(event,payload)=>callbacks.get(listeners.get(event))({event,payload});
@@ -24,7 +28,7 @@ export async function desktopImageFixture(page, source) {
         return null;
       },
     };
-  },source);
+  },{doc:source,platform});
   await page.goto('http://127.0.0.1:41732');
   await page.waitForFunction(()=>document.querySelector('#welcomeScreen')?.hidden);
   await page.evaluate(async()=>{

@@ -126,7 +126,7 @@ try{
   const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');
   window.v=EditorView.findFromDOM(document.querySelector('.cm-content'));
  });
- const nativePoint=await native.evaluate(()=>{const r=document.querySelector('.leaf-yaml').getBoundingClientRect();return {x:(r.left+r.width/2)*devicePixelRatio,y:(r.top+4)*devicePixelRatio};});
+ const nativePoint=await native.evaluate(()=>{const r=document.querySelector('.leaf-yaml').getBoundingClientRect(),scale=/^win/i.test(navigator.userAgentData?.platform||navigator.platform)?devicePixelRatio:1;return {x:(r.left+r.width/2)*scale,y:(r.top+4)*scale};});
  await native.evaluate(p=>emitNative('tauri://drag-over',{position:p}),nativePoint);
  assert.equal(await native.evaluate(()=>v.scrollDOM.classList.contains('cm-leaf-no-drop')),true,'native drag feedback protects the property region at Retina scale');
  await native.evaluate(()=>emitNative('tauri://drag-leave',{}));

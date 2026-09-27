@@ -14,6 +14,11 @@ export function fileDropTarget(view, point) {
 }
 
 export const setFileDropTarget=StateEffect.define({map:(pos,changes)=>pos===null?null:changes.mapPos(pos)});
+export const setFileDragging=StateEffect.define();
+const dragging=StateField.define({
+  create:()=>false,
+  update(value,tr){for(const effect of tr.effects)if(effect.is(setFileDragging))value=effect.value;return value;},
+});
 const target=StateField.define({
   create:()=>null,
   update(pos,tr){
@@ -50,6 +55,10 @@ const marker=ViewPlugin.fromClass(class {
   }
   destroy(){this.cursor?.remove();}
 });
-export const fileDropFeedback=[target,marker,EditorView.theme({
+export const fileDropFeedback=[target,dragging,marker,
+EditorView.editorAttributes.compute([dragging],state=>({class:state.field(dragging)?'leaf-file-dragging':''})),EditorView.theme({
   '.leaf-file-drop-cursor':{borderLeft:'2px solid var(--accent)',pointerEvents:'none'},
+  '&.leaf-file-dragging .cm-cursorLayer':{visibility:'hidden'},
+  '&.leaf-file-dragging .cm-content':{caretColor:'transparent !important'},
+  '&.leaf-file-dragging .cm-dropCursor:not(.leaf-file-drop-cursor)':{display:'none'},
 })];

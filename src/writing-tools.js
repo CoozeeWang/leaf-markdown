@@ -76,7 +76,7 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     if (!desktop) {status('本地附件导入请使用 Leaf 桌面版','error');return;}
     // File imports also protect YAML/source mode and pending bookmarks: neither
     // a source caret nor a selection of the properties may replace the block.
-    const target=point?fileDropTarget(view,{x:point.x/devicePixelRatio,y:point.y/devicePixelRatio}):null;
+    const target=point?fileDropTarget(view,point):null;
     if(point&&!target){status('请将附件拖到正文编辑区','info');return;}
     if(target?.protected)status('文档属性不能插入内容，已放到正文开头','saved');
     const b=remember(target?{from:target.pos,to:target.pos}:null);

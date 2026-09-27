@@ -22,7 +22,7 @@ window.startTest=async()=>{
   editor.undo();
   if(editor.getValue()!==source)throw Error('drop undo changed properties');
   const r=document.querySelector('.leaf-yaml').getBoundingClientRect();
-  await writing.attachments(['/fixture/native.png'],true,{x:(r.left+r.width/2)*devicePixelRatio,y:(r.top+4)*devicePixelRatio});
+  await writing.attachments(['/fixture/native.png'],true,{x:r.left+r.width/2,y:r.top+4});
   if(!editor.getValue().startsWith(source.slice(0,bodyStart(source))) || !editor.getValue().includes('![native]'))throw Error('image drop destroyed properties');
   editor.setValue(source);
   view.focus();
