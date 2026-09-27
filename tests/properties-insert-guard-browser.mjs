@@ -43,7 +43,7 @@ try{
  // The same drop over ordinary body text stays where it was aimed.
  await page.evaluate(p=>writing.attachments(['/source/second.png'],true,p),
    await page.evaluate(()=>{const r=ed.view.coordsAtPos(ed.view.state.doc.length-1);return {x:r.left,y:r.top+4};}));
- assert.ok(await page.evaluate(()=>ed.getValue().endsWith('![second](assets/second.png)')),'a drop in the body is not moved');
+ assert.ok(await page.evaluate(()=>ed.getValue().endsWith('![second](assets/second.png)\n\n')),'a drop in the body is not moved');
  // Dragging over the block offers no insertion point; the body still does.
  const over=p=>page.evaluate(p=>{
    ed.view.contentDOM.dispatchEvent(new DragEvent('dragover',{clientX:p.x,clientY:p.y,bubbles:true,cancelable:true}));
@@ -126,7 +126,7 @@ try{
   const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');
   window.v=EditorView.findFromDOM(document.querySelector('.cm-content'));
  });
- const nativePoint=await native.evaluate(()=>{const r=document.querySelector('.leaf-yaml').getBoundingClientRect();return {x:(r.left+r.width/2)*devicePixelRatio,y:(r.top+4)*devicePixelRatio};});
+ const nativePoint=await native.evaluate(()=>{const r=document.querySelector('.leaf-yaml').getBoundingClientRect(),scale=/^win/i.test(navigator.userAgentData?.platform||navigator.platform)?devicePixelRatio:1;return {x:(r.left+r.width/2)*scale,y:(r.top+4)*scale};});
  await native.evaluate(p=>emitNative('tauri://drag-over',{position:p}),nativePoint);
  assert.equal(await native.evaluate(()=>v.scrollDOM.classList.contains('cm-leaf-no-drop')),true,'native drag feedback protects the property region at Retina scale');
  await native.evaluate(()=>emitNative('tauri://drag-leave',{}));

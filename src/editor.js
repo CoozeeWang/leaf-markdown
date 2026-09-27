@@ -49,6 +49,7 @@ import { renderInline, citationSignature, citationLabel } from './inline-preview
 import { paragraphBlankLineChanges } from './blank-lines.js';
 import { frontmatter, bodyStart } from './markdown-model.js';
 import { protectPropertyInsertions } from './properties-insert-guard.js';
+import { fileDropTarget, fileDropFeedback, setFileDropTarget, setFileDragging } from './file-drop.js';
 import { paragraphDeletion, selectedParagraphDeletion } from './paragraph-delete.js';
 import {outlineFolding} from './outline-folding.js';
 import { classifyInlineTag, pairInlineTags } from './inline-html.js';
@@ -1073,6 +1074,7 @@ export function createLeafEditor(options) {
       drawSelection(),
       leafSelection,
       dropCursor(),
+      fileDropFeedback,
       highlightActiveLine(),
       bracketMatching(),
       markdown({ extensions: leafMarkdownExtensions, addKeymap: false }),
@@ -1189,14 +1191,15 @@ export function createLeafEditor(options) {
   // drop lands in the body instead, so a cursor drawn over the block would point
   // somewhere nothing can go. Source mode shows the YAML as text and stays free.
   const setDropPoint = point => {
-    const floor = guardedTop(view.state.doc);
-    const over = !!point && !!floor && (view.posAtCoords(point) ?? 0) < floor;
-    view.scrollDOM.classList.toggle('cm-leaf-no-drop', over);
+    const target = point ? fileDropTarget(view,point) : null;
+    view.scrollDOM.classList.toggle('cm-leaf-no-drop',!!target?.protected);
+    view.dispatch({effects:[setFileDropTarget.of(target && !target.protected ? target : null),setFileDragging.of(!!point)]});
   };
   for (const type of ['dragover', 'dragleave', 'dragend', 'drop']) {
     view.contentDOM.addEventListener(type, event => {
-      setDropPoint(event.type === 'dragover' && !view.state.field(sourceMode)
-        ? {x: event.clientX, y: event.clientY} : null);
+      const over=event.type==='dragover'&&!view.state.field(sourceMode)
+        && (view.posAtCoords({x:event.clientX,y:event.clientY})??0)<guardedTop(view.state.doc);
+      view.scrollDOM.classList.toggle('cm-leaf-no-drop',over);
     });
   }
 

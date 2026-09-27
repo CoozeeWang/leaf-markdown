@@ -9,7 +9,7 @@ const core = [
   'highlight-band', 'selection-compositing', 'selection-edges',
   'footnote-insert', 'footnote-live-preview', 'footnote-panel', 'footnote-auto-delete',
   'footnote-callout', 'footnote-rename', 'footnote-regressions', 'footnotes-print',
-  'version-display', 'properties-insert-guard',
+  'version-display', 'properties-insert-guard', 'image-drop', 'image-insertion',
 ].map(name => `${name}-browser.mjs`);
 const available = (await readdir('tests')).filter(name => name.endsWith('-browser.mjs')).sort();
 const args = process.argv.slice(2);

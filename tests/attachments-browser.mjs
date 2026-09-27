@@ -22,7 +22,7 @@ try{
  await page.evaluate(()=>{failImport=false;window.delay=true;window.pending=writing.attachments(['/source/photo.png']);});
  await page.waitForFunction(()=>typeof resume==='function');
  await page.evaluate(()=>{ed.view.dispatch({changes:{from:0,insert:'X'}});resume();});await page.evaluate(()=>pending);
- assert.equal(await page.evaluate(()=>ed.getValue()),'Xabc\n\n![photo](assets/photo.png)','pending insertion follows edits while import waits');
+ assert.equal(await page.evaluate(()=>ed.getValue()),'Xabc\n\n![photo](assets/photo.png)\n\n','pending insertion follows edits while import waits');
  await page.evaluate(()=>ed.undo());assert.equal(await page.evaluate(()=>ed.getValue()),'Xabc','one undo removes only attachment reference');
  assert.equal(await page.evaluate(()=>imports.length),1,'undo never deletes imported files');
  // An iPhone photo is a picture, so it arrives as one -- the old whitelist made
