@@ -126,8 +126,11 @@ export async function initDesktop(callbacks) {
     if (payload === 'undo') hooks.undo?.();
     if (payload === 'redo') hooks.redo?.();
   });
+  let draggedPaths=[];
   await window.onDragDropEvent(async ({ payload }) => {
-    hooks.drag?.(payload.type==='enter'||payload.type==='over', payload.position);
+    if(payload.paths)draggedPaths=payload.paths;
+    hooks.drag?.(payload.type==='enter'||payload.type==='over', payload.position,draggedPaths);
+    if(payload.type==='leave'||payload.type==='drop')draggedPaths=[];
     if (payload.type === 'drop') {
       const docs = payload.paths.filter(path => /\.(md|markdown|mdown)$/i.test(path));
       for (const file of docs) await invoke('open_document', { path: file });

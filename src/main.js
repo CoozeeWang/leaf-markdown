@@ -1822,6 +1822,7 @@ window.addEventListener('beforeunload', (event) => {
 for (const eventName of ['dragenter', 'dragover']) {
   window.addEventListener(eventName, (event) => {
     event.preventDefault();
+    if(desktop)return; // Tauri supplies native paths and drag coordinates below.
     dropOverlay.classList.add('visible');
   });
 }
@@ -1897,10 +1898,11 @@ if (desktop) {
     undo: () => runHistory('undo'),
     redo: () => runHistory('redo'),
     attach: (files, point) => writing.attachments(files, true, point),
-    drag(active, point) {
-      dropOverlay.classList.toggle('visible',active);
+    drag(active, point, files=[]) {
+      const opening=files.some(path=>/\.(md|markdown|mdown)$/i.test(path))||!welcomeScreen.hidden;
+      dropOverlay.classList.toggle('visible',active&&opening);
       // Native Tauri drag events do not pass through contentDOM's dragover.
-      editor.setDropPoint(active && point ? {x:point.x/devicePixelRatio,y:point.y/devicePixelRatio} : null);
+      editor.setDropPoint(active&&!opening&&!state.reading&&point ? {x:point.x/devicePixelRatio,y:point.y/devicePixelRatio} : null);
     },
     saved(content, name, path) { const changed = state.resourcePath !== path; state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); if (changed) refreshImages(); },
   }).catch(error => setStatus(`桌面初始化失败：${error}`, 'error')).finally(() => {

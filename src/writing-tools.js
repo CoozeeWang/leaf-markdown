@@ -4,6 +4,7 @@ import { syntaxTree } from '@codemirror/language';
 import { isolateHistory } from '@codemirror/commands';
 import { safeTarget, markdownLink, setResourceReader, setResourceRevealer, refreshImages } from './resources.js';
 import { bodyStart } from './markdown-model.js';
+import { fileDropTarget } from './file-drop.js';
 import { htmlToMarkdown } from './html-markdown.js';
 import { renderPrintDocument } from './print-document.js';
 import './writing.css';
@@ -54,12 +55,10 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     if (!desktop) {status('本地附件导入请使用 Leaf 桌面版','error');return;}
     // File imports also protect YAML/source mode and pending bookmarks: neither
     // a source caret nor a selection of the properties may replace the block.
-    if(point){const pos=view.posAtCoords({x:point.x/devicePixelRatio,y:point.y/devicePixelRatio});
-      if(pos!==null){
-        if(pos<bodyStart(view.state.doc.toString()))status('文档属性不能插入内容，已放到正文开头','saved');
-        view.dispatch({selection:{anchor:Math.max(pos, bodyStart(view.state.doc.toString()))}});
-      }}
-    const b=remember();
+    const target=point?fileDropTarget(view,{x:point.x/devicePixelRatio,y:point.y/devicePixelRatio}):null;
+    if(point&&!target){status('请将附件拖到正文编辑区','info');return;}
+    if(target?.protected)status('文档属性不能插入内容，已放到正文开头','saved');
+    const b=remember(target?{from:target.pos,to:target.pos}:null);
     try {
       if(!files){const paths=await choose(image);if(!paths)return;files=Array.isArray(paths)?paths:[paths];}
       if(!files.length)return;
