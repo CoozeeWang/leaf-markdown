@@ -11,6 +11,7 @@ const core = [
   'footnote-callout', 'footnote-rename', 'footnote-regressions', 'footnotes-print',
   'version-display', 'properties-insert-guard', 'image-drop', 'image-insertion',
   'paragraph-blank-lines',
+  'list-images',
   'recovery-notice', 'file-feedback', 'status-notices',
 ].map(name => `${name}-browser.mjs`);
 const available = (await readdir('tests')).filter(name => name.endsWith('-browser.mjs')).sort();
