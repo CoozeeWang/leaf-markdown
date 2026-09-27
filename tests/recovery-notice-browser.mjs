@@ -14,7 +14,7 @@ try {
    if(cmd==='recovery_delete'){entries=[];return;}return null;
   }};
  });
- await page.goto('http://127.0.0.1:41732/?document=1');await page.locator('#recoveryNotice').waitFor();
+ await page.goto('http://127.0.0.1:41732/?document=1');await page.waitForFunction(()=>document.querySelector('#fileName')?.textContent.includes('示例'));
  await page.clock.runFor(4100);assert.equal(await page.locator('#saveStatus').textContent(),'');assert.ok(await page.locator('#recoveryNotice').isVisible());
  await page.locator('#recoveryNotice').click();await page.getByRole('dialog',{name:'历史版本与草稿',exact:true}).waitFor();
  await page.locator('[data-clear]').click();const confirm=page.getByRole('alertdialog');assert.ok(await confirm.isVisible());assert.match(await confirm.textContent(),/示例.md/);
@@ -30,6 +30,32 @@ try {
  await page.clock.runFor(60);assert.equal(await page.locator('#statusAnnouncement').textContent(),'已保存');
  await page.clock.runFor(4100);assert.equal(await page.locator('#saveStatus').textContent(),'');
  await page.evaluate(async()=>{saveFails=true;const {desktopSave}=await import('/src/desktop.js');await desktopSave();});await page.clock.runFor(4100);assert.match(await page.locator('#saveStatus').textContent(),/尚未保存/);
- await page.evaluate(async()=>{saveFails=false;const {desktopSave}=await import('/src/desktop.js');await desktopSave();});assert.equal(await page.locator('#fileFeedback').textContent(),'');await page.clock.runFor(4100);assert.equal(await page.locator('#saveStatus').textContent(),'');
+ await page.evaluate(async()=>{saveFails=false;const {desktopSave}=await import('/src/desktop.js');await desktopSave();});assert.equal(await page.locator('#saveStatus').textContent(),'已保存');await page.clock.runFor(4100);assert.equal(await page.locator('#saveStatus').textContent(),'');
+
+ // All messages use one footer slot, including recovery fallback and errors.
+ const notice=page.locator('#statusNotice'), close=page.getByRole('button',{name:'关闭提示',exact:true});
+ await page.evaluate(()=>{entries=[{key:'doc',id:'draft',kind:'draft',source:'/tmp/新名字.md',timestamp:1,bytes:10}];document.dispatchEvent(new Event('leaf-recovery-changed'));});
+ await page.locator('#recoveryNotice').waitFor();
+ await close.click();assert.ok(await notice.isHidden());
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+ await page.clock.runFor(100);assert.ok(await notice.isHidden(),'focus must not undo recovery dismissal');
+ assert.equal(await page.evaluate(()=>entries.length),1,'dismissing recovery must not delete a draft');
+ // A new success temporarily takes the slot, then a still available recovery returns.
+ await page.evaluate(()=>{entries=[];document.dispatchEvent(new Event('leaf-recovery-changed'));});await page.clock.runFor(100);
+ await page.evaluate(()=>{entries=[{key:'doc',id:'new',kind:'draft'}];document.dispatchEvent(new Event('leaf-recovery-changed'));});await page.locator('#recoveryNotice').waitFor();
+ await page.evaluate(async()=>{const {desktopRename}=await import('/src/desktop.js');await desktopRename('再次改名.md');});
+ assert.ok(await page.locator('#recoveryNotice').isHidden());
+ await page.clock.runFor(3999);assert.equal(await page.locator('#saveStatus').textContent(),'已重命名');
+ await page.clock.runFor(1);assert.ok(await page.locator('#recoveryNotice').isVisible());
+ await page.evaluate(async()=>{saveFails=true;const {desktopSave}=await import('/src/desktop.js');await desktopSave();});
+ await page.clock.runFor(5000);assert.match(await page.locator('#saveStatus').textContent(),/尚未保存/);
+ assert.ok(await page.locator('#recoveryNotice').isHidden());
+ await page.locator('#tidyBlankLines').click();assert.match(await page.locator('#saveStatus').textContent(),/尚未保存/,'formatting must not hide an unresolved error');
+ await close.click();assert.ok(await page.locator('#recoveryNotice').isVisible());
+ await close.click();assert.ok(await notice.isHidden());
+ await page.evaluate(async()=>{const {desktopRestore}=await import('/src/desktop.js');await desktopRestore('# 恢复内容');});
+ assert.match(await page.locator('#saveStatus').textContent(),/自动保存暂停/);
+ await close.click();assert.ok(await notice.isHidden());
+ assert.equal(await page.evaluate(async()=>{const {desktopRecoveryPaused}=await import('/src/desktop.js');return desktopRecoveryPaused();}),true,'closing a notice must not resume autosave');
  assert.deepEqual(errors,[]);console.log('PASS direct scoped recovery entry, safe default cancel, immediate notice refresh, transient success and persistent errors');
 } finally {await browser.close();}

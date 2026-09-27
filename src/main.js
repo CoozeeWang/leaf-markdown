@@ -1,5 +1,6 @@
 import { calloutBadge } from './callout-icons.js';
 import { inlineRename } from './inline-rename.js';
+import { setupStatusNotices } from './status-notices.js';
 import { positionMenu } from './menu-position.js';
 import {installMenuInteraction} from './menu-interaction.js';
 installMenuInteraction();
@@ -94,9 +95,6 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <button id="documentMenuButton" class="filename" aria-label="文档操作" aria-haspopup="menu" aria-expanded="false"><span id="fileName"></span>${icon('chevron', 13)}</button>
         </div>
         <span id="dirty" class="dirty" aria-label="未保存"></span>
-        <span id="saveStatus" class="save-status"></span>
-        <span id="statusAnnouncement" class="status-announcement" role="status" aria-live="polite" aria-atomic="true"></span>
-        <button id="recoveryNotice" class="recovery-notice" hidden>发现恢复记录 · 查看</button>
       </div>
       <div class="topbar-actions">
       <button id="readingToggle" class="icon-control" aria-label="切换到阅读模式" aria-pressed="false" data-tooltip="切换到阅读模式  ⌘R">${icon('edit')}</button>
@@ -133,7 +131,6 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <button id="tidyBlankLines" aria-label="整理段落空行" data-tooltip="整理段落空行  ⌥⌘\\">${icon('tidy')}</button>
       <button id="displayButton" aria-label="显示" aria-haspopup="dialog" aria-expanded="false" data-tooltip="显示">${icon('eye')}</button>
     </nav>
-    <div id="fileFeedback" class="file-feedback" role="status" aria-live="polite"></div>
 
     <section class="document-area">
       <div id="editor" class="editor-host"></div>
@@ -166,8 +163,13 @@ document.querySelector('#app').innerHTML = shortcutText(`
     </section>
 
     <footer class="statusbar">
+      <div id="statusNotice" class="status-notice" hidden>
+        <span id="saveStatus" class="save-status" hidden></span>
+        <button id="recoveryNotice" class="recovery-notice" hidden>发现恢复记录 · 查看</button>
+        <button id="dismissStatus" class="dismiss-status" aria-label="关闭提示" data-tooltip="关闭提示">${icon('close', 14)}</button>
+      </div>
+      <span id="statusAnnouncement" class="status-announcement" role="status" aria-live="polite" aria-atomic="true"></span>
       <span id="cursorStatus">第 1 行，第 1 列</span>
-      <span id="saveNotice" class="save-notice" role="status" aria-live="polite"></span>
       <span id="stats"></span>
       <button id="focusButton" class="status-button icon-control" aria-label="专注模式" data-tooltip="专注模式  Esc 退出">${icon('focus', 15)}</button>
     </footer>
@@ -263,8 +265,6 @@ const fileNameElement = document.querySelector('#fileName');
 const dirtyElement = document.querySelector('#dirty');
 const statsElement = document.querySelector('#stats');
 const cursorStatus = document.querySelector('#cursorStatus');
-const saveStatus = document.querySelector('#saveStatus');
-const saveNotice = document.querySelector('#saveNotice');
 const outlineDrawer = document.querySelector('#outlineDrawer');
 
 const outlineList = document.querySelector('#outlineList');
@@ -294,39 +294,16 @@ const dropOverlay = document.querySelector('#dropOverlay');
 const tooltip = document.querySelector('#tooltip');
 const welcomeScreen = document.querySelector('#welcomeScreen');
 
-let statusTimer, announcementTimer, saveNoticeTimer;
-// Opening a document reports its save mode in the statusbar instead of the
-// topbar, where a notice under the filename crowded the format toolbar.
-function showSaveNotice(text) {
-  clearTimeout(saveNoticeTimer);
-  // The welcome hint ("打开文件后自动保存") never auto-clears; opening a
-  // document must not leave it stranded under the filename.
-  saveStatus.textContent = ''; delete saveStatus.dataset.kind;
-  saveNotice.textContent = shortcutText(text);
-  saveNotice.dataset.kind = 'saved';
-  saveNoticeTimer = setTimeout(() => { saveNotice.textContent = ''; delete saveNotice.dataset.kind; }, 4000);
-}
-function setStatus(text, kind = '', { announce = true } = {}) {
-  clearTimeout(statusTimer);
-  clearTimeout(announcementTimer);
-  const announcement = document.querySelector('#statusAnnouncement');
-  announcement.textContent = '';
-  // Announce deliberate actions, without narrating background autosaves.
-  if (announce && (kind === 'saved' || kind === 'info') && !/^(已自动保存|已开启自动保存|已载入外部修改)/.test(text)) {
-    announcementTimer = setTimeout(() => { announcement.textContent = shortcutText(text); }, 50);
-  }
-  saveStatus.textContent = shortcutText(text);
-  saveStatus.dataset.kind = kind;
-  if (kind === 'saved' || kind === 'info') {
-    statusTimer = setTimeout(() => { saveStatus.textContent = ''; delete saveStatus.dataset.kind; }, 4000);
-  }
-  const feedback = document.querySelector('#fileFeedback');
-  if (kind === 'error' || (kind === 'manual' && /自动保存暂停|检查后|选择保存位置/.test(text) && feedback.dataset.kind !== 'error')) {
-    feedback.textContent = shortcutText(text); feedback.dataset.kind = kind;
-  } else if (kind === 'saved' && /^(已保存|已自动保存|已下载保存副本|已载入外部修改|已开启自动保存)/.test(text)) {
-    feedback.textContent = ''; delete feedback.dataset.kind;
-  }
-}
+const statusNotices = setupStatusNotices({
+  container: document.querySelector('#statusNotice'),
+  text: document.querySelector('#saveStatus'),
+  recovery: document.querySelector('#recoveryNotice'),
+  dismiss: document.querySelector('#dismissStatus'),
+  announcement: document.querySelector('#statusAnnouncement'),
+  format: shortcutText,
+});
+const setStatus = statusNotices.show;
+const showSaveNotice = text => setStatus(text, 'saved', { announce: false });
 
 function renameCurrentDocument(){
   if(shell.classList.contains('welcome-state')||document.querySelector('.inline-rename'))return;
@@ -1039,8 +1016,7 @@ async function renderRecentFiles() {
 }
 
 async function setDocument(content, name, handle = null, file = null) {
-  const feedback = document.querySelector('#fileFeedback');
-  feedback.textContent = ''; delete feedback.dataset.kind;
+  statusNotices.reset();
   collapsedOutline.clear();
   state.outline = [];
   outlineList.replaceChildren();
@@ -1854,7 +1830,6 @@ updateDocumentChrome();
 updateHistoryControls();
 renderOutline(welcome);
 renderRecentFiles();
-setStatus('打开文件后自动保存', 'manual');
 
 // macOS routes Cmd-Z through the application menu, so the shortcut never
 // reaches the editor's own history binding. The menu event comes back here:
@@ -1876,7 +1851,7 @@ if (desktop) {
     content: () => state.content,
     dirty: () => state.content !== state.savedContent,
     status: setStatus,
-    recoveryAvailable: available => { document.querySelector('#recoveryNotice').hidden = !available; },
+    recoveryAvailable: statusNotices.recoveryAvailable,
     load: (content, name, path) => { state.resourcePath = path; return setDocument(content, name); },
     recovery: () => showRecovery({ invoke, restore: desktopRestore, drafts: !welcomeScreen.hidden }),
     restore: content => { clearTimeout(state.saveTimer); editor.restoreValue(content); if (state.reading) renderReading(); },
