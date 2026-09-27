@@ -324,8 +324,8 @@ class StructuredBlock extends WidgetType {
       if (field) {
         const raw = view.state.doc.sliceString(field.from, field.to);
         if (raw.endsWith('\n')) insert += raw.endsWith('\r\n') ? '\r\n' : '\n';
-        edit(view, {from: field.from, to: field.to, insert});
-      } else edit(view, {from: root._widget.block.to - 3, insert});
+        edit(view, {from: field.from, to: field.to, insert}, 'input.properties');
+      } else edit(view, {from: root._widget.block.to - 3, insert}, 'input.properties');
     }, () => view.focus(), () => {
       const b=root._widget.block;
       const raw=view.state.doc.sliceString(b.from,b.to);
@@ -335,7 +335,7 @@ class StructuredBlock extends WidgetType {
     }, index => {
       const change=propertyRemovalChange(view.state.doc.toString(),index);
       if(!change)return;
-      view.dispatch({changes:change,userEvent:'delete',annotations:isolateHistory.of('full')});
+      view.dispatch({changes:change,userEvent:'delete.properties',annotations:isolateHistory.of('full')});
       view.focus();
     });
   }

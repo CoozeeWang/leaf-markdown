@@ -37,6 +37,15 @@ export function frontmatter(source) {
   return { kind: 'yaml', from: 0, to: match[0].length, fields, valid: !parsed.errors.length && (isMap(parsed.contents) || !firstContent) };
 }
 
+// The first body position is after the closing delimiter's newline. When a
+// property-only document ends at the delimiter, an insertion at this offset
+// must add a newline before text; the offset alone does not create a body line.
+export function bodyStart(source, yaml = frontmatter(source)) {
+  if (!yaml) return 0;
+  const after = source.slice(yaml.to, yaml.to + 2);
+  return yaml.to + (after === '\r\n' ? 2 : after.startsWith('\n') ? 1 : 0);
+}
+
 export function rowCells(text, offset = 0) {
   const pipes = [];
   for (let i = 0; i < text.length; i++) {

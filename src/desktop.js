@@ -127,7 +127,7 @@ export async function initDesktop(callbacks) {
     if (payload === 'redo') hooks.redo?.();
   });
   await window.onDragDropEvent(async ({ payload }) => {
-    hooks.drag?.(payload.type==='enter'||payload.type==='over');
+    hooks.drag?.(payload.type==='enter'||payload.type==='over', payload.position);
     if (payload.type === 'drop') {
       const docs = payload.paths.filter(path => /\.(md|markdown|mdown)$/i.test(path));
       for (const file of docs) await invoke('open_document', { path: file });

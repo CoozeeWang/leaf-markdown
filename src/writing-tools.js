@@ -3,6 +3,7 @@ import { EditorView } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import { isolateHistory } from '@codemirror/commands';
 import { safeTarget, markdownLink, setResourceReader, setResourceRevealer, refreshImages } from './resources.js';
+import { bodyStart } from './markdown-model.js';
 import { htmlToMarkdown } from './html-markdown.js';
 import { renderPrintDocument } from './print-document.js';
 import './writing.css';
@@ -51,7 +52,13 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
   async function attachments(files, image=true, point=null) {
     if (!editable()) return;
     if (!desktop) {status('本地附件导入请使用 Leaf 桌面版','error');return;}
-    if(point){const pos=view.posAtCoords({x:point.x/devicePixelRatio,y:point.y/devicePixelRatio});if(pos!==null)view.dispatch({selection:{anchor:pos}});}
+    // File imports also protect YAML/source mode and pending bookmarks: neither
+    // a source caret nor a selection of the properties may replace the block.
+    if(point){const pos=view.posAtCoords({x:point.x/devicePixelRatio,y:point.y/devicePixelRatio});
+      if(pos!==null){
+        if(pos<bodyStart(view.state.doc.toString()))status('文档属性不能插入内容，已放到正文开头','saved');
+        view.dispatch({selection:{anchor:Math.max(pos, bodyStart(view.state.doc.toString()))}});
+      }}
     const b=remember();
     try {
       if(!files){const paths=await choose(image);if(!paths)return;files=Array.isArray(paths)?paths:[paths];}
@@ -69,6 +76,8 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
           const isImage=/\.(png|jpe?g|gif|webp|bmp|heic|heif|svg)$/i.test(name);
           links.push(markdownLink(isImage?name.replace(/\.[^.]+$/,''):name,encodeURI(relative),isImage));
         }
+        const floor=bodyStart(view.state.doc.toString());
+        b.from=Math.max(b.from,floor); b.to=Math.max(b.to,b.from);
         const before=view.state.doc.sliceString(0,b.from), after=view.state.doc.sliceString(b.to);
         const prefix=before&&!before.endsWith('\n\n')?(before.endsWith('\n')?'\n':'\n\n'):'';
         const suffix=after&&!after.startsWith('\n\n')?(after.startsWith('\n')?'\n':'\n\n'):'';

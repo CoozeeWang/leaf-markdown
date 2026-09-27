@@ -1897,7 +1897,11 @@ if (desktop) {
     undo: () => runHistory('undo'),
     redo: () => runHistory('redo'),
     attach: (files, point) => writing.attachments(files, true, point),
-    drag(active) { dropOverlay.classList.toggle('visible',active); },
+    drag(active, point) {
+      dropOverlay.classList.toggle('visible',active);
+      // Native Tauri drag events do not pass through contentDOM's dragover.
+      editor.setDropPoint(active && point ? {x:point.x/devicePixelRatio,y:point.y/devicePixelRatio} : null);
+    },
     saved(content, name, path) { const changed = state.resourcePath !== path; state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); if (changed) refreshImages(); },
   }).catch(error => setStatus(`桌面初始化失败：${error}`, 'error')).finally(() => {
     shell.style.pointerEvents = '';

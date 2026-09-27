@@ -1,0 +1,45 @@
+<!doctype html><html><meta charset="utf-8">
+<nav class="format-toolbar"><span class="toolbar-spacer"></span></nav>
+<div id="editor" style="height:700px"></div>
+<script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import {setupWriting} from '/src/writing-tools.js';
+import {frontmatter,bodyStart} from '/src/markdown-model.js';
+import '/src/style.css';
+const pause=()=>new Promise(resolve=>setTimeout(resolve,150));
+const source='---\ntitle: Native properties\n---\n\nBody';
+window.startTest=async()=>{
+ try {
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:source}),view=editor.view;
+  const writing=setupWriting({editor,desktop:true,icon:()=>'',status:()=>{},editable:()=>true,
+   save:async()=>true,choose:async()=>[],serialized:fn=>fn(),
+   invoke:async(command,args)=>{if(command==='import_attachment')return 'assets/'+args.name;throw Error('fixture resource unavailable');}});
+  await pause();
+  // Direct insertion and attachment drop positioning are executed in macOS
+  // WKWebView. File import is mocked; this is not a native file-manager drag.
+  view.dispatch({changes:{from:0,insert:'Dropped'},selection:{anchor:7},userEvent:'input.drop'});
+  if(!frontmatter(editor.getValue()))throw Error('text drop destroyed properties');
+  editor.undo();
+  if(editor.getValue()!==source)throw Error('drop undo changed properties');
+  const r=document.querySelector('.leaf-yaml').getBoundingClientRect();
+  await writing.attachments(['/fixture/native.png'],true,{x:(r.left+r.width/2)*devicePixelRatio,y:(r.top+4)*devicePixelRatio});
+  if(!editor.getValue().startsWith(source.slice(0,bodyStart(source))) || !editor.getValue().includes('![native]'))throw Error('image drop destroyed properties');
+  editor.setValue(source);
+  view.focus();
+  let trusted=false;
+  view.contentDOM.addEventListener('keydown',event=>{
+   trusted=event.isTrusted;
+   setTimeout(()=>{
+    try {
+     if(!trusted)throw Error('expected a native AppKit key');
+     if(editor.getValue()!==source)throw Error('native Backspace destroyed properties');
+     if(view.state.selection.main.head!==bodyStart(source))throw Error('native Backspace left the caret inside properties');
+     document.title='LeafTest PASS native WKWebView property boundary, text/image insertion and trusted Backspace';
+    }catch(error){document.title='LeafTest FAIL '+error.message;}
+   },200);
+  },true);
+  document.title='LeafKey 0';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};
+document.title='LeafSource';
+</script></html>
