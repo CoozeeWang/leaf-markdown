@@ -1,8 +1,10 @@
 import {chromium,launchOptions} from './browser-runtime.mjs';
 import {desktopImageFixture} from './fixtures/desktop-image.mjs';
 import assert from 'node:assert/strict';
+import {webkit} from 'playwright';
 const source='---\ntitle: Image drop\n---\n\n'+Array.from({length:45},(_,i)=>`Paragraph ${i+1}: a distinct insertion target.`).join('\n\n');
-const browser=await chromium.launch(launchOptions);
+for(const [engine,options] of [[chromium,launchOptions],[webkit,{headless:true}]]) {
+const browser=await engine.launch(options);
 try {
   // Wry 0.55 macOS payloads contain AppKit points, not backing pixels;
   // Windows payloads contain client physical pixels. Do not make a single
@@ -43,8 +45,40 @@ try {
     await page.evaluate(position=>emitNative('tauri://drag-enter',{paths:['/fixture/open.md'],position}),point);
     assert.equal(await page.locator('#dropOverlay').isVisible(),true,'Markdown document drag still offers opening');
     await page.evaluate(()=>emitNative('tauri://drag-leave',{}));
+    // Use the rendered text row, not the editor's default caret rectangle:
+    // at a soft wrap, one source position belongs to two different rows.
+    await page.evaluate(()=>{
+      const doc='---\ntitle: Wrapped drop\n---\n\nWrapped target: '+('图片拖放位置应与鼠标所在的视觉行一致。'.repeat(16));
+      v.dispatch({changes:{from:0,to:v.state.doc.length,insert:doc},selection:{anchor:doc.indexOf('Wrapped target:')},scrollIntoView:true});v.focus();
+    });
+    await page.waitForTimeout(150);
+    const wrapPoint=await page.evaluate(platform=>{
+      const line=Array.from(v.contentDOM.querySelectorAll('.cm-line')).find(el=>el.textContent.startsWith('Wrapped target:'));
+      const range=document.createRange();range.selectNodeContents(line);
+      const rects=Array.from(range.getClientRects()).filter(r=>r.height>0);
+      if(!rects.some(r=>r.top>rects[0].top+10))throw Error('fixture must wrap across visual rows');
+      const first=rects[0],bounds=line.getBoundingClientRect(),factor=platform==='macOS'?1:devicePixelRatio;
+      return {x:(bounds.right-8)*factor,y:(first.top+first.bottom)/2*factor};
+    },platform);
+    await page.evaluate(position=>emitNative('tauri://drag-enter',{paths:['/fixture/dropped.svg'],position}),wrapPoint);
+    await page.waitForSelector('.leaf-file-drop-cursor');
+    const wrappedMarker=await page.locator('.leaf-file-drop-cursor').boundingBox();
+    assert.ok(wrapPoint.y/factor>=wrappedMarker.y&&wrapPoint.y/factor<=wrappedMarker.y+wrappedMarker.height,`${engine.name()}/${platform}/${scale}: a wrapped-row end must not draw the marker on the next row`);
+    const nextRow=await page.evaluate(platform=>{
+      const line=Array.from(v.contentDOM.querySelectorAll('.cm-line')).find(el=>el.textContent.startsWith('Wrapped target:'));
+      const range=document.createRange();range.selectNodeContents(line);
+      const rects=Array.from(range.getClientRects()).filter(r=>r.height>0),second=rects.find(r=>r.top>rects[0].top+10);
+      const factor=platform==='macOS'?1:devicePixelRatio;
+      return {x:second.left*factor,y:(second.top+second.bottom)/2*factor};
+    },platform);
+    await page.evaluate(position=>emitNative('tauri://drag-over',{position}),nextRow);
+    await page.waitForFunction(y=>{
+      const r=document.querySelector('.leaf-file-drop-cursor').getBoundingClientRect();return y>=r.top&&y<=r.bottom;
+    },nextRow.y/factor);
+    await page.evaluate(()=>emitNative('tauri://drag-leave',{}));
     assert.deepEqual(errors,[]);
     await page.close();
   }
-  console.log('PASS macOS/Windows native coordinate contracts at scale 1/1.5/2, aligned single marker, cancel and exact image drop');
+  console.log(`PASS ${engine.name()}: macOS/Windows native coordinate contracts at scale 1/1.5/2, aligned single marker including both sides of soft wraps, cancel and exact image drop`);
 }finally{await browser.close();}
+}

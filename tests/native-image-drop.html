@@ -1,0 +1,33 @@
+<!doctype html><html><meta charset="utf-8">
+<div id="editor" style="height:700px;--content-width:780px;--editor-font-size:17px"></div>
+<script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import '/src/style.css';
+const pause=()=>new Promise(resolve=>setTimeout(resolve,150));
+window.startTest=async()=>{
+ try {
+  const source='---\ntitle: Native wrapped drop\n---\n\nWrapped target: '+('图片拖放位置应与鼠标所在的视觉行一致。'.repeat(16));
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:source}),view=editor.view;
+  const original=source.indexOf('Wrapped target:');
+  view.dispatch({selection:{anchor:original},scrollIntoView:true});
+  await pause();
+  const line=Array.from(view.contentDOM.querySelectorAll('.cm-line')).find(el=>el.textContent.startsWith('Wrapped target:'));
+  const range=document.createRange();range.selectNodeContents(line);
+  const rects=Array.from(range.getClientRects()).filter(r=>r.height>0),first=rects[0];
+  if(!rects.some(r=>r.top>first.top+10))throw Error('fixture does not wrap');
+  const point={x:line.getBoundingClientRect().right-8,y:(first.top+first.bottom)/2};
+  const oldRect=view.coordsAtPos(view.posAtCoords(point,false));
+  if(point.y>=oldRect.top&&point.y<=oldRect.bottom)throw Error('fixture must expose the lost visual-row association');
+  editor.setDropPoint(point);
+  await pause();
+  const marker=document.querySelector('.leaf-file-drop-cursor').getBoundingClientRect();
+  if(point.y<marker.top||point.y>marker.bottom)throw Error('marker jumped to the next visual row');
+  if(view.state.selection.main.head!==original)throw Error('dragging moved the typing caret');
+  editor.setDropPoint(null);
+  if(document.querySelector('.leaf-file-drop-cursor')||view.dom.classList.contains('leaf-file-dragging'))throw Error('cancel did not restore the caret');
+  if(editor.getValue()!==source)throw Error('drag feedback changed the document');
+  document.title='LeafTest PASS native WKWebView soft-wrap drop marker, unchanged typing caret and cancel';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};
+document.title='LeafSource';
+</script></html>

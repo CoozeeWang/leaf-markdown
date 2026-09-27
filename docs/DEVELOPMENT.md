@@ -35,6 +35,8 @@ cargo run --locked --example native-table-keys -- ../tests/native-image-insertio
 
 `--foreground` 会短暂激活测试窗口，以真实焦点验证延迟图片加载后的光标可见性和 AppKit 退格。图片导入和资源字节是合成的；这不代替 Finder 拖放、原生文件选择器或 Windows 真机验收。省略此参数时保留原有后台键盘检查行为。
 
+拖放标记的自动换行定位检查可用同一入口运行 `../tests/native-image-drop.html` 与 `http://127.0.0.1:41732/tests/native-image-drop.html`，无需 `--foreground`。它在实际 macOS WKWebView 中核对标记所在的视觉行、原光标不移动及取消恢复，但输入坐标是测试构造的，不代表 Finder 真拖放已验收。浏览器拖放回归同时覆盖 Chromium 与 WebKit。
+
 ## 开发与打包 / Development and packaging
 
 ```sh

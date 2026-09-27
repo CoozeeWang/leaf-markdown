@@ -1193,7 +1193,7 @@ export function createLeafEditor(options) {
   const setDropPoint = point => {
     const target = point ? fileDropTarget(view,point) : null;
     view.scrollDOM.classList.toggle('cm-leaf-no-drop',!!target?.protected);
-    view.dispatch({effects:[setFileDropTarget.of(target && !target.protected ? target.pos : null),setFileDragging.of(!!point)]});
+    view.dispatch({effects:[setFileDropTarget.of(target && !target.protected ? target : null),setFileDragging.of(!!point)]});
   };
   for (const type of ['dragover', 'dragleave', 'dragend', 'drop']) {
     view.contentDOM.addEventListener(type, event => {
