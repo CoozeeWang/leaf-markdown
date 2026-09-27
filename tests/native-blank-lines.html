@@ -1,0 +1,29 @@
+<!doctype html><html><meta charset="utf-8"><div id="editor" style="height:700px"></div><script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import {source, expected} from '/tests/fixtures/paragraph-blank-lines.mjs';
+import '/src/style.css';
+window.startTest=async()=>{
+ try {
+  let changed='';
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:source,onChange:value=>{changed=value;}});
+  const check=(condition,message)=>{if(!condition)throw Error(message);};
+  check(editor.getValue()===source,'opening changed source');
+  check(editor.tidyBlankLines()>0,'cleanup did not change gaps');
+  check(editor.getValue()===expected&&changed===expected,'preview and save callback must share cleaned source');
+  await new Promise(resolve=>setTimeout(resolve,150));
+  check(document.querySelector('.cm-content').textContent.includes('末段'),'preview lost final paragraph');
+  editor.undo();check(editor.getValue()===source,'one undo must restore source and ordered markers');
+  editor.redo();check(editor.getValue()===expected,'redo must restore cleanup');
+  check(editor.tidyBlankLines()===0,'second cleanup must be a no-op');
+  editor.undo();check(editor.getValue()===source,'no-op added an undo step');
+  editor.setValue(source.replace(/\n/g,'\r\n'));
+  editor.tidyBlankLines();
+  check(editor.getValue()===expected.replace(/\n/g,'\r\n'),'CRLF save source changed line endings');
+  editor.setValue(source);editor.setSource(true);
+  editor.tidyBlankLines();check(editor.getValue()===expected,'source mode cleanup differs');
+  editor.setSource(false);check(editor.getValue()===expected,'preview differs from source mode');
+  document.title='LeafTest PASS native blank-line cleanup, preview, save callback, undo/redo, no-op and CRLF';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};
+document.title='LeafSource';
+</script></html>
