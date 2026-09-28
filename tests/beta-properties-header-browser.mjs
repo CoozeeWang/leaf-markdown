@@ -25,7 +25,7 @@ try {
  for(const width of [900,1000,1100,1500]) {
   await page.setViewportSize({width,height:800});
   for(const desktop of [false,true]) {
-   await page.evaluate(desktop=>{document.querySelector('#recentButton').hidden=desktop;document.querySelector('#fileName').textContent='使用反馈_0.4-beta-这是一篇很长的文件名.md';},desktop);
+   await page.evaluate(desktop=>{document.querySelector('#openButton').hidden=desktop;document.querySelector('#recentButton').hidden=desktop;document.querySelector('#fileName').textContent='使用反馈_0.4-beta-这是一篇很长的文件名.md';},desktop);
    const m=await page.evaluate(()=>{
     const b=s=>document.querySelector(s).getBoundingClientRect();const center=b('.document-primary'),brand=b('.brand'),actions=b('.topbar-actions'),small=b('.brand-copy small');
     return {offset:Math.abs((center.left+center.right)/2-innerWidth/2),gapLeft:center.left-brand.right,gapRight:actions.left-center.right,tagline:small.width>0&&small.height>0};

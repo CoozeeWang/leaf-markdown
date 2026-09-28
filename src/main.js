@@ -90,7 +90,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
       </div>
       <div class="document-controls">
         <div class="document-primary">
-        <button id="openButton" class="primary icon-control" aria-label="打开文件" data-tooltip="打开文件  ⌘O">${icon('open')}</button>
+        ${desktop ? '' : `<button id="openButton" class="primary icon-control" aria-label="打开文件" data-tooltip="打开文件  ⌘O">${icon('open')}</button>`}
         <button id="recentButton" class="icon-control" aria-label="最近打开" data-tooltip="最近打开">${icon('history')}</button>
         <button id="documentMenuButton" class="filename" aria-label="文档操作" aria-haspopup="menu" aria-expanded="false"><span id="fileName"></span>${icon('chevron', 13)}</button>
         </div>
@@ -1366,7 +1366,7 @@ function toggleFocusMode() {
   if (!state.focusMode) editor.focus();
 }
 
-document.querySelector('#openButton').addEventListener('click', openFile);
+document.querySelector('#openButton')?.addEventListener('click', openFile);
 document.querySelector('#exportButton').addEventListener('click', exportPdf);
 document.querySelector('#exportBundleButton').addEventListener('click', exportBundle);
 document.querySelector('#searchButton').addEventListener('click', openDocumentSearch);
