@@ -53,6 +53,16 @@ for (const [name, engine, options] of [['chromium',chromium,launchOptions],['web
    await page.keyboard.press('Shift+Tab');
    assert.equal(await get(),detached,'repeated outdent adds no blank lines');
   }
+  // Real users click the rendered image before pressing Shift+Tab. A direct
+  // dispatch to the image source misses focus and widget event problems.
+  await set('- First\n![photo](assets/photo.svg)\n- Second');
+  await verifyViews(true);
+  await page.locator('.cm-line .leaf-image').click();
+  const clicked=await page.evaluate(()=>({focus:v.hasFocus,line:v.state.doc.lineAt(v.state.selection.main.head).text}));
+  assert.equal(clicked.focus,true,'clicking the preview focuses the editor');
+  assert.match(clicked.line,/!\[photo\]/);
+  await page.keyboard.press('Shift+Tab');
+  assert.match(await get(),/^- First\n\n!\[photo\]/,'Shift+Tab after clicking the preview detaches it');
   await set('- First\n![photo](assets/photo.svg)\n- Second');
   await page.click('#readingToggle');await page.locator('[data-mode=source]').click();
   await page.evaluate(()=>{v.dispatch({selection:{anchor:v.state.doc.toString().indexOf('![')}});v.focus();});

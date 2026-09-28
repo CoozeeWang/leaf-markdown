@@ -13,7 +13,8 @@ window.startTest=async()=>{
   const source='- First\n  ![photo](assets/photo.svg)\n- Second';
   const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:source}),view=editor.view;
   const select=()=>{view.dispatch({selection:{anchor:editor.getValue().indexOf('![')}});view.focus();};
-  // Actual WKWebView layout/keymap; key events and resource bytes are synthetic.
+  // Actual WKWebView layout/keymap; resource bytes are synthetic. The harness
+  // sends Shift+Tab through AppKit, so the keyboard event is trusted.
   const key=(value,shift=false)=>view.contentDOM.dispatchEvent(new KeyboardEvent('keydown',{key:value,code:value,shiftKey:shift,bubbles:true,cancelable:true}));
   const check=async expected=>{
    view.dispatch({selection:{anchor:view.state.doc.length}});await pause();
@@ -24,14 +25,26 @@ window.startTest=async()=>{
    const root=document.createElement('div');renderPrintDocument(root,editor.getValue(),{fallbackTitle:false});
    if(Boolean(root.querySelector('.leaf-image').closest('li'))!==expected)throw Error('reading/export membership differs');
   };
-  await check(true);select();key('Tab',true);await check(false);
+  await check(true);select();
+  view.contentDOM.addEventListener('keydown',event=>{
+   setTimeout(async()=>{
+    try {
+     if(!event.isTrusted||event.key!=='Tab'||!event.shiftKey)throw Error('expected native Shift+Tab');
+     await check(false);
+     continueTest();
+    }catch(error){document.title='LeafTest FAIL '+error.message;}
+   },200);
+  },{capture:true,once:true});
+  document.title='LeafKey ShiftTab';
+  async function continueTest(){try {
   const detached=editor.getValue();
   if(detached!=='- First\n\n![photo](assets/photo.svg)\n- Second')throw Error('outdent changed adjacent list text');
   editor.undo();if(editor.getValue()!==source)throw Error('outdent is not one undo');
   editor.redo();if(editor.getValue()!==detached)throw Error('redo changed source');
   select();key('Tab');await check(true);select();key('Tab',true);await check(false);
   if(editor.getValue()!==detached)throw Error('reindent/outdent did not round trip');
-  document.title='LeafTest PASS WKWebView list image source/preview/export, keymap, undo/redo and reindent';
+  document.title='LeafTest PASS WKWebView trusted Shift+Tab, list image source/preview/export, undo/redo and reindent';
+  }catch(error){document.title='LeafTest FAIL '+error.message;}}
  }catch(error){document.title='LeafTest FAIL '+error.message;}
 };
 document.title='LeafSource';
