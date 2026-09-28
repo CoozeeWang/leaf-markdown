@@ -1070,7 +1070,8 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .topbar .brand-copy small { display:block; white-space:nowrap; }
 .document-controls { display:flex; align-items:center; flex:0 1 auto; min-width:0; gap:3px; }
 .document-primary { display:flex; align-items:center; gap:5px; min-width:0; }
-.topbar #documentMenuButton { max-width:300px; margin-left:0; }
+.topbar #documentMenuButton { max-width:300px; margin-left:0; border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.topbar #documentMenuButton:is(:hover, :focus-visible, [aria-expanded="true"]) { border-color:var(--accent); background:var(--accent-soft); outline:none; }
 .topbar-actions { display:flex; align-items:center; justify-content:flex-end; flex:0 1 auto; min-width:0; gap:8px; margin-left:auto; }
 .document-controls #dirty { flex:0 0 8px; }
 @media (max-width: 899px) {
