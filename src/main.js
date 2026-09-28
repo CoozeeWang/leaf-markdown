@@ -88,21 +88,21 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <img class="brand-mark" src="/leaf-icon.png" alt="" aria-hidden="true" />
         <span class="brand-copy"><strong>Leaf</strong><small>Markdown Editor</small></span>
       </div>
-      <div class="document-controls">
-        <div class="document-primary">
-        <button id="openButton" class="primary icon-control" aria-label="打开文件" data-tooltip="打开文件  ⌘O">${icon('open')}</button>
-        <button id="recentButton" class="icon-control" aria-label="最近打开" data-tooltip="最近打开">${icon('history')}</button>
-        <button id="documentMenuButton" class="filename" aria-label="文档操作" aria-haspopup="menu" aria-expanded="false"><span id="fileName"></span>${icon('chevron', 13)}</button>
-        </div>
-        <span id="dirty" class="dirty" aria-label="未保存"></span>
-      </div>
       <div class="topbar-actions">
-      <button id="readingToggle" class="icon-control" aria-label="切换到阅读模式" aria-pressed="false" data-tooltip="切换到阅读模式  ⌘R">${icon('edit')}</button>
-      <button id="searchButton" class="icon-control" aria-label="查找" data-tooltip="文内查找  ⌘F">${icon('search')}</button>
-      <button id="commandsButton" class="icon-control" aria-label="命令面板" data-tooltip="命令面板  ⌘P">${icon('commands')}</button>
-      <button id="saveButton" class="icon-control" aria-label="保存" data-tooltip="保存  ⌘S">${icon('save')}</button>
-      <button id="exportMenuButton" class="icon-control" aria-label="导出" aria-haspopup="menu" aria-expanded="false" data-tooltip="导出  ⌘E">${icon('export')}</button>
-      <button id="appearanceButton" class="icon-control" aria-label="设置" aria-haspopup="dialog" aria-expanded="false" data-tooltip="设置  ⌥⌘,">${icon('appearance', 16)}</button>
+        <div class="document-controls">
+          <div class="document-primary">
+            ${desktop ? '' : `<button id="openButton" class="primary icon-control" aria-label="打开文件" data-tooltip="打开文件  ⌘O">${icon('open')}</button>`}
+            <button id="recentButton" class="icon-control" aria-label="最近打开" data-tooltip="最近打开">${icon('history')}</button>
+            <button id="documentMenuButton" class="filename" aria-label="文档操作" aria-haspopup="menu" aria-expanded="false"><span id="fileName"></span>${icon('chevron', 13)}</button>
+          </div>
+          <span id="dirty" class="dirty" aria-label="未保存"></span>
+        </div>
+        <button id="readingToggle" class="icon-control" aria-label="切换到阅读模式" aria-pressed="false" data-tooltip="切换到阅读模式  ⌘R">${icon('edit')}</button>
+        <button id="searchButton" class="icon-control" aria-label="查找" data-tooltip="文内查找  ⌘F">${icon('search')}</button>
+        <button id="commandsButton" class="icon-control" aria-label="命令面板" data-tooltip="命令面板  ⌘P">${icon('commands')}</button>
+        <button id="saveButton" class="icon-control" aria-label="保存" data-tooltip="保存  ⌘S">${icon('save')}</button>
+        <button id="exportMenuButton" class="icon-control" aria-label="导出" aria-haspopup="menu" aria-expanded="false" data-tooltip="导出  ⌘E">${icon('export')}</button>
+        <button id="appearanceButton" class="icon-control" aria-label="设置" aria-haspopup="dialog" aria-expanded="false" data-tooltip="设置  ⌥⌘,">${icon('appearance', 16)}</button>
       </div>
     </header>
 
@@ -1366,7 +1366,7 @@ function toggleFocusMode() {
   if (!state.focusMode) editor.focus();
 }
 
-document.querySelector('#openButton').addEventListener('click', openFile);
+document.querySelector('#openButton')?.addEventListener('click', openFile);
 document.querySelector('#exportButton').addEventListener('click', exportPdf);
 document.querySelector('#exportBundleButton').addEventListener('click', exportBundle);
 document.querySelector('#searchButton').addEventListener('click', openDocumentSearch);

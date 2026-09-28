@@ -35,6 +35,8 @@ async function documentPage(path) {
 
 try {
   const { page, errors } = await documentPage('/测试目录/原文.md');
+  assert.equal(await page.locator('#openButton').count(), 0, 'desktop title bar has no open-file button');
+  assert.equal(await page.locator('#welcomeOpenButton').count(), 1, 'welcome screen keeps its open-file button');
   const content = () => page.locator('.cm-content').evaluate(element => {
     const copy = element.cloneNode(true);
     copy.querySelector('.leaf-default-title')?.remove();

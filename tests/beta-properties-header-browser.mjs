@@ -25,14 +25,15 @@ try {
  for(const width of [900,1000,1100,1500]) {
   await page.setViewportSize({width,height:800});
   for(const desktop of [false,true]) {
-   await page.evaluate(desktop=>{document.querySelector('#recentButton').hidden=desktop;document.querySelector('#fileName').textContent='使用反馈_0.4-beta-这是一篇很长的文件名.md';},desktop);
+   await page.evaluate(desktop=>{document.querySelector('#openButton').hidden=desktop;document.querySelector('#recentButton').hidden=desktop;document.querySelector('#fileName').textContent='使用反馈_0.4-beta-这是一篇很长的文件名.md';},desktop);
    const m=await page.evaluate(()=>{
-    const b=s=>document.querySelector(s).getBoundingClientRect();const center=b('.document-primary'),brand=b('.brand'),actions=b('.topbar-actions'),small=b('.brand-copy small');
-    return {offset:Math.abs((center.left+center.right)/2-innerWidth/2),gapLeft:center.left-brand.right,gapRight:actions.left-center.right,tagline:small.width>0&&small.height>0};
+    const b=s=>document.querySelector(s).getBoundingClientRect();const doc=b('.document-controls'),brand=b('.brand'),mode=b('#readingToggle'),actions=b('.topbar-actions'),small=b('.brand-copy small');
+    return {gapBrand:doc.left-brand.right,gapMode:mode.left-doc.right,rightInset:innerWidth-actions.right,filenameWidth:b('#documentMenuButton').width,tagline:small.width>0&&small.height>0};
    });
-   assert.ok(m.offset<1,JSON.stringify({width,desktop,...m}));assert.ok(m.gapLeft>=8&&m.gapRight>=8,JSON.stringify(m));assert.ok(m.tagline);
+   assert.ok(m.gapBrand>=8&&m.gapMode>=8&&m.gapMode<=20,JSON.stringify({width,desktop,...m}));
+   assert.ok(m.rightInset>=8&&m.rightInset<=24&&m.filenameWidth>=64,JSON.stringify(m));assert.ok(m.tagline);
   }
   if(width===900)for(const theme of ['light','dark']){await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);await page.screenshot({path:artifactPath(`leaf-beta-header-${theme}-900.png`)});}
  }
- assert.deepEqual(errors,[]);console.log('PASS Return commit, IME guard, abandoned empty properties, centered header and visible branding at 900–1500px');
+ assert.deepEqual(errors,[]);console.log('PASS Return commit, IME guard, abandoned empty properties, right-side document menu and visible branding at 900–1500px');
 }finally{await browser.close();}
