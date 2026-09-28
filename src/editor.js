@@ -6,6 +6,7 @@ import { renderBlock, sourceBlock, propertiesFolded, toggleProperties } from './
 import { labels as calloutLabels, titleSlotInSource, bodyToSource } from './callout.js';
 import { footnoteIndex, footnoteLabelFollow, footnoteRenumber, footnoteReferenceDeletion, footnoteLabelMap } from './footnote-state.js';
 import { orderedListRenumber } from './list-order.js';
+import { imageLines, outdentWritingImage } from './image-list-indent.js';
 import { planFootnoteInsertion, planFootnoteDeletion, indexFootnotes, displayNotes, footnoteBodyText, appendDefinition } from './footnotes.js';
 import { uiIcon } from './ui-icons.js';
 import {
@@ -26,7 +27,6 @@ import {
   isolateHistory,
   invertedEffects,
   indentMore,
-  indentLess,
   redo,
   redoDepth,
   undo,
@@ -529,6 +529,7 @@ function clearListContinuation(view) {
 
 function insertWritingTab(view) {
   if (view.state.field(sourceMode) || inCodeBlock(view.state,view.state.selection.main.head)) return indentMore(view);
+  if (imageLines(view.state).has(view.state.doc.lineAt(view.state.selection.main.head).number)) return indentMore(view);
   let node = syntaxTree(view.state).resolveInner(view.state.selection.main.head,-1);
   for (; node; node=node.parent) if (node.name === 'ListItem') return indentMore(view);
   if (!view.state.selection.main.empty) return indentMore(view);
@@ -1057,7 +1058,7 @@ export function createLeafEditor(options) {
       run: (view) => !view.state.field(sourceMode) && (insertYamlNewline(view) || clearListContinuation(view) || insertNewlineContinueMarkup(view)),
     },
     { key: 'Tab', run: insertWritingTab },
-    { key: 'Shift-Tab', run: indentLess },
+    { key: 'Shift-Tab', run: outdentWritingImage },
   ]);
 
   // Positions are CodeMirror offsets (normalized LF), not raw CRLF offsets.

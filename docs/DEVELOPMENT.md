@@ -45,6 +45,8 @@ cargo run --locked --example native-table-keys -- ../tests/native-image-insertio
 
 ## 开发与打包 / Development and packaging
 
+`list-images-browser.mjs` 在 Chromium 和 WebKit 中检查列表图片取消缩进、重新缩进、相邻列表项、撤销／重做、预览／阅读／导出一致性及模拟保存重开。macOS 可用上述开发服务器和 `native-table-keys` 示例运行 `../tests/native-list-images.html` 与 `http://127.0.0.1:41732/tests/native-list-images.html`；它在实际 WKWebView 中通过 AppKit 发送 Shift+Tab 并检查布局和快捷键处理，图片字节为合成输入，不代替安装版真实文件验收。
+
 ```sh
 npm run dev
 npm run desktop:dev
