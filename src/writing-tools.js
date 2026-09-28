@@ -10,6 +10,10 @@ import { htmlToMarkdown } from './html-markdown.js';
 import { renderPrintDocument } from './print-document.js';
 import './writing.css';
 import { shortcutText } from './platform-shortcuts.js';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { localImagePaths, materializeImageReferences, rewriteResourcePaths } from './resource-paths.js';
+
+const IMAGE_CLIPBOARD_TYPE = 'application/x-leaf-markdown-images';
 
 export function setupWriting({ editor, desktop, invoke, save, choose, serialized, editable, status, icon, }) {
   const view = editor.view, bookmarks = new Set();
@@ -121,8 +125,41 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     if(event.key.toLowerCase()==='k'&&!event.shiftKey){event.preventDefault();event.stopPropagation();editLink();}
     if(event.shiftKey&&event.key.toLowerCase()==='c'){event.preventDefault();void copyRich();}
   },true);
+  view.dom.addEventListener('copy',event=>{
+    if (!desktop || !event.clipboardData || view.state.selection.ranges.length !== 1) return;
+    const range=view.state.selection.main;
+    if (range.empty) return;
+    const content=materializeImageReferences(view.state.doc.sliceString(range.from,range.to),view.state.doc.toString());
+    if (!localImagePaths(content).length) return;
+    event.clipboardData.setData('text/plain',content);
+    event.clipboardData.setData(IMAGE_CLIPBOARD_TYPE,JSON.stringify({sourceLabel:getCurrentWindow().label,content}));
+    event.preventDefault();event.stopImmediatePropagation();
+  },true);
   view.dom.addEventListener('paste',event=>{
     if(event.target.closest('input,textarea')||!editable())return;
+    let copied=null;
+    try { copied=JSON.parse(event.clipboardData.getData(IMAGE_CLIPBOARD_TYPE)); } catch { /* A normal clipboard has no Leaf image metadata. */ }
+    if (desktop && copied && typeof copied.sourceLabel === 'string' && copied.content === event.clipboardData.getData('text/plain')) {
+      const references=localImagePaths(copied.content);
+      if (references.length) {
+        event.preventDefault();event.stopImmediatePropagation();
+        const b=remember();
+        void (async()=>{
+          try {
+            if (!await save()) return;
+            await serialized(async()=>{
+              const mappings=await invoke('copy_pasted_images',{sourceLabel:copied.sourceLabel,references});
+              const text=rewriteResourcePaths(copied.content,mappings);
+              const floor=bodyStart(view.state.doc.toString());
+              b.from=Math.max(b.from,floor);b.to=Math.max(b.to,b.from);
+              insert(text,b);refreshImages();
+            });
+          } catch(error) { status(`粘贴图片失败：${error.message||error}`,'error'); }
+          finally { bookmarks.delete(b); }
+        })();
+        return;
+      }
+    }
     const files=[...event.clipboardData.files];
     if(files.length){event.preventDefault();event.stopImmediatePropagation();void attachments(files);return;}
     const html=event.clipboardData.getData('text/html');
