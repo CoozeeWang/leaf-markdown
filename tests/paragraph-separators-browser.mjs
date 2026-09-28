@@ -18,7 +18,8 @@ try {
  assert.equal(await value(),'第一段\n\n');
  assert.equal(await page.evaluate(()=>v.state.doc.lineAt(v.state.selection.main.head).number),3);
  assert.equal(await blank().count(),1);
- assert.ok(Math.abs((await blank().first().boundingBox()).height-row)<1,'空行自己占一格，光标才有地方落');
+ const compactRow=(await blank().first().boundingBox()).height;
+ assert.ok(compactRow>row/2 && compactRow<row,'分隔空行保留一格紧凑行高');
  await page.keyboard.insertText('第二段');
  assert.equal(await value(),'第一段\n\n第二段');
  // A blank line is a real row now, so the arrows walk it like any other line.
@@ -55,10 +56,10 @@ try {
 // paragraph gap, three read as three. Nothing is added to the block below.
  await setup('甲\n\n\n\n乙',0);
  assert.equal(await blank().count(),3);
- assert.ok(await blank().evaluateAll((es,h)=>es.every(e=>Math.abs(e.getBoundingClientRect().height-h)<1),row));
+ assert.ok(await blank().evaluateAll((es,h)=>es.every(e=>Math.abs(e.getBoundingClientRect().height-h)<1),compactRow));
  assert.equal(await page.evaluate(()=>parseFloat(getComputedStyle([...document.querySelectorAll('.cm-line')].find(e=>e.textContent==='乙')).paddingTop)),0,'间距不再画在后面那块上');
  const stacked=await page.evaluate(()=>{const l=[...document.querySelectorAll('.cm-line')];return l.find(e=>e.textContent==='乙').getBoundingClientRect().top-l.find(e=>e.textContent==='甲').getBoundingClientRect().bottom;});
- assert.ok(Math.abs(stacked-row*3)<2,'三个空行就是三格');
+ assert.ok(Math.abs(stacked-compactRow*3)<2,'三个空行就是三格');
  await page.screenshot({path:artifactPath('leaf-blank-run-stacked.png')});
  // Enter adds exactly one newline even before an existing separator.
  await setup('文字\n\n![](x.png)',2);await page.keyboard.press('Enter');
@@ -78,7 +79,7 @@ try {
  await page.click('#displayButton');await page.check('#blankMarkerToggle');await page.click('#displayButton');
  assert.equal(await page.locator('.cm-leaf-blank-line:has(.leaf-editing-marker)').count(),4);
  assert.equal(await blank().count(),4);
- assert.ok(await page.locator('.cm-leaf-blank-line:has(.leaf-editing-marker)').evaluateAll((es,h)=>es.every(e=>Math.abs(e.getBoundingClientRect().height-h)<1),row),'标记不改变空行的高度');
+ assert.ok(await page.locator('.cm-leaf-blank-line:has(.leaf-editing-marker)').evaluateAll((es,h)=>es.every(e=>Math.abs(e.getBoundingClientRect().height-h)<1),compactRow),'标记不改变空行的高度');
  assert.ok(Math.abs(await rows()-heightWithoutMarks)<.5,'打开标记不改变文档高度');
  await page.evaluate(()=>{v.dispatch({selection:{anchor:v.state.doc.length}});v.focus();});
  await page.keyboard.press('Enter');

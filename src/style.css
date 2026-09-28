@@ -267,6 +267,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
    Literal blanks in code, YAML and source mode retain their full text height. */
 .cm-editor .cm-line.cm-leaf-blank-line { position: relative; line-height: 1.25em; }
 .cm-editor .cm-line.cm-leaf-paragraph-line { padding-top: .3em; }
+.cm-editor .cm-line.cm-leaf-blank-line.cm-leaf-paragraph-line { line-height: 1.85; }
 .outline-rename { display: block; width: calc(100% - 12px); margin: 3px 6px; padding: 6px 8px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--accent); border-radius: 5px; }
 /* The marker only dots the middle of a blank row, so switching it on cannot
    change the height of the document. */

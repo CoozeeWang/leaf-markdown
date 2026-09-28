@@ -372,6 +372,15 @@ function livePreviewDecorations(view) {
         for (let n = line.number + 1; n <= last; n++) {
           ranges.push(Decoration.line({attributes:{class:'cm-leaf-paragraph-line'}}).range(doc.line(n).from));
         }
+        // The empty row immediately after a paragraph may become its next
+        // line on the first keystroke. Give the caret that row's final spacing
+        // now, so typing (or deleting) the first character does not move it.
+        if (last < doc.lines) {
+          const next = doc.line(last + 1);
+          if (!next.text.trim() && view.state.selection.main.empty && view.state.selection.main.head === next.from) {
+            ranges.push(Decoration.line({attributes:{class:'cm-leaf-paragraph-line'}}).range(next.from));
+          }
+        }
       }
       if (heading) {
         const details = numbers.get(node.from);
