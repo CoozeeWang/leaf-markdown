@@ -96,7 +96,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   --content-width: 780px;
   height: 100%;
   display: grid;
-  grid-template-rows: 64px 42px minmax(0, 1fr) auto;
+  grid-template-rows: 64px 42px auto minmax(0, 1fr) auto;
   position: relative;
   background: var(--bg);
 }
@@ -192,7 +192,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .welcome-primary:hover, .welcome-icon:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: var(--accent-soft); }
 .welcome-primary:active, .welcome-icon:active { background: var(--accent-soft); }
 .welcome-drop-hint { position: absolute; bottom: 26px; left: 16px; right: 16px; margin: 0; text-align: center; color: var(--muted); font: 400 12px/1.5 var(--ui-font); }
-.welcome-state { grid-template-rows: 0 0 minmax(0, 1fr) 0; }
+.welcome-state { grid-template-rows: 0 0 auto minmax(0, 1fr) 0; }
 .welcome-state .topbar, .welcome-state .format-toolbar, .welcome-state .statusbar { visibility: hidden; overflow: hidden; border: 0; }
 .welcome-state .editor-host, .welcome-state .outline-drawer, .welcome-state .notes-drawer { visibility: hidden; }
 .welcome-state .document-area { background: var(--surface); }
@@ -766,7 +766,7 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
 .drop-overlay { display: none; position: absolute; inset: 14px; z-index: 120; align-items: center; justify-content: center; border: 2px dashed var(--accent); border-radius: 15px; background: color-mix(in srgb, var(--surface) 94%, transparent); color: var(--accent); font-size: 18px; font-weight: 650; }
 .drop-overlay.visible { display: flex; }
 
-.focus-mode { grid-template-rows: 0 0 minmax(0, 1fr) 0; }
+.focus-mode { grid-template-rows: 0 0 auto minmax(0, 1fr) 0; }
 .focus-mode .topbar, .focus-mode .format-toolbar, .focus-mode .statusbar { opacity: 0; pointer-events: none; overflow: hidden; border: 0; }
 .focus-mode .cm-content { padding-top: 8vh !important; }
 
@@ -1011,7 +1011,7 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
   .topbar-spacer { display: none; }
 }
 @media (max-width: 900px) {
-  .shell:not(.welcome-state):not(.focus-mode) { grid-template-rows: 64px auto minmax(0, 1fr) auto; }
+  .shell:not(.welcome-state):not(.focus-mode) { grid-template-rows: 64px auto auto minmax(0, 1fr) auto; }
   .format-toolbar { flex-wrap: wrap; overflow: visible; min-height: 42px; padding: 5px 12px; row-gap: 4px; }
   .toolbar-spacer { flex: 1 0 0; }
   .toolbar-divider { margin-inline: 5px; }
@@ -1084,9 +1084,9 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
   .topbar .brand-copy { display:none; }
 }
 
-/* Messages share the bottom status area; none sit beneath the filename.
-   Long errors wrap and scroll independently, leaving the close button visible. */
-.status-notice { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: var(--ui-caption); line-height: 1.6; color: var(--accent-strong); }
+/* Messages sit below the editing toolbar. Long errors scroll independently,
+   leaving the close button visible. */
+.status-notice { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--surface); font-size: var(--ui-caption); line-height: 1.6; color: var(--accent-strong); }
 .status-notice[hidden] { display: none; }
 .status-notice .save-status { flex: 1; min-width: 0; max-height: 25vh; overflow: auto; overflow-wrap: anywhere; white-space: normal; }
 .status-notice[data-kind="error"] { color: var(--danger); }
@@ -1095,7 +1095,3 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .status-notice button:hover { background: var(--accent-soft); }
 .statusbar > #cursorStatus, .statusbar > #stats { padding-block: 5px; }
 .statusbar > #stats { text-align: right; }
-/* Failed opens and errors during focus mode still have a readable way out. */
-:is(.welcome-state, .focus-mode):has(.status-notice:not([hidden])) { grid-template-rows: 0 0 minmax(0, 1fr) auto; }
-:is(.welcome-state, .focus-mode):has(.status-notice:not([hidden])) .statusbar { visibility: visible; opacity: 1; pointer-events: auto; min-height: 0; }
-:is(.welcome-state, .focus-mode) .statusbar > :is(#cursorStatus, #stats, #focusButton) { display: none; }

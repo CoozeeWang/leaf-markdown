@@ -132,6 +132,13 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <button id="displayButton" aria-label="显示" aria-haspopup="dialog" aria-expanded="false" data-tooltip="显示">${icon('eye')}</button>
     </nav>
 
+    <div id="statusNotice" class="status-notice" hidden>
+      <span id="saveStatus" class="save-status" hidden></span>
+      <button id="recoveryNotice" class="recovery-notice" hidden>发现恢复记录 · 查看</button>
+      <button id="dismissStatus" class="dismiss-status" aria-label="关闭提示" data-tooltip="关闭提示">${icon('close', 14)}</button>
+    </div>
+    <span id="statusAnnouncement" class="status-announcement" role="status" aria-live="polite" aria-atomic="true"></span>
+
     <section class="document-area">
       <div id="editor" class="editor-host"></div>
       <section id="welcomeScreen" class="welcome-screen" aria-label="欢迎使用 Leaf">
@@ -163,12 +170,6 @@ document.querySelector('#app').innerHTML = shortcutText(`
     </section>
 
     <footer class="statusbar">
-      <div id="statusNotice" class="status-notice" hidden>
-        <span id="saveStatus" class="save-status" hidden></span>
-        <button id="recoveryNotice" class="recovery-notice" hidden>发现恢复记录 · 查看</button>
-        <button id="dismissStatus" class="dismiss-status" aria-label="关闭提示" data-tooltip="关闭提示">${icon('close', 14)}</button>
-      </div>
-      <span id="statusAnnouncement" class="status-announcement" role="status" aria-live="polite" aria-atomic="true"></span>
       <span id="cursorStatus">第 1 行，第 1 列</span>
       <span id="stats"></span>
       <button id="focusButton" class="status-button icon-control" aria-label="专注模式" data-tooltip="专注模式  Esc 退出">${icon('focus', 15)}</button>

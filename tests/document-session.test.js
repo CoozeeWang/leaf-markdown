@@ -43,6 +43,33 @@ test('an external read in flight cannot overwrite input made before it returns',
   state.content = 'my typing'; session.edited(); finish.resolve('external'); await poll;
   assert.equal(state.content, 'my typing'); assert.match(state.statuses.at(-1), /其他程序修改/);
 });
+test('a missing source reports once until it recovers or the document is saved elsewhere', async () => {
+  const { session, state, io } = await setup();
+  const read = io.read;
+  io.read = async () => { throw new Error('No such file or directory (os error 2)'); };
+  state.content = 'unsaved edits'; session.edited();
+  await session.poll(); await session.poll();
+  assert.equal(state.statuses.length, 1);
+  assert.match(state.statuses[0], /原文件在原位置找不到.*另存为/);
+  assert.equal(state.content, 'unsaved edits');
+  assert.equal(session.path, '/file.md');
+
+  io.read = async () => { throw new Error('Permission denied (os error 13)'); };
+  await session.poll();
+  assert.match(state.statuses.at(-1), /Permission denied/);
+  io.read = read;
+  await session.poll();
+  assert.equal(state.statuses.at(-1), '已恢复读取原文件');
+  io.read = async () => { throw new Error('No such file or directory (os error 2)'); };
+  await session.poll();
+  assert.equal(state.statuses.filter(message => message.includes('原文件在原位置找不到')).length, 2);
+
+  assert.equal(await session.save({ as: true }), true);
+  await session.poll();
+  assert.equal(state.statuses.filter(message => message.includes('原文件在原位置找不到')).length, 3);
+  assert.equal(session.path, '/new.md');
+  assert.equal(state.content, 'unsaved edits');
+});
 test('failed writes and cancelled save-as retain both buffer and original path', async () => {
   const { session, state, io } = await setup({ select: async () => null });
   state.content = 'mine';

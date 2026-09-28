@@ -5,13 +5,17 @@ window.startTest = async () => {
  try {
   window.isTauri = true;
   window.saveFails = false;
+  window.readFails = false;
   window.entries = [{kind: 'draft', key: 'test', id: 'draft'}];
   window.__TAURI_INTERNALS__ = {
    metadata: {currentWindow: {label: 'document-test'}, currentWebview: {label: 'document-test'}},
    transformCallback: () => 1,
    invoke: async (cmd, args) => {
     if (cmd === 'initial_path') return '/tmp/提示检查.md';
-    if (cmd === 'read_document') return '# 提示检查\n\n正文';
+    if (cmd === 'read_document') {
+      if (readFails) throw 'No such file or directory (os error 2)';
+      return '# 提示检查\n\n正文';
+    }
     if (cmd === 'recovery_list') return entries;
     if (cmd === 'recovery_retention') return 30;
     if (cmd === 'write_document' && saveFails) throw '保存失败：' + '/很长的文件夹'.repeat(100);
@@ -31,11 +35,18 @@ window.startTest = async () => {
   recovery.parentElement.querySelector('#dismissStatus').click();
   window.dispatchEvent(new Event('focus')); await wait(100);
   check(notice.hidden && entries.length === 1, 'dismissal deleted recovery or focus reopened it');
+  readFails = true; await wait(3200);
+  check(text.textContent.includes('原文件在原位置找不到'), 'missing source did not explain the problem');
+  close.click(); await wait(3200);
+  check(notice.hidden, 'dismissed read error reappeared on the next poll');
+  readFails = false; await wait(3200);
+  check(text.textContent === '已恢复读取原文件', 'read recovery did not clear the error');
   saveFails = true; await desktopSave();
   await wait(4100);
   check(text.textContent.includes('尚未保存'), 'save error auto-expired');
   const messageBox = notice.getBoundingClientRect(), closeBox = close.getBoundingClientRect();
-  check(messageBox.top >= document.querySelector('.document-area').getBoundingClientRect().bottom - 1, 'message covers document');
+  check(messageBox.top >= document.querySelector('.format-toolbar').getBoundingClientRect().bottom - 1, 'message above toolbar');
+  check(messageBox.bottom <= document.querySelector('.document-area').getBoundingClientRect().top + 1, 'message covers document');
   check(closeBox.right <= innerWidth && closeBox.bottom <= innerHeight, 'close outside window');
   check(text.getBoundingClientRect().height <= innerHeight * .25 + 1, 'long error is not constrained');
   close.click(); check(notice.hidden, 'error cannot close');
@@ -44,7 +55,7 @@ window.startTest = async () => {
   close.click(); check(desktopRecoveryPaused(), 'closing warning resumed autosave');
   saveFails = false; await desktopSave();
   check(text.textContent === '已保存' && !desktopRecoveryPaused(), 'manual save failed to resolve pause');
-  document.title = 'LeafTest PASS native unified status, expiry, recovery dismissal, persistent long errors and save protection';
+  document.title = 'LeafTest PASS native unified status, dismissible read errors, recovery and save protection';
  } catch (error) { document.title = 'LeafTest FAIL ' + error.message; }
 };
 document.title = 'LeafSource';

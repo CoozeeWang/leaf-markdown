@@ -3,6 +3,7 @@ import {rewriteResourcePaths} from './resource-paths.js';
 // exercised without a WebView or a user's files.
 export function createDocumentSession(io) {
   let path = null, disk = null, ready = false, revision = 0, paused = false;
+  let pollFailure = null;
   let queue = Promise.resolve();
   const serialize = action => {
     const result = queue.then(action);
@@ -17,6 +18,7 @@ export function createDocumentSession(io) {
     edited() { revision++; },
     async initialize(source, content) {
       path = source; disk = content;
+      pollFailure = null;
       await io.load(content, source);
       ready = true;
     },
@@ -47,7 +49,7 @@ export function createDocumentSession(io) {
             const latest = rewriteResourcePaths(io.content(), result.mappings);
             if (latest !== io.content()) io.restore(latest);
           }
-          path = target; disk = content; paused = false;
+          path = target; disk = content; paused = false; pollFailure = null;
           io.saved(content, target);
           status(cleanupWarning || (io.content() === content ? '已保存' : '等待自动保存…'), cleanupWarning ? 'error' : io.content() === content ? 'saved' : 'pending', { announce: manual });
           return true;
@@ -65,7 +67,7 @@ export function createDocumentSession(io) {
           const latest=rewriteResourcePaths(io.content(),result.mappings);
           if(latest!==io.content())io.restore(latest);
         }
-        const previous=path;path=target;
+        const previous=path;path=target;pollFailure=null;
         io.renamed(disk,target,previous);
         status(io.content()===disk?'已重命名':'已重命名 · 等待保存',io.content()===disk?'saved':'pending');
         return target;
@@ -77,14 +79,27 @@ export function createDocumentSession(io) {
         const at = revision;
         try {
           const current = await io.read(path);
-          if (current === disk) return;
+          const recovered = pollFailure !== null;
+          pollFailure = null;
+          if (current === disk) {
+            if (recovered) status('已恢复读取原文件', 'saved', { announce: false });
+            return;
+          }
           if (revision !== at || io.content() !== disk) {
             status('文件已被其他程序修改。请另存为以保留当前编辑内容。'); return;
           }
           await io.load(current, path);
           disk = current;
           status('已载入外部修改', 'saved');
-        } catch (error) { status(`无法读取文件：${error}`); }
+        } catch (error) {
+          const detail = String(error);
+          if (detail === pollFailure) return;
+          pollFailure = detail;
+          const missing = error?.code === 'ENOENT' || /\b(?:ENOENT|os error 2)\b|no such file or directory|the system cannot find the file specified/i.test(detail);
+          status(missing
+            ? '原文件在原位置找不到。当前编辑内容仍在 Leaf 中；请先另存为，或从新位置重新打开文件。'
+            : `无法读取文件：${detail}`);
+        }
       });
     },
     restore(content) {
