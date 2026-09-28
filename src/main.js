@@ -207,8 +207,9 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <p class="settings-about"><strong id="settingsVersion">Leaf</strong><span id="settingsBuild" hidden></span></p>
     </section>
 
-    <section id="documentPopover" class="popover action-popover" role="menu" aria-label="历史版本" hidden>
-      <button id="documentHistory" role="menuitem">${desktop ? '历史版本' : '恢复最近一次保存前版本'}</button>
+    <section id="documentPopover" class="popover action-popover" role="menu" aria-label="当前文档操作" hidden>
+      ${desktop ? '<button id="documentReveal" role="menuitem">在文件管理器中显示</button><button id="documentRename" role="menuitem">重命名…</button>' : ''}
+      <button id="documentHistory" role="menuitem">${desktop ? '历史版本与草稿…' : '恢复最近一次保存前版本'}</button>
     </section>
 
     <section id="exportPopover" class="popover action-popover" role="menu" aria-label="导出" hidden>
@@ -309,7 +310,8 @@ function renameCurrentDocument(){
   if(shell.classList.contains('welcome-state')||document.querySelector('.inline-rename'))return;
   const extension=state.fileName.match(/\.(md|markdown|mdown)$/i)?.[0]||'.md';
   const stem=state.fileName.endsWith(extension)?state.fileName.slice(0,-extension.length):state.fileName;
-  const anchor=state.reading?reader.querySelector('.leaf-file-name-title'):document.querySelector('.leaf-default-title h1');
+  const anchor=(state.reading?reader.querySelector('.leaf-file-name-title'):document.querySelector('.leaf-default-title h1'))
+    || document.querySelector('#documentMenuButton');
   inlineRename({anchor,value:stem,apply:async name=>{
     if(!desktop)throw new Error('请在桌面版中修改磁盘文件名');
     await desktopRename(name+extension);
@@ -1479,6 +1481,13 @@ function openRecoveryRecords(current = false) {
 }
 document.querySelector('#settingsRecovery').onclick = () => openRecoveryRecords();
 document.querySelector('#documentHistory').onclick = () => openRecoveryRecords(true);
+if (desktop) {
+  document.querySelector('#documentReveal').onclick = async () => {
+    try { await invoke('reveal_document'); }
+    catch (error) { setStatus(`无法在文件管理器中显示：${error}`, 'error'); }
+  };
+  document.querySelector('#documentRename').onclick = renameCurrentDocument;
+}
 document.querySelector('#saveButton').onclick = saveFile;
 // Whether the property rows are on screen is a display choice like the rest, so
 // it lives in the 显示 switchboard with them rather than on a toolbar button of
@@ -1529,6 +1538,14 @@ for (const [id, popup] of [['documentMenuButton', documentPopover], ['exportMenu
     const opening = popup.hidden;
     closePopovers();
     if (!opening) return;
+    if (popup === documentPopover && desktop) {
+      const unavailable = !desktopHasPath();
+      for (const id of ['documentReveal', 'documentRename']) {
+        const item = document.getElementById(id);
+        item.disabled = unavailable;
+        item.title = unavailable ? '请先保存文档' : '';
+      }
+    }
     popup.hidden = false;
     const rect = trigger.getBoundingClientRect();
     positionMenu(popup,rect);

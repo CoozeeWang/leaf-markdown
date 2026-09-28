@@ -997,6 +997,7 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .appearance-popover .setting-hint, .appearance-popover .retention-hint { font-size: 12px; }
 .settings-action { margin: 16px 0 0; padding: 8px 12px; min-height: 36px; border: 1px solid var(--line); font-size: 13px; color: var(--accent-strong); }
 #documentPopover button { justify-content: space-between; }
+#documentPopover button:disabled { color: var(--muted); cursor: not-allowed; }
 .format-toolbar #imageInsert { margin-left: 0; }
 .format-toolbar #imageInsert::before { content: none; }
 .format-toolbar { scrollbar-width: thin; }
