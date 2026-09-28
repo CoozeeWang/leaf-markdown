@@ -184,6 +184,17 @@ fn read_resource(app: tauri::AppHandle, window: tauri::WebviewWindow, relative: 
     resources::bytes(&resources::resolve(&doc, &relative)?)
 }
 #[tauri::command(async)]
+fn copy_pasted_images(window: tauri::WebviewWindow, docs: tauri::State<Documents>, source_label: String, references: Vec<String>) -> Result<Vec<(String,String)>, String> {
+    if !window.label().starts_with("document-") || !source_label.starts_with("document-") { return Err("请在 Leaf 文档之间复制图片".into()); }
+    let (source, target) = {
+        let documents = docs.0.lock().unwrap();
+        let source = documents.get(&source_label).and_then(|path| path.clone()).ok_or("来源文档已关闭，请重新复制带图内容")?;
+        let target = documents.get(window.label()).and_then(|path| path.clone()).ok_or("请先保存目标文档")?;
+        (source, target)
+    };
+    resources::copy_selected_images(&source, &target, &references)
+}
+#[tauri::command(async)]
 fn open_link(app: tauri::AppHandle, window: tauri::WebviewWindow, target: String) -> Result<(), String> {
     let lower = target.to_ascii_lowercase();
     let external = lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:");
@@ -600,7 +611,7 @@ fn main() {
     }));
     builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, reveal_resource, export_bundle, read_resource, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open])
+        .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, reveal_resource, export_bundle, read_resource, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             native_shortcuts::install(app.handle().clone());

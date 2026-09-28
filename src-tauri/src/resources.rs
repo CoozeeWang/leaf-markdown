@@ -483,6 +483,42 @@ pub fn copy_references(source: &Path, target: &Path, references: &[String]) -> R
     Ok(())
 }
 
+// A pasted image belongs to the destination document. Importing by content
+// avoids both broken cross-document links and overwriting a different image
+// with the same name in the destination's assets folder.
+pub fn copy_selected_images(source: &Path, target: &Path, references: &[String]) -> Result<Vec<(String,String)>, String> {
+    let mut images = Vec::new();
+    for relative in references {
+        let path = resolve(source, relative)?;
+        let name = path.file_name().and_then(|name| name.to_str()).ok_or("图片名称无效")?.to_owned();
+        images.push((relative.clone(), name, bytes(&path)?));
+    }
+    let mut mappings = Vec::new();
+    for (relative, name, data) in images {
+        let imported = import(target, &name, &data)?;
+        if relative != imported { mappings.push((relative, imported)); }
+    }
+    Ok(mappings)
+}
+
+#[cfg(test)] mod clipboard_tests {
+ use super::*;
+ #[test] fn pasted_images_are_independent_and_never_overwrite_conflicts() {
+  let root=tempfile::tempdir().unwrap();
+  let source=root.path().join("source.md");let target=root.path().join("target.md");
+  fs::write(&source,"").unwrap();fs::write(&target,"").unwrap();
+  let image=import(&source,"photo.png",b"source image").unwrap();
+  let existing=import(&target,"photo.png",b"target image").unwrap();
+  let mappings=copy_selected_images(&source,&target,&[image.clone()]).unwrap();
+  assert_eq!(mappings,vec![(image.clone(),"target.assets/photo-1.png".into())]);
+  assert_eq!(bytes(&resolve(&target,&existing).unwrap()).unwrap(),b"target image");
+  assert_eq!(bytes(&resolve(&target,&mappings[0].1).unwrap()).unwrap(),b"source image");
+  assert_eq!(bytes(&resolve(&source,&image).unwrap()).unwrap(),b"source image");
+  assert_eq!(copy_selected_images(&source,&target,&[image.clone()]).unwrap(),mappings);
+  assert!(copy_selected_images(&source,&target,&["../private.png".into()]).is_err());
+ }
+}
+
 #[cfg(test)] mod bundle_tests {
  use super::*;
  #[test] fn export_is_portable_and_never_overwrites_existing_export() {
