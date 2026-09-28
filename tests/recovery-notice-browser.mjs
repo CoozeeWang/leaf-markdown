@@ -32,7 +32,7 @@ try {
  await page.evaluate(async()=>{saveFails=true;const {desktopSave}=await import('/src/desktop.js');await desktopSave();});await page.clock.runFor(4100);assert.match(await page.locator('#saveStatus').textContent(),/尚未保存/);
  await page.evaluate(async()=>{saveFails=false;const {desktopSave}=await import('/src/desktop.js');await desktopSave();});assert.equal(await page.locator('#saveStatus').textContent(),'已保存');await page.clock.runFor(4100);assert.equal(await page.locator('#saveStatus').textContent(),'');
 
- // All messages use one footer slot, including recovery fallback and errors.
+ // All messages use one top slot, including recovery fallback and errors.
  const notice=page.locator('#statusNotice'), close=page.getByRole('button',{name:'关闭提示',exact:true});
  await page.evaluate(()=>{entries=[{key:'doc',id:'draft',kind:'draft',source:'/tmp/新名字.md',timestamp:1,bytes:10}];document.dispatchEvent(new Event('leaf-recovery-changed'));});
  await page.locator('#recoveryNotice').waitFor();
@@ -45,8 +45,8 @@ try {
  await page.evaluate(()=>{entries=[{key:'doc',id:'new',kind:'draft'}];document.dispatchEvent(new Event('leaf-recovery-changed'));});await page.locator('#recoveryNotice').waitFor();
  await page.evaluate(async()=>{const {desktopRename}=await import('/src/desktop.js');await desktopRename('再次改名.md');});
  assert.ok(await page.locator('#recoveryNotice').isHidden());
- await page.clock.runFor(3999);assert.equal(await page.locator('#saveStatus').textContent(),'已重命名');
- await page.clock.runFor(1);assert.ok(await page.locator('#recoveryNotice').isVisible());
+ await page.clock.runFor(3500);assert.equal(await page.locator('#saveStatus').textContent(),'已重命名');
+ await page.clock.runFor(600);assert.ok(await page.locator('#recoveryNotice').isVisible());
  await page.evaluate(async()=>{saveFails=true;const {desktopSave}=await import('/src/desktop.js');await desktopSave();});
  await page.clock.runFor(5000);assert.match(await page.locator('#saveStatus').textContent(),/尚未保存/);
  assert.ok(await page.locator('#recoveryNotice').isHidden());

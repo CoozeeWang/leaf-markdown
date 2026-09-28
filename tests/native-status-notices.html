@@ -45,7 +45,8 @@ window.startTest = async () => {
   await wait(4100);
   check(text.textContent.includes('尚未保存'), 'save error auto-expired');
   const messageBox = notice.getBoundingClientRect(), closeBox = close.getBoundingClientRect();
-  check(messageBox.top >= document.querySelector('.document-area').getBoundingClientRect().bottom - 1, 'message covers document');
+  check(messageBox.top >= document.querySelector('.format-toolbar').getBoundingClientRect().bottom - 1, 'message above toolbar');
+  check(messageBox.bottom <= document.querySelector('.document-area').getBoundingClientRect().top + 1, 'message covers document');
   check(closeBox.right <= innerWidth && closeBox.bottom <= innerHeight, 'close outside window');
   check(text.getBoundingClientRect().height <= innerHeight * .25 + 1, 'long error is not constrained');
   close.click(); check(notice.hidden, 'error cannot close');

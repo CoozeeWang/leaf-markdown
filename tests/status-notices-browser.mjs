@@ -43,8 +43,8 @@ try {
         const box = selector => document.querySelector(selector).getBoundingClientRect().toJSON();
         return {message: box('#statusNotice'), close: box('#dismissStatus'), text: box('#saveStatus'), editor: box('.document-area'), toolbar: box('.format-toolbar'), scroll: document.documentElement.scrollWidth};
       });
-      assert.ok(bounds.message.top >= bounds.editor.bottom - 1, 'message must not cover the document');
-      assert.ok(bounds.editor.top >= bounds.toolbar.bottom - 1, 'toolbar must not cover the document');
+      assert.ok(bounds.message.top >= bounds.toolbar.bottom - 1, 'message must stay below the toolbar');
+      assert.ok(bounds.message.bottom <= bounds.editor.top + 1, 'message must stay above the document');
       assert.ok(bounds.close.right <= width && bounds.close.bottom <= 480, 'close must stay within the window');
       assert.ok(bounds.text.right <= bounds.close.left && bounds.text.height <= 120, 'long text must scroll beside a fixed close button');
       assert.ok(bounds.scroll <= width, 'long messages must not widen the page');
@@ -64,5 +64,5 @@ try {
   await close.click();
   assert.ok(await notice.isHidden());
   assert.deepEqual(errors, []);
-  console.log('PASS single footer message, manual fallback, long errors, narrow/dark, welcome, focus and reading dismissal');
+  console.log('PASS single top message, manual fallback, long errors, narrow/dark, welcome, focus and reading dismissal');
 } finally { await browser.close(); }

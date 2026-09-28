@@ -31,7 +31,7 @@ Cargo 使用标准 crates.io。需要网络镜像时，在个人 Cargo 配置中
 
 Cargo uses crates.io. Configure network mirrors in your own Cargo configuration. Native WebKit fixtures only execute on macOS.
 
-状态提示回归为 `recovery-notice-browser.mjs`、`file-feedback-browser.mjs` 和 `status-notices-browser.mjs`，覆盖单一底部提示、4 秒寿命、关闭、恢复入口、长错误换行、窄窗／深色以及保存保护。macOS 原生检查使用同一开发服务器：在 `src-tauri` 中运行 `cargo run --locked --example native-table-keys -- ../tests/native-status-notices.html http://127.0.0.1:41732/tests/native-status-notices.html`。它验证实际 WKWebView 的显示和交互，但使用模拟文件接口，不代替安装版真实文件保存与恢复验收。
+状态提示回归为 `recovery-notice-browser.mjs`、`file-feedback-browser.mjs` 和 `status-notices-browser.mjs`，覆盖工具栏下方的单一提示、4 秒寿命、关闭、恢复入口、长错误换行、窄窗／深色以及保存保护。macOS 原生检查使用同一开发服务器：在 `src-tauri` 中运行 `cargo run --locked --example native-table-keys -- ../tests/native-status-notices.html http://127.0.0.1:41732/tests/native-status-notices.html`。它验证实际 WKWebView 的显示和交互，但使用模拟文件接口，不代替安装版真实文件保存与恢复验收。
 
 macOS 图片插入隔离检查：先在仓库根目录启动 `npm run dev -- --host 127.0.0.1 --port 41732 --strictPort`，再在 `src-tauri` 执行：
 
