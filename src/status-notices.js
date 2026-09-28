@@ -2,8 +2,8 @@
 export function setupStatusNotices({ container, text, recovery, dismiss, announcement, format = value => value }) {
   let current = null, persistent = null, recoveryAvailable = false, recoveryDismissed = false;
   let timer, announcementTimer;
-  const resolvedSave = /^(已保存|已自动保存|已下载保存副本|已载入外部修改|已开启自动保存)/;
-  const quietSave = /^(已自动保存|已开启自动保存|已载入外部修改)/;
+  const resolvedSave = /^(已保存|已自动保存|已下载保存副本|已载入外部修改|已恢复读取原文件|已开启自动保存)/;
+  const quietSave = /^(已自动保存|已开启自动保存|已载入外部修改|已恢复读取原文件)/;
   const render = () => {
     const visible = current || persistent;
     text.textContent = visible ? format(visible.text) : '';
