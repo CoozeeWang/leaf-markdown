@@ -1086,7 +1086,7 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 
 /* Messages sit below the editing toolbar. Long errors scroll independently,
    leaving the close button visible. */
-.status-notice { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--surface); font-size: var(--ui-caption); line-height: 1.6; color: var(--accent-strong); }
+.status-notice { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--surface); font-size: var(--ui-caption); line-height: 1.6; color: var(--accent-strong); }
 .status-notice[hidden] { display: none; }
 .status-notice .save-status { flex: 1; min-width: 0; max-height: 25vh; overflow: auto; overflow-wrap: anywhere; white-space: normal; }
 .status-notice[data-kind="error"] { color: var(--danger); }
