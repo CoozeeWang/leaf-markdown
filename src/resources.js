@@ -193,6 +193,7 @@ export function imageNode(alt, path) {
   actions.type = 'button'; actions.className = 'leaf-image-actions';
   actions.innerHTML = uiIcon('folder', 14);
   actions.dataset.tooltip = revealLabel();
+  actions.dataset.tooltipKind = 'image';
   actions.setAttribute('aria-label', revealLabel());
   actions.addEventListener('mousedown', event => { event.preventDefault(); event.stopPropagation(); });
   actions.addEventListener('click', event => {

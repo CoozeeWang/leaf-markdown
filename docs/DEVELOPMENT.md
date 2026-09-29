@@ -97,3 +97,5 @@ Windows 安装包通过 `windows-hooks.nsh` 注册当前用户的文件夹／文
 
 
 图片定位图标与悬浮说明的交互回归使用 `image-reveal-browser.mjs`；通过 `LEAF_IMAGE_PLATFORM=MacIntel`／`Win32` 核对平台文案，`LEAF_IMAGE_REVEAL_ENGINE=webkit` 核对 WebKit。原生最近文件菜单标签由 Rust 回归验证，同名文档只补最短可区分目录。Finder 启用“显示图标预览”时可用内容缩略图代替应用图标；诊断应分别核对默认应用、系统返回的文件图标与 Finder 预览状态，不替用户关闭显示偏好。
+
+图片说明与定位按钮的统一提示由 `image-tooltips-browser.mjs` 在完整应用中验证，覆盖浅色／深色、窄窗、键盘与单一提示；默认 Chromium，设置 `LEAF_IMAGE_TOOLTIP_ENGINE=webkit` 可单独检查 WebKit。浏览器引擎进程异常退出应记为环境阻塞，不能当作应用已通过或已失败。

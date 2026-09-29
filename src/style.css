@@ -763,6 +763,18 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
   pointer-events: none;
   white-space: normal;
 }
+.ui-tooltip[data-kind="image"] {
+  padding:4px 7px;
+  border-radius:4px;
+  background:var(--surface-strong);
+  color:var(--muted);
+  box-shadow:0 2px 6px rgba(0,0,0,.06);
+  font-size:12px;
+  font-weight:400;
+  letter-spacing:normal;
+}
+.ui-tooltip[data-kind="image"] .shortcut-keys > span { font-weight:400; }
+
 
 .drop-overlay { display: none; position: absolute; inset: 14px; z-index: 120; align-items: center; justify-content: center; border: 2px dashed var(--accent); border-radius: 15px; background: color-mix(in srgb, var(--surface) 94%, transparent); color: var(--accent); font-size: 18px; font-weight: 650; }
 .drop-overlay.visible { display: flex; }

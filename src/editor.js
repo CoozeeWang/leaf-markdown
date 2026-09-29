@@ -98,7 +98,15 @@ class InlinePreview extends WidgetType {
     const span = document.createElement('span');
     span._preview = this;
     if (this.rule) { span.className = 'leaf-rule'; span.setAttribute('role', 'separator'); }
-    else { renderInline(span, this.text, this.footnotes && { ...this.footnotes, seen: new Map() }); if (this.title) span.title = this.title; }
+    else {
+      renderInline(span, this.text, this.footnotes && { ...this.footnotes, seen: new Map() });
+      if (this.title) {
+        if (span.querySelector('.leaf-image')) {
+          span.dataset.tooltip = this.title;
+          span.dataset.tooltipKind = 'image';
+        } else span.title = this.title;
+      }
+    }
     span.addEventListener('mousedown', event => {
       if (event.button !== 0) return;
       event.preventDefault(); view.dispatch({ selection: { anchor: span._preview.from } }); view.focus();
