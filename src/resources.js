@@ -1,3 +1,4 @@
+import { shortcutText } from './platform-shortcuts.js';
 import { uiIcon } from './ui-icons.js';
 import { positionMenu } from './menu-position.js';
 let readLocal = null;
@@ -59,6 +60,7 @@ function localImagePath(img) {
   const target = safeTarget(img.dataset.resource, true);
   return target && !/^https?:\/\//i.test(target) ? decodeURIComponent(target) : null;
 }
+function revealLabel() { return /Mac|iPhone|iPad/i.test(navigator.userAgentData?.platform || navigator.platform) ? '在 Finder 中显示' : '在文件管理器中显示'; }
 function revealImage(img) {
   if (!img.isConnected) return;
   const relative = localImagePath(img);
@@ -76,7 +78,6 @@ let imageMenuImage = null;
 function closeImageMenu(restoreFocus = false) {
   if (!imageMenu || imageMenu.hidden) return;
   imageMenu.hidden = true;
-  imageMenuTrigger?.setAttribute('aria-expanded', 'false');
   if (restoreFocus && imageMenuTrigger?.isConnected) imageMenuTrigger.focus();
   imageMenuTrigger = null;
   imageMenuImage = null;
@@ -91,7 +92,7 @@ function ensureImageMenu() {
   const reveal = document.createElement('button');
   reveal.type = 'button';
   reveal.setAttribute('role', 'menuitem');
-  reveal.textContent = '在文件管理器中显示';
+  reveal.textContent = revealLabel();
   reveal.addEventListener('click', () => {
     const img = imageMenuImage;
     closeImageMenu(true);
@@ -115,7 +116,6 @@ function openImageMenu(img, trigger, anchor) {
   const menu = ensureImageMenu();
   imageMenuImage = img;
   imageMenuTrigger = trigger;
-  trigger?.setAttribute('aria-expanded', 'true');
   menu.hidden = false;
   positionMenu(menu, anchor);
   menu.querySelector('button').focus();
@@ -170,10 +170,10 @@ function renderFailure(status, img, kind) {
   if (!revealLocal || !localImagePath(img)) return;
   const name = fileNameOf(img.dataset.resource);
   card.dataset.clickable = 'yes';
-  card.title = '在文件管理器中显示';
+  card.title = revealLabel();
   card.tabIndex = 0;
   card.setAttribute('role', 'button');
-  card.setAttribute('aria-label', `在文件管理器中显示 ${name}`);
+  card.setAttribute('aria-label', `${revealLabel()} ${name}`);
   const open = () => revealImage(img);
   // The preview widget turns every press inside it into a caret move and then
   // swaps itself for source text, which would destroy the card before its click
@@ -192,14 +192,13 @@ export function imageNode(alt, path) {
   img.referrerPolicy = 'no-referrer';
   const actions = document.createElement('button');
   actions.type = 'button'; actions.className = 'leaf-image-actions';
-  actions.textContent = '图片操作';
-  actions.title = '图片操作';
-  actions.setAttribute('aria-haspopup', 'menu');
-  actions.setAttribute('aria-expanded', 'false');
+  actions.innerHTML = uiIcon('open', 16);
+  actions.dataset.tooltip = revealLabel();
+  actions.setAttribute('aria-label', revealLabel());
   actions.addEventListener('mousedown', event => { event.preventDefault(); event.stopPropagation(); });
   actions.addEventListener('click', event => {
     event.stopPropagation();
-    openImageMenu(img, actions, actions.getBoundingClientRect());
+    revealImage(img);
   });
   img.addEventListener('contextmenu', event => {
     if (!revealLocal || !localImagePath(img)) return;
@@ -207,7 +206,10 @@ export function imageNode(alt, path) {
     openImageMenu(img, actions, {left:event.clientX,right:event.clientX,top:event.clientY,bottom:event.clientY});
   });
   const status = document.createElement('span'); status.className = 'leaf-image-status';
-  holder.append(img, actions, status); updateImageActions(holder); loadImage(img); return holder;
+  const hint = document.createElement('span');
+  hint.className = 'leaf-image-drag-hint';
+  hint.textContent = `按住 ${shortcutText('⌘').replace(/\+$/, '')} 拖动图片`;
+  holder.append(img, actions, hint, status); updateImageActions(holder); loadImage(img); return holder;
 }
 export async function loadImage(img) {
   const token = {}; img._resourceToken = token;

@@ -6,6 +6,11 @@ const browser = process.env.LEAF_IMAGE_REVEAL_ENGINE === 'webkit'
   ? await webkit.launch({ headless: true }) : await chromium.launch(launchOptions);
 try {
   const page = await browser.newPage({ viewport: { width: 720, height: 480 } });
+  await page.addInitScript(platform => {
+    Object.defineProperty(navigator,'platform',{get:()=>platform});
+    Object.defineProperty(navigator,'userAgentData',{get:()=>({platform})});
+  }, process.env.LEAF_IMAGE_PLATFORM || 'MacIntel');
+  const label = process.env.LEAF_IMAGE_PLATFORM === 'Win32' ? '在文件管理器中显示' : '在 Finder 中显示';
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/image-reveal-fixture', route => route.fulfill({
@@ -49,24 +54,26 @@ try {
   const before = await page.evaluate(() => ed.getValue());
 
   await local.hover();
-  const actionBounds = await local.getByRole('button', { name: '图片操作' }).boundingBox();
+  const actionBounds = await local.getByRole('button', { name: label }).boundingBox();
   assert.ok(actionBounds.x >= 0 && actionBounds.x + actionBounds.width <= 720, 'image action stays inside the window');
-  await local.getByRole('button', { name: '图片操作' }).click();
-  await page.getByRole('menuitem', { name: '在文件管理器中显示' }).click();
+  await local.getByRole('button', { name: label }).click();
+  assert.equal(await local.getByRole('button', { name: label }).getAttribute('data-tooltip'), label);
+  assert.equal(await local.getByRole('button', { name: label }).locator('svg').count(), 1);
+  assert.equal(await local.getByRole('button', { name: label }).textContent(), '');
   assert.deepEqual(await page.evaluate(() => reveals), [{ relative: 'assets/my photo.png' }]);
   assert.equal(await page.evaluate(() => ed.getValue()), before, 'revealing does not edit Markdown');
 
   await local.locator('img').click({ button: 'right' });
-  await page.getByRole('menuitem', { name: '在文件管理器中显示' }).waitFor();
+  await page.getByRole('menuitem', { name: label }).waitFor();
   assert.equal(await page.evaluate(() => ed.getValue()), before, 'right click keeps the image preview and source');
   await page.keyboard.press('Escape');
-  assert.equal(await page.getByRole('menuitem', { name: '在文件管理器中显示' }).isVisible(), false);
+  assert.equal(await page.getByRole('menuitem', { name: label }).isVisible(), false);
 
-  await local.getByRole('button', { name: '图片操作' }).focus();
+  await local.getByRole('button', { name: label }).focus();
   await page.keyboard.press('Enter');
-  assert.equal(await page.getByRole('menuitem', { name: '在文件管理器中显示' }).isVisible(), true);
-  await page.keyboard.press('Escape');
-  assert.equal(await local.getByRole('button', { name: '图片操作' }).evaluate(button => document.activeElement === button), true);
+  await page.waitForFunction(() => reveals.length === 2);
+  assert.equal(await page.getByRole('menuitem', { name: label }).isVisible(), false);
+  assert.equal(await local.getByRole('button', { name: label }).evaluate(button => document.activeElement === button), true);
 
   await page.evaluate(() => { failReveal = true; });
   await missing.locator('.leaf-image-status[data-kind="missing"]').dispatchEvent('mousedown', { button: 0 });
@@ -82,13 +89,15 @@ try {
   const dropped = page.locator('.leaf-image').filter({ has: page.locator('img[alt="Dropped"]') });
   await dropped.locator('img[data-loaded="yes"]').waitFor();
   await dropped.hover();
-  await dropped.getByRole('button', { name: '图片操作' }).click();
-  await page.getByRole('menuitem', { name: '在文件管理器中显示' }).click();
+  await dropped.getByRole('button', { name: label }).click();
   assert.deepEqual(await page.evaluate(() => reveals.at(-1)), { relative: 'assets/dropped.png' }, 'newly inserted images use the same action');
+  assert.equal(await dropped.locator('.leaf-image-drag-hint').isVisible(), true);
+  assert.match(await dropped.locator('.leaf-image-drag-hint').textContent(), process.env.LEAF_IMAGE_PLATFORM === 'Win32' ? /Ctrl/ : /⌘/);
   await page.emulateMedia({ media: 'print' });
-  assert.equal(await dropped.getByRole('button', { name: '图片操作', includeHidden: true }).isVisible(), false, 'print hides image controls');
+  assert.equal(await dropped.locator('.leaf-image-drag-hint').isVisible(), false);
+  assert.equal(await dropped.getByRole('button', { name: label, includeHidden: true }).isVisible(), false, 'print hides image controls');
   assert.deepEqual(errors, []);
-  console.log('PASS image reveal menu, context menu, keyboard, path, failures and source preservation');
+  console.log('PASS image reveal icon, drag hint, context menu, keyboard, path, failures and source preservation');
 } finally {
   await browser.close();
 }
