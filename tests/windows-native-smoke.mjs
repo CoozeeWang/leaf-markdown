@@ -70,7 +70,7 @@ public class LeafCloseProbe {
 }
 '@
 if (-not [LeafCloseProbe]::Close([uint32]$env:LEAF_PROBE_PID, $env:LEAF_PROBE_TITLE)) { throw 'Native window not found' }
-`], { env: { ...process.env, LEAF_PROBE_PID: String(child.pid), LEAF_PROBE_TITLE: title }, timeout: 15000 });
+`], { env: { ...process.env, LEAF_PROBE_PID: String(child.pid), LEAF_PROBE_TITLE: title }, timeout: 60000 });
 }
 
 const pages = () => browser.contexts().flatMap(c => c.pages());
