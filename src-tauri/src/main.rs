@@ -12,6 +12,9 @@ mod recovery;
 mod resources;
 mod document_location;
 mod recent;
+mod new_markdown;
+#[cfg(target_os = "macos")]
+mod native_services;
 
 #[derive(Default)]
 struct RecoveryState { gate: Mutex<()>, drafts: Mutex<HashMap<String, String>>, initial: Mutex<HashMap<String, String>> }
@@ -90,9 +93,24 @@ fn menu_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
         })
 }
 
+fn create_from_file_manager(app: tauri::AppHandle, folder: Result<PathBuf, String>) {
+    use tauri_plugin_dialog::DialogExt;
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = folder.and_then(|folder| new_markdown::create(&folder)).and_then(|path| {
+            open_document(app.clone(), Some(path.to_string_lossy().into_owned()))
+                .map_err(|error| format!("文档已创建，但未能打开：{}\n{error}", path.display()))
+        });
+        if let Err(error) = result { app.dialog().message(error).title("Leaf · 新建文档").show(|_| {}); }
+    });
+}
+
 #[cfg(target_os = "windows")]
 fn open_windows_arguments(app: &tauri::AppHandle, args: Vec<String>, cwd: &str) {
     use tauri_plugin_dialog::DialogExt;
+    if let Some(folder) = new_markdown::argument(&args, std::path::Path::new(cwd)) {
+        create_from_file_manager(app.clone(), folder);
+        return;
+    }
     let paths = document_arguments(args, std::path::Path::new(cwd));
     if paths.is_empty() {
         if let Some(window) = app.webview_windows().values().next() {
@@ -898,6 +916,8 @@ fn main() {
             app.manage(recent::Recent::load(recent_path));
             #[cfg(target_os = "macos")]
             native_shortcuts::install(app.handle().clone());
+            #[cfg(target_os = "macos")]
+            native_services::install(app.handle().clone());
             use tauri::menu::{Menu, Submenu, MenuItem, PredefinedMenuItem};
             let handle = app.handle();
             let new = MenuItem::with_id(handle, "new", "新建", true, Some("CmdOrCtrl+N"))?;
