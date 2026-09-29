@@ -23,6 +23,8 @@ Rust 测试在 `src-tauri` 中运行：
 cargo test --locked --all-targets
 ```
 
+Issue #36 的文件跟随回归包含 `src-tauri/src/document_location.rs` 中的原生文件身份测试，以及 `tests/document-session.test.js` 中的串行轮询、未保存编辑和保存去向测试。Rust 测试在本机一次性目录中改名、移动和替换文件；前端测试使用模拟文件接口。两者通过后，仍需分别在 macOS、Windows 原生应用中用一次性 Markdown 文件检查文件名、最近打开和保存位置。浏览器测试与 macOS 结果不能代替 Windows 实测；构建通过也不能代替已安装应用的人工验收。
+
 空行整理的规则见[空行整理说明](BLANK-LINES.md)。相关回归为 `blank-lines.test.js`、`blank-lines-browser.mjs` 和 `paragraph-blank-lines-browser.mjs`：覆盖补减空行、首尾清理、嵌套列表和受保护内容，并检查按钮、快捷键、一次撤销／重做、重复整理、预览及保存后重新打开的一致性。保存检查使用模拟文件接口，不代替桌面版真实文件验收。
 
 macOS 原生空行整理检查使用同一开发服务器，在 `src-tauri` 中运行 `cargo run --locked --example native-table-keys -- ../tests/native-blank-lines.html http://127.0.0.1:41732/tests/native-blank-lines.html`。它在实际 WKWebView 中检查整理、预览／源码切换、保存回调、撤销／重做和 CRLF 保留；不代替安装版真实文件保存与重新打开的验收。

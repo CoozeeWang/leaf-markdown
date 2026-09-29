@@ -46,6 +46,7 @@ export function desktopSave(as = false, manual = true) {
   return session?.save({ as, manual }) ?? Promise.resolve(false);
 }
 export function desktopRename(name) { return session.rename(name); }
+export function desktopRelocate() { return session?.relocate() ?? Promise.resolve(false); }
 export function desktopRun(action) { return session.run(action); }
 export async function chooseAttachments(image) { return open({ multiple: true, ...(image ? { filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "svg"] }] } : {}) }); }
 export async function desktopExportBundle() {
@@ -94,12 +95,23 @@ export async function initDesktop(callbacks) {
     load: (content, source) => hooks.load(content, source ? fileNameFromPath(source) : '未命名.md', source),
     restore: hooks.restore,
     select: path => save({ defaultPath: path || '未命名.md', filters }),
+    selectExisting: () => open({ multiple: false, filters, title: '重新定位原文件' }),
+    relocate: (path, expected) => invoke('relocate_document', { path, expected, loadedImages: hooks.loadedImages?.() ?? [] }),
+    unavailableActions: () => [
+      { label: '重新定位原文件', run: desktopRelocate },
+      { label: '另存为', run: () => desktopSave(true) },
+    ],
     read: path => invoke('read_document', { path }),
+    observe: () => invoke('observe_document', { loadedImages: hooks.loadedImages?.() ?? [] }),
     async readTarget(path) { try { return await invoke('read_document', { path }); } catch { return null; } },
     rename: (path,name,expected,content) => invoke('rename_document',{path,name,expected,content}),
     renamed(content,path,previous) {
       try { const items=JSON.parse(localStorage.getItem('leaf-desktop-recent')||'[]');localStorage.setItem('leaf-desktop-recent',JSON.stringify(items.filter(x=>x.path!==previous))); } catch {}
       rememberDesktopFile(path);hooks.saved(content,fileNameFromPath(path),path);
+    },
+    followed(content,path,previous,movedImages) {
+      try { const items=JSON.parse(localStorage.getItem('leaf-desktop-recent')||'[]');localStorage.setItem('leaf-desktop-recent',JSON.stringify(items.filter(x=>x.path!==previous))); } catch {}
+      rememberDesktopFile(path);hooks.followed?.(content,fileNameFromPath(path),path,movedImages);
     },
     write: (path, content, expected) => invoke('write_document', { path, content, expected, resources: localResourcePaths(content) }),
     checkpoint: (content, preserve = false) => invoke('recovery_checkpoint', { content, preserve }),
@@ -143,9 +155,9 @@ export async function initDesktop(callbacks) {
   const path = await invoke('initial_path');
   if (path) {
     try {
-      const content = await invoke('read_document', { path });
-      await session.initialize(path, content);
-      rememberDesktopFile(path);
+      const observed = await invoke('observe_document', { loadedImages: [] });
+      await session.initialize(observed.path, observed.content);
+      rememberDesktopFile(observed.path);
     } catch (error) {
       // A failed load never binds an empty/welcome buffer to the failed path.
       await session.initialize(null, '');
@@ -167,6 +179,7 @@ export async function initDesktop(callbacks) {
   }
   document.addEventListener('leaf-recovery-changed', refreshRecoveryNotice);
   globalThis.addEventListener('focus', refreshRecoveryNotice);
+  globalThis.addEventListener('focus', () => hooks.retryMissingImages?.());
   await refreshRecoveryNotice();
   await listen('leaf-retention-days',({payload})=>document.dispatchEvent(new CustomEvent('leaf-retention-days',{detail:payload})));
   try { document.dispatchEvent(new CustomEvent('leaf-retention-days',{detail:await invoke('recovery_retention')})); }

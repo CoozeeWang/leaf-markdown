@@ -5,7 +5,7 @@ import { positionMenu } from './menu-position.js';
 import {installMenuInteraction} from './menu-interaction.js';
 installMenuInteraction();
 import { setupWriting } from './writing-tools.js';
-import { refreshImages } from './resources.js';
+import { loadedLocalImagePaths, refreshImages, retryMissingImages, setMovedMissingImages } from './resources.js';
 import { showRecovery, setupWelcomeRecovery } from './recovery-dialog.js';
 import { createLeafEditor } from './editor.js';
 import { setupSidebarResize } from './outline-resize.js';
@@ -135,6 +135,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
     <div id="statusNotice" class="status-notice" hidden>
       <span id="saveStatus" class="save-status" hidden></span>
       <button id="recoveryNotice" class="recovery-notice" hidden>发现恢复记录 · 查看</button>
+      <span id="statusActions" class="status-actions" hidden></span>
       <button id="dismissStatus" class="dismiss-status" aria-label="关闭提示" data-tooltip="关闭提示">${icon('close', 14)}</button>
     </div>
     <span id="statusAnnouncement" class="status-announcement" role="status" aria-live="polite" aria-atomic="true"></span>
@@ -300,6 +301,7 @@ const statusNotices = setupStatusNotices({
   container: document.querySelector('#statusNotice'),
   text: document.querySelector('#saveStatus'),
   recovery: document.querySelector('#recoveryNotice'),
+  actions: document.querySelector('#statusActions'),
   dismiss: document.querySelector('#dismissStatus'),
   announcement: document.querySelector('#statusAnnouncement'),
   format: shortcutText,
@@ -1019,6 +1021,7 @@ async function renderRecentFiles() {
 }
 
 async function setDocument(content, name, handle = null, file = null) {
+  setMovedMissingImages();
   statusNotices.reset();
   collapsedOutline.clear();
   state.outline = [];
@@ -1867,6 +1870,8 @@ if (desktop) {
   editor.setReading(true);
   initDesktop({
     content: () => state.content,
+    loadedImages: () => loadedLocalImagePaths(),
+    retryMissingImages: () => retryMissingImages(),
     dirty: () => state.content !== state.savedContent,
     status: setStatus,
     recoveryAvailable: statusNotices.recoveryAvailable,
@@ -1897,7 +1902,8 @@ if (desktop) {
       // Native Tauri drag events do not pass through contentDOM's dragover.
       editor.setDropPoint(active&&!opening&&!state.reading ? point : null);
     },
-    saved(content, name, path) { const changed = state.resourcePath !== path; state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); if (changed) refreshImages(); },
+    saved(content, name, path) { const changed = state.resourcePath !== path; state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); if (changed) { setMovedMissingImages(); refreshImages(); } },
+    followed(content, name, path, movedImages) { state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); setMovedMissingImages(movedImages); refreshImages(); },
   }).catch(error => setStatus(`桌面初始化失败：${error}`, 'error')).finally(() => {
     shell.style.pointerEvents = '';
     editor.setReading(state.reading);

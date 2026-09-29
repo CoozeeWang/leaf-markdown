@@ -10,12 +10,15 @@ mod native_shortcuts;
 mod native_title;
 mod recovery;
 mod resources;
+mod document_location;
 
 #[derive(Default)]
 struct RecoveryState { gate: Mutex<()>, drafts: Mutex<HashMap<String, String>>, initial: Mutex<HashMap<String, String>> }
 
 #[derive(Default)]
 struct Documents(Mutex<HashMap<String, Option<PathBuf>>>);
+#[derive(Default)]
+struct DocumentAnchors(Mutex<HashMap<String, document_location::Anchor>>);
 #[derive(Default)]
 struct MenuFocus(Mutex<Option<String>>);
 #[derive(Default)]
@@ -283,6 +286,8 @@ fn open_document(app: tauri::AppHandle, path: Option<String>) -> Result<(), Stri
 
 fn create_document(app: tauri::AppHandle, path: Option<String>, recovered: Option<String>) -> Result<(), String> {
     let path = path.map(|p| fs::canonicalize(p).map_err(|e| e.to_string())).transpose()?;
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let anchor = path.as_ref().map(|p| document_location::Anchor::open(p).map_err(|e| e.to_string())).transpose()?;
     if let Some(ref target) = path {
         let docs = app.state::<Documents>();
         let docs = docs.0.lock().unwrap();
@@ -299,6 +304,8 @@ fn create_document(app: tauri::AppHandle, path: Option<String>, recovered: Optio
     }
     let label = format!("document-{}", NEXT_WINDOW.fetch_add(1, Ordering::Relaxed));
     app.state::<Documents>().0.lock().unwrap().insert(label.clone(), path);
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if let Some(anchor) = anchor { app.state::<DocumentAnchors>().0.lock().unwrap().insert(label.clone(), anchor); }
     if let Some(content) = recovered { app.state::<RecoveryState>().initial.lock().unwrap().insert(label.clone(), content); }
     let builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html?document=1".into()))
         .title("Leaf").inner_size(1100., 800.).min_inner_size(900., 480.);
@@ -307,6 +314,7 @@ fn create_document(app: tauri::AppHandle, path: Option<String>, recovered: Optio
     let result = builder.build();
     if let Err(error) = result {
         app.state::<Documents>().0.lock().unwrap().remove(&label);
+        app.state::<DocumentAnchors>().0.lock().unwrap().remove(&label);
         app.state::<RecoveryState>().initial.lock().unwrap().remove(&label);
         return Err(error.to_string());
     }
@@ -320,6 +328,117 @@ fn create_document(app: tauri::AppHandle, path: Option<String>, recovered: Optio
 
 #[tauri::command(async)]
 fn read_document(path: String) -> Result<String, String> { fs::read_to_string(path).map_err(|e| e.to_string()) }
+
+fn anchor_matches(anchors: &DocumentAnchors, label: &str, path: &Path) -> bool {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    { anchors.0.lock().unwrap().get(label).is_some_and(|anchor| anchor.matches_path(path)) }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    { let _ = (anchors, label, path); true }
+}
+
+#[cfg(target_os = "windows")]
+fn release_anchor(anchors: &DocumentAnchors, label: &str) -> Option<(u64, u128)> {
+    let old = anchors.0.lock().unwrap().remove(label)?;
+    let token = old.token();
+    drop(old);
+    Some(token)
+}
+
+#[cfg(target_os = "windows")]
+fn restore_anchor(anchors: &DocumentAnchors, label: &str, path: &Path, token: Option<(u64, u128)>) {
+    if let (Some(token), Ok(anchor)) = (token, document_location::Anchor::open(path)) {
+        if anchor.token() == token { anchors.0.lock().unwrap().insert(label.into(), anchor); }
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentObservation { path: String, content: String, moved_images: Vec<String> }
+
+// The UI only supplies images it actually displayed before the move. Recheck
+// the two directories here, without restoring, copying or rewriting a file.
+fn moved_missing_images(source: &Path, target: &Path, loaded: &[String]) -> Vec<String> {
+    if source.parent() == target.parent() { return Vec::new(); }
+    let Some(directory) = target.parent() else { return Vec::new(); };
+    let mut confirmed = std::collections::BTreeSet::new();
+    for relative in loaded {
+        if let Ok(old) = resources::resolve(source, relative) {
+            let missing = fs::symlink_metadata(directory.join(relative))
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound);
+            if missing && resources::bytes(&old).is_ok() { confirmed.insert(relative.clone()); }
+        }
+    }
+    confirmed.into_iter().collect()
+}
+
+#[tauri::command(async)]
+fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
+    let _guard = recovery.gate.lock().unwrap();
+    let mut documents = docs.0.lock().unwrap();
+    let source = documents.get(window.label()).cloned().flatten().ok_or("请先保存文档")?;
+    let anchors = anchors.0.lock().unwrap();
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let located = anchors.get(window.label()).ok_or("无法确认当前文件的位置")?.locate().map_err(|e| e.to_string())?;
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let located = document_location::Located { path: source.clone(), content: fs::read_to_string(&source).map_err(|e| e.to_string())? };
+    let target = fs::canonicalize(&located.path).map_err(|e| e.to_string())?;
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if !anchors.get(window.label()).is_some_and(|anchor| anchor.matches_path(&target)) { return Err("原文件在原位置找不到。".into()); }
+    let moved_images = if target != source { moved_missing_images(&source, &target, &loaded_images) } else { Vec::new() };
+    if target != source {
+        if documents.iter().any(|(label, path)| label != window.label() && path.as_ref() == Some(&target)) {
+            return Err("该文件已在另一窗口打开".into());
+        }
+        recovery_store(&app)?.copy_for_rename(&recovery::file_key(&source), &recovery::file_key(&target), &target.to_string_lossy())?;
+        documents.insert(window.label().into(), Some(target.clone()));
+    }
+    Ok(DocumentObservation { path: target.to_string_lossy().into_owned(), content: located.content, moved_images })
+}
+
+// This path is supplied by an explicit user choice. An unchanged disk baseline
+// is still required before the editor can treat it as the original document.
+struct RelocationCandidate { path: PathBuf, content: String, anchor: Option<document_location::Anchor> }
+
+fn verify_relocation(path: &str, expected: &str) -> Result<RelocationCandidate, String> {
+    let target = fs::canonicalize(path).map_err(|e| e.to_string())?;
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let anchor = Some(document_location::Anchor::open(&target).map_err(|e| e.to_string())?);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let anchor: Option<document_location::Anchor> = None;
+    let content = if let Some(ref anchor) = anchor {
+        anchor.locate().map_err(|e| e.to_string())?.content
+    } else { fs::read_to_string(&target).map_err(|e| e.to_string())? };
+    if content != expected { return Err("所选文件的内容与原文件不同。请检查文件，或另存为。".into()); }
+    if anchor.as_ref().is_some_and(|anchor| !anchor.matches_path(&target)) {
+        return Err("所选文件的位置已变化，请重新选择。".into());
+    }
+    Ok(RelocationCandidate { path: target, content, anchor })
+}
+
+#[tauri::command(async)]
+fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, expected: String, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
+    let _guard = recovery.gate.lock().unwrap();
+    let mut documents = docs.0.lock().unwrap();
+    let source = documents.get(window.label()).cloned().flatten().ok_or("请先保存文档")?;
+    let candidate = verify_relocation(&path, &expected)?;
+    let target = &candidate.path;
+    if documents.iter().any(|(label, open)| label != window.label() && open.as_ref() == Some(target)) {
+        return Err("该文件已在另一窗口打开，请选择其他文件。".into());
+    }
+    if candidate.anchor.as_ref().is_some_and(|anchor| !anchor.matches_path(target)) {
+        return Err("所选文件的位置已变化，请重新选择。".into());
+    }
+    let moved_images = if target != &source { moved_missing_images(&source, target, &loaded_images) } else { Vec::new() };
+    if target != &source {
+        recovery_store(&app)?.copy_for_rename(&recovery::file_key(&source), &recovery::file_key(&target), &target.to_string_lossy())?;
+        documents.insert(window.label().into(), Some(target.clone()));
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if let Some(anchor) = candidate.anchor { anchors.0.lock().unwrap().insert(window.label().into(), anchor); }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = anchors;
+    Ok(DocumentObservation { path: target.to_string_lossy().into_owned(), content: candidate.content, moved_images })
+}
 
 fn recovery_store(app: &tauri::AppHandle) -> Result<recovery::Store, String> {
     Ok(recovery::Store::new(app.path().app_data_dir().map_err(|e| e.to_string())?.join("recovery-v1")))
@@ -442,11 +561,12 @@ fn rename_file(source: &std::path::Path, name: &str, expected: &str) -> Result<P
 #[derive(serde::Serialize)]
 struct ResourceWrite { path: String, content: String, mappings: Vec<(String,String)>, warning: Option<String> }
 #[tauri::command(async)]
-fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::State<Documents>,recovery:tauri::State<RecoveryState>,path:String,name:String,expected:String,content:String)->Result<ResourceWrite,String>{
+fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::State<Documents>,anchors:tauri::State<DocumentAnchors>,recovery:tauri::State<RecoveryState>,path:String,name:String,expected:String,content:String)->Result<ResourceWrite,String>{
     let _guard=recovery.gate.lock().unwrap();
     let mut documents=docs.0.lock().unwrap();
     let source=documents.get(window.label()).cloned().flatten().ok_or("请先保存文档")?;
     if source!=PathBuf::from(path) {return Err("文档路径已变化，请重试".into());}
+    if !anchor_matches(&anchors, window.label(), &source) { return Err("原文件在原位置找不到。请先另存为。".into()); }
     validate_file_name(&name)?;
     let target=source.with_file_name(&name);
     if documents.iter().any(|(label,p)|label!=window.label()&&p.as_ref()==Some(&target)){return Err("该文件已在另一窗口打开".into());}
@@ -456,13 +576,23 @@ fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::
     let (_,mappings)=resources::rehome(&source,&target,&format!("{expected}\n{content}"))?;
     let rewritten=resources::rewrite_paths(&expected,&mappings);
     let target=rename_file(&source,&name,&expected)?;
-    if rewritten!=expected {
-        if let Err(error)=atomic_save(target.to_str().ok_or("文件路径无效")?,&rewritten,Some(expected.clone())) {
-            let _=rename_file(&target,source.file_name().and_then(|s|s.to_str()).ok_or("文件名无效")?,&expected);
-            return Err(error);
+    let replaced = if rewritten!=expected {
+        #[cfg(target_os = "windows")]
+        let old_token = release_anchor(&anchors, window.label());
+        match atomic_save(target.to_str().ok_or("文件路径无效")?,&rewritten,Some(expected.clone())) {
+            Ok(file) => Some(file),
+            Err(error) => {
+                let rolled_back = rename_file(&target,source.file_name().and_then(|s|s.to_str()).ok_or("文件名无效")?,&expected).is_ok();
+                #[cfg(target_os = "windows")]
+                if rolled_back { restore_anchor(&anchors, window.label(), &source, old_token); }
+                #[cfg(not(target_os = "windows"))]
+                let _ = rolled_back;
+                return Err(error);
+            }
         }
-    }
+    } else { None };
     documents.insert(window.label().into(),Some(target.clone()));
+    if let Some(file) = replaced { rebind_anchor(&anchors, window.label(), file); }
     Ok(ResourceWrite {path:target.to_string_lossy().into_owned(),content:rewritten,mappings,warning:None})
 }
 #[tauri::command(async)]
@@ -471,7 +601,7 @@ fn export_bundle(window:tauri::WebviewWindow,docs:tauri::State<Documents>,direct
     resources::export_bundle(&source,std::path::Path::new(&directory),&content,&resources).map(|p|p.to_string_lossy().into_owned())
 }
 #[tauri::command(async)]
-fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, recovery: tauri::State<RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>) -> Result<ResourceWrite, String> {
+fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>) -> Result<ResourceWrite, String> {
     if !window.label().starts_with("document-") { return Err("请先打开或新建文档".into()); }
     let _guard = recovery.gate.lock().unwrap();
     let old_key = recovery_key(&window, &docs, &recovery);
@@ -485,6 +615,10 @@ fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tau
     };
     let mut documents = docs.0.lock().unwrap();
     if documents.iter().any(|(label, p)| label != window.label() && p.as_ref() == Some(&target)) { return Err("目标文件已在另一个 Leaf 窗口打开，请切换窗口或选择其他文件。".into()); }
+    if documents.get(window.label()).and_then(|p| p.as_ref()) == Some(&target)
+        && !anchor_matches(&anchors, window.label(), &target) {
+        return Err("原文件在原位置找不到。请先另存为。".into());
+    }
     let (content,mappings)=if let Some(source)=documents.get(window.label()).and_then(|p|p.as_ref()).filter(|p|*p!=&target) {
         resources::copy_references(source,&target,&resources)?;
         resources::rehome(source,&target,&content)?
@@ -504,12 +638,24 @@ fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tau
         for version in record.versions { text.push('\n'); text.push_str(&version.content); }
     }
     let mut cleanup_warning=None;
-    atomic_save(target_string, &content, expected)?;
+    #[cfg(target_os = "windows")]
+    let old_token = if documents.get(window.label()).and_then(|p| p.as_ref()) == Some(&target) {
+        release_anchor(&anchors, window.label())
+    } else { None };
+    let saved_file = match atomic_save(target_string, &content, expected) {
+        Ok(file) => file,
+        Err(error) => {
+            #[cfg(target_os = "windows")]
+            restore_anchor(&anchors, window.label(), &target, old_token);
+            return Err(error);
+        }
+    };
     let buffers: Vec<String> = app.state::<OpenBuffers>().0.lock().unwrap().iter().filter(|(label,_)| label.as_str()!=window.label()).map(|(_,content)|content.clone()).collect();
     if let Some(before) = previous {
         if let Err(error) = resources::collect_removed_protected(&image_store, &target, &before, &content, &buffers) { cleanup_warning=Some(format!("文档已保存，图片清理未完成：{error}")); }
     }
     documents.insert(window.label().to_owned(), Some(target.clone()));
+    rebind_anchor(&anchors, window.label(), saved_file);
     // Disk is already saved. A cleanup failure must not be reported as a failed
     // write, since that would leave the editor's comparison baseline stale.
     if let Err(error) = store.saved(&old_key, &content) { eprintln!("Recovery cleanup: {error}"); }
@@ -517,7 +663,15 @@ fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tau
     Ok(ResourceWrite {path:target.to_string_lossy().into_owned(),content,mappings,warning:cleanup_warning})
 }
 
-fn atomic_save(path: &str, content: &str, expected: Option<String>) -> Result<(), String> {
+fn rebind_anchor(anchors: &DocumentAnchors, label: &str, file: fs::File) {
+    let mut bound = anchors.0.lock().unwrap();
+    match document_location::Anchor::from_file(file) {
+        Ok(anchor) => { bound.insert(label.into(), anchor); }
+        Err(error) => { bound.remove(label); eprintln!("Document tracking unavailable after save: {error}"); }
+    }
+}
+
+fn atomic_save(path: &str, content: &str, expected: Option<String>) -> Result<fs::File, String> {
     let target = PathBuf::from(&path);
     // Compare immediately before writing; do not overwrite an external edit silently.
     let current = match fs::read_to_string(&target) {
@@ -526,6 +680,10 @@ fn atomic_save(path: &str, content: &str, expected: Option<String>) -> Result<()
         Err(e) => return Err(e.to_string()),
     };
     if current != expected { return Err("文件已被其他程序修改，请另存为以保留当前编辑内容。".into()); }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let original_identity = if current.is_some() {
+        Some(document_location::Anchor::open(&target).map_err(|e| e.to_string())?.token())
+    } else { None };
     let parent = target.parent().ok_or("无法确定保存目录")?;
     let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
     if let Ok(meta) = fs::metadata(&target) {
@@ -537,12 +695,73 @@ fn atomic_save(path: &str, content: &str, expected: Option<String>) -> Result<()
     // Recheck after preparing the temporary file, reducing the external-write race.
     let latest = match fs::read_to_string(&target) { Ok(text) => Some(text), Err(e) if e.kind() == std::io::ErrorKind::NotFound => None, Err(e) => return Err(e.to_string()) };
     if latest != current { return Err("保存期间文件被其他程序修改，请另存为。".into()); }
-    temp.persist(&target).map_err(|e| e.to_string())?;
-    Ok(())
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if let Some(token) = original_identity {
+        if document_location::Anchor::open(&target).map_err(|e| e.to_string())?.token() != token {
+            return Err("保存期间文件位置已变化，请重新定位原文件或另存为。".into());
+        }
+    }
+    if expected.is_none() {
+        temp.persist_noclobber(&target).map_err(|e| if e.error.kind() == std::io::ErrorKind::AlreadyExists {
+            "保存位置已有同名文件，请选择其他位置。".into()
+        } else { e.to_string() })
+    } else {
+        temp.persist(&target).map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn moved_image_reason_requires_a_previously_loaded_file_left_behind() {
+        let root = tempfile::tempdir().unwrap();
+        let before = root.path().join("before");
+        let after = root.path().join("after");
+        fs::create_dir_all(before.join("assets")).unwrap();
+        fs::create_dir_all(after.join("assets")).unwrap();
+        let old_doc = before.join("note.md");
+        let new_doc = after.join("note.md");
+        fs::write(&new_doc, "![photo](assets/photo.png)").unwrap();
+        fs::write(before.join("assets/photo.png"), b"picture").unwrap();
+        let loaded = vec!["assets/photo.png".into(), "assets/never.png".into(), "../private.png".into()];
+        assert_eq!(moved_missing_images(&old_doc, &new_doc, &loaded), vec!["assets/photo.png"]);
+        fs::write(after.join("assets/photo.png"), b"destination picture").unwrap();
+        assert!(moved_missing_images(&old_doc, &new_doc, &loaded).is_empty());
+        fs::remove_file(after.join("assets/photo.png")).unwrap();
+        fs::remove_file(before.join("assets/photo.png")).unwrap();
+        assert!(moved_missing_images(&old_doc, &new_doc, &loaded).is_empty());
+        assert_eq!(fs::read_to_string(&new_doc).unwrap(), "![photo](assets/photo.png)");
+        assert!(!before.join("note.md").exists());
+    }
+
+    #[test]
+    fn same_folder_rename_does_not_claim_document_moved_away_from_images() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("photo.png"), b"picture").unwrap();
+        assert!(moved_missing_images(&root.path().join("old.md"), &root.path().join("new.md"), &["photo.png".into()]).is_empty());
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn saving_rebinds_the_identity_used_for_later_external_renames() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("draft.md");
+        fs::write(&path, "first").unwrap();
+        let anchors = DocumentAnchors::default();
+        anchors.0.lock().unwrap().insert("document-test".into(), document_location::Anchor::open(&path).unwrap());
+        #[cfg(target_os = "windows")]
+        let original = release_anchor(&anchors, "document-test");
+        let saved = atomic_save(path.to_str().unwrap(), "second", Some("first".into())).unwrap();
+        #[cfg(target_os = "windows")]
+        assert!(original.is_some());
+        #[cfg(not(target_os = "windows"))]
+        assert!(!anchor_matches(&anchors, "document-test", &path));
+        rebind_anchor(&anchors, "document-test", saved);
+        assert!(anchor_matches(&anchors, "document-test", &path));
+        let renamed = dir.path().join("renamed.md");
+        fs::rename(&path, &renamed).unwrap();
+        assert_eq!(anchors.0.lock().unwrap()["document-test"].locate().unwrap().path, fs::canonicalize(renamed).unwrap());
+    }
     #[test]
     fn new_document_honors_confirmed_replace_and_discards_the_original_first() {
         let dir = tempfile::tempdir().unwrap();
@@ -596,6 +815,27 @@ mod tests {
         assert_eq!(fs::read_to_string(file).unwrap(), "external");
     }
     #[test]
+    fn explicit_relocation_requires_the_original_disk_baseline() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("chosen.md");
+        fs::write(&path, "different document").unwrap();
+        let selected = path.to_str().unwrap();
+        assert!(verify_relocation(selected, "original baseline").is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "different document");
+        fs::write(&path, "original baseline").unwrap();
+        let verified = verify_relocation(selected, "original baseline").unwrap();
+        assert_eq!(verified.path, fs::canonicalize(&path).unwrap());
+        assert_eq!(verified.content, "original baseline");
+    }
+    #[test]
+    fn creating_a_new_save_never_replaces_a_same_name_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("existing.md");
+        fs::write(&path, "someone else's file").unwrap();
+        assert!(atomic_save(path.to_str().unwrap(), "my edits", None).is_err());
+        assert_eq!(fs::read_to_string(path).unwrap(), "someone else's file");
+    }
+    #[test]
     fn round_trips_markdown_and_creates_new_files() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("中文.md");
@@ -619,9 +859,9 @@ fn main() {
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
         open_windows_arguments(app, args, &cwd);
     }));
-    builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
+    builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open])
+        .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             native_shortcuts::install(app.handle().clone());
@@ -677,6 +917,7 @@ fn main() {
                 window.app_handle().state::<OpenBuffers>().0.lock().unwrap().remove(window.label());
                 window.app_handle().state::<Exports>().0.lock().unwrap().remove(window.label());
                 window.app_handle().state::<Documents>().0.lock().unwrap().remove(window.label());
+                window.app_handle().state::<DocumentAnchors>().0.lock().unwrap().remove(window.label());
                 window.app_handle().state::<RecoveryState>().drafts.lock().unwrap().remove(window.label());
                 window.app_handle().state::<RecoveryState>().initial.lock().unwrap().remove(window.label());
                 // Document destruction happens only after the frontend's unsaved

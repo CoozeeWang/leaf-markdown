@@ -14,6 +14,7 @@ export async function desktopImageFixture(page, source, {platform}={}) {
       invoke:async(command,args)=>{
         if(command==='plugin:event|listen'){listeners.set(args.event,args.handler);return args.handler;}
         if(command==='initial_path')return '/fixture/images.md';
+        if(command==='observe_document')return {path:'/fixture/images.md',content:disk};
         if(command==='read_document')return disk;
         if(command==='recovery_list')return [];
         if(command==='recovery_retention')return 30;

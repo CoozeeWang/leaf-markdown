@@ -43,6 +43,94 @@ test('an external read in flight cannot overwrite input made before it returns',
   state.content = 'my typing'; session.edited(); finish.resolve('external'); await poll;
   assert.equal(state.content, 'my typing'); assert.match(state.statuses.at(-1), /其他程序修改/);
 });
+test('a verified external rename updates the path and keeps unsaved text', async () => {
+  const followed = [];
+  const { session, state } = await setup({
+    observe: async () => ({ path: '/renamed.md', content: 'disk', movedImages: ['assets/photo.png'] }),
+    followed: (...args) => followed.push(args),
+  });
+  state.content = 'my edit'; session.edited();
+  await session.poll();
+  assert.equal(session.path, '/renamed.md');
+  assert.equal(state.content, 'my edit');
+  assert.deepEqual(followed, [['disk', '/renamed.md', '/file.md', ['assets/photo.png']]]);
+  assert.equal(await session.save(), true);
+  assert.equal(state.writes[0].path, '/renamed.md');
+  assert.equal(state.writes[0].expected, 'disk');
+});
+test('save follows a verified move before writing, even without a poll', async () => {
+  const { session, state } = await setup({ observe: async () => ({ path: '/other/moved.md', content: 'disk' }) });
+  state.content = 'changed'; session.edited();
+  assert.equal(await session.save(), true);
+  assert.equal(state.writes[0].path, '/other/moved.md');
+  assert.equal(session.path, '/other/moved.md');
+});
+test('an uncertain location never changes the path or overwrites edits', async () => {
+  const { session, state } = await setup({ observe: async () => { throw new Error('No such file or directory'); } });
+  state.content = 'my edit'; session.edited();
+  await session.poll();
+  assert.equal(session.path, '/file.md');
+  assert.equal(state.content, 'my edit');
+  assert.equal(await session.save(), false);
+  assert.equal(state.writes.length, 0);
+});
+test('a temporarily inaccessible source keeps relocation and save-as choices after Save', async () => {
+  let shown;
+  const { session, state } = await setup({
+    observe: async () => { throw new Error('Permission denied'); },
+    unavailableActions: () => [{ label: '重新定位原文件' }, { label: '另存为' }],
+    status: (message, kind, options) => { shown = { message, kind, options }; },
+  });
+  state.content = 'edits'; session.edited();
+  assert.equal(await session.save(), false);
+  assert.match(shown.message, /原文件不可用/);
+  assert.deepEqual(shown.options.actions.map(action => action.label), ['重新定位原文件', '另存为']);
+  assert.equal(state.content, 'edits');
+  assert.equal(state.writes.length, 0);
+});
+test('explicit relocation keeps dirty edits and redirects the next save', async () => {
+  const followed = [];
+  const { session, state, io } = await setup({
+    observe: async () => { throw new Error('No such file or directory'); },
+    selectExisting: async () => '/moved/original.md',
+    relocate: async (target, expected) => {
+      assert.equal(target, '/moved/original.md');
+      assert.equal(expected, 'disk');
+      return { path: target, content: 'disk' };
+    },
+    followed: (...args) => followed.push(args),
+  });
+  state.content = 'unsaved edits'; session.edited();
+  await session.poll();
+  assert.equal(await session.relocate(), true);
+  assert.equal(state.content, 'unsaved edits');
+  assert.deepEqual(followed, [['disk', '/moved/original.md', '/file.md', []]]);
+  assert.ok(state.checkpoints.some(item => item.content === 'unsaved edits'));
+  assert.equal(await session.save(), false, 'an unverified later observation must still block saving');
+  assert.equal(state.writes.length, 0);
+  io.observe = async () => ({ path: '/moved/original.md', content: 'disk' });
+  assert.equal(await session.save(), true);
+  assert.equal(state.writes[0].path, '/moved/original.md');
+});
+test('cancelled or rejected relocation does not change the document or its save baseline', async () => {
+  let chosen = null;
+  const { session, state, io } = await setup({
+    selectExisting: async () => chosen,
+    relocate: async () => { throw new Error('所选文件的内容与原文件不同'); },
+  });
+  state.content = 'unsaved edits'; session.edited();
+  assert.equal(await session.relocate(), false);
+  chosen = '/other.md';
+  assert.equal(await session.relocate(), false);
+  assert.equal(session.path, '/file.md');
+  assert.equal(state.content, 'unsaved edits');
+  assert.equal(state.saved, 'disk');
+  assert.equal(state.writes.length, 0);
+  assert.match(state.statuses.at(-1), /无法重新定位原文件/);
+  io.relocate = async () => ({ path: '/other.md', content: 'disk' });
+  assert.equal(await session.relocate(), true);
+  assert.equal(session.path, '/other.md');
+});
 test('a missing source reports once until it recovers or the document is saved elsewhere', async () => {
   const { session, state, io } = await setup();
   const read = io.read;
