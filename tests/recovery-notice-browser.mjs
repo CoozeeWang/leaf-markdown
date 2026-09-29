@@ -5,11 +5,11 @@ try {
  const page=await browser.newPage({viewport:{width:720,height:480}});await page.clock.install();
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{
-  window.isTauri=true;window.entries=[{key:'doc',id:'draft',kind:'draft',source:'/tmp/示例.md',timestamp:1,bytes:10}];window.calls=[];window.saveFails=false;
+  window.isTauri=true;window.entries=[{key:'doc',id:'draft',kind:'draft',source:'/tmp/示例.md',timestamp:1,bytes:10}];window.calls=[];window.saveFails=false;window.currentPath='/tmp/示例.md';
   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},transformCallback:()=>1,invoke:async(cmd,args)=>{
-   calls.push({cmd,args});if(cmd==='initial_path')return '/tmp/示例.md';if(cmd==='read_document'||cmd==='recovery_read')return '# 示例';
+   calls.push({cmd,args});if(cmd==='initial_path')return currentPath;if(cmd==='observe_document')return {path:currentPath,content:'# 示例'};if(cmd==='read_document'||cmd==='recovery_read')return '# 示例';
    if(cmd==='recovery_list')return entries;if(cmd==='recovery_retention')return 30;
-   if(cmd==='rename_document')return '/tmp/'+args.name;
+   if(cmd==='rename_document'){currentPath='/tmp/'+args.name;return currentPath;}
    if(cmd==='write_document'&&saveFails)throw '模拟保存失败';
    if(cmd==='recovery_delete'){entries=[];return;}return null;
   }};

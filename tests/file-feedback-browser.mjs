@@ -10,6 +10,7 @@ try{
    calls.push({command,args});
    if(command==='plugin:event|listen'){handlers[args.event]=callbacks[args.handler];return 1;}
    if(command==='initial_path')return '/审核样本/文件提示审核.md';
+   if(command==='observe_document')return {path:'/审核样本/文件提示审核.md',content:'# 文件提示审核\n\n测试正文'};
    if(command==='read_document')return '# 文件提示审核\n\n测试正文';
    if(command==='recovery_list')return [{kind:'draft'}];
    if(command==='recovery_retention')return 30;

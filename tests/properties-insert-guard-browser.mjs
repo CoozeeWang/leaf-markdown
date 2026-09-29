@@ -110,6 +110,7 @@ try{
    invoke:async(command,args)=>{
     if(command==='plugin:event|listen'){listeners.set(args.event,args.handler);return args.handler;}
     if(command==='initial_path')return '/fixture/document.md';
+    if(command==='observe_document')return {path:'/fixture/document.md',content:doc};
     if(command==='read_document')return doc;
     if(command==='recovery_list')return [];
     if(command==='recovery_retention')return 30;
