@@ -1,0 +1,52 @@
+<!doctype html><html><meta charset="utf-8">
+<iframe id="app" src="/" style="width:100%;height:760px;border:0"></iframe>
+<script type="module">
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const frame = document.querySelector('#app');
+window.startTest = async () => {
+  try {
+    const until = Date.now() + 10000;
+    while (!frame.contentDocument?.querySelector('#welcomeNewButton')) {
+      if (Date.now() > until) throw Error('app did not load');
+      await pause(50);
+    }
+    const page = frame.contentDocument;
+    page.querySelector('#welcomeNewButton').click();
+    const {EditorView} = await import('/node_modules/@codemirror/view/dist/index.js');
+    const view = EditorView.findFromDOM(page.querySelector('.cm-content'));
+    const source = '# Test\n\n' + Array.from({length:80}, (_, i) =>
+      `Paragraph ${String(i).padStart(2, '0')} ${'visible content. '.repeat(8)}`
+    ).join('\n\n');
+    view.dispatch({changes:{from:0,to:view.state.doc.length,insert:source},selection:{anchor:0}});
+    const at = source.indexOf('Paragraph 42');
+    view.scrollDOM.scrollTop = view.lineBlockAt(at).top - 40;
+    await pause(250);
+    const switchTo = async mode => {
+      page.querySelector('#readingToggle').click();
+      page.querySelector(`.mode-popover [data-mode="${mode}"]`).click();
+      await pause(250);
+    };
+    const visible = () => {
+      const pane = page.querySelector('#readingPane');
+      if (!pane.hidden) {
+        const y = pane.getBoundingClientRect().top + 40;
+        const block = [...pane.querySelectorAll('p[data-source-from]')].find(el => el.getBoundingClientRect().bottom > y);
+        return Number(/Paragraph (\d+)/.exec(block?.textContent ?? '')?.[1]);
+      }
+      const rect = view.scrollDOM.getBoundingClientRect();
+      const pos = view.posAtCoords({x:rect.left + 100,y:rect.top + 40});
+      const line = view.state.doc.lineAt(pos);
+      return Number(/Paragraph (\d+)/.exec(line.text || view.state.doc.line(line.number + 1).text)?.[1]);
+    };
+    const before = visible();
+    if (before < 20 || before > 60) throw Error(`editor setup at ${before}`);
+    for (const mode of ['reading','source','edit']) {
+      await switchTo(mode);
+      if (Math.abs(visible() - before) > 1) throw Error(`${mode} at ${visible()}, started ${before}`);
+    }
+    if (view.state.doc.toString() !== source || view.state.selection.main.head !== 0) throw Error('source or caret changed');
+    document.title = 'LeafTest PASS WKWebView view position across modes';
+  } catch (error) { document.title = `LeafTest FAIL ${error.message}`; }
+};
+document.title = 'LeafSource';
+</script></html>

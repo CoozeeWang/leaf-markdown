@@ -814,7 +814,7 @@ new ResizeObserver(scheduleOutlineCurrent).observe(readingPane);
 new ResizeObserver(scheduleOutlineCurrent).observe(reader);
 function renderReading() {
   scheduleOutlineCurrent();
-  renderPrintDocument(reader,state.content,{name:state.fileName,numbered:state.showHeadingNumbers,properties:true,expandCallouts:false,fallbackTitle:false,fileNameTitle:state.showFileNameTitle});
+  renderPrintDocument(reader,state.content,{name:state.fileName,numbered:state.showHeadingNumbers,properties:true,expandCallouts:false,fallbackTitle:false,fileNameTitle:state.showFileNameTitle,sourcePositions:true});
   const title=reader.querySelector('.leaf-file-name-title');if(title){title.tabIndex=0;title.title='双击修改文件名';title.setAttribute('aria-label',`${state.fileName}，双击或按回车修改文件名`);}
   for (const table of reader.querySelectorAll('table')) {
     const wrap = document.createElement('div'); wrap.className = 'reading-table-scroll';
@@ -862,14 +862,47 @@ function updateModeControl(){
  button.innerHTML=icon(glyph)+`<span>${label}</span>`;button.setAttribute('aria-label',`视图模式：${label}`);button.removeAttribute('aria-pressed');button.setAttribute('aria-haspopup','menu');button.setAttribute('aria-expanded',String(!modePopover.hidden));button.dataset.tooltip=shortcutText('选择编辑、源码或阅读模式  ⌘R');
  for(const item of modePopover.children)item.setAttribute('aria-checked',String(item.dataset.mode===mode));
 }
+function readingBlocks() {
+  return [...reader.querySelectorAll('[data-source-from][data-source-to]')].map(element => ({
+    element,
+    from: Number(element.dataset.sourceFrom),
+    to: Number(element.dataset.sourceTo),
+    rect: element.getBoundingClientRect(),
+  })).filter(block => block.rect.height > 0);
+}
+function visibleReadingPosition() {
+  const pane = readingPane.getBoundingClientRect();
+  const y = pane.top + Math.min(40, pane.height / 4);
+  const blocks = readingBlocks();
+  const crossing = blocks.filter(block => block.rect.top <= y && block.rect.bottom >= y);
+  const block = crossing.sort((a, b) => (a.to - a.from) - (b.to - b.from))[0]
+    ?? blocks.find(candidate => candidate.rect.top > y)
+    ?? blocks.at(-1);
+  if (!block) return 0;
+  const fraction = Math.max(0, Math.min(1, (y - block.rect.top) / block.rect.height));
+  return Math.round(block.from + fraction * (block.to - block.from));
+}
+function revealReadingPosition(position) {
+  const blocks = readingBlocks();
+  const distance = block => position < block.from ? block.from - position : position > block.to ? position - block.to : 0;
+  const block = blocks.sort((a, b) => distance(a) - distance(b) || (a.to - a.from) - (b.to - b.from))[0];
+  if (!block) return;
+  const fraction = Math.max(0, Math.min(1, (position - block.from) / Math.max(1, block.to - block.from)));
+  const pane = readingPane.getBoundingClientRect();
+  readingPane.scrollTop += block.rect.top + fraction * block.rect.height - pane.top - Math.min(40, pane.height / 4);
+}
 function cycleMode(){
  if(shell.classList.contains('welcome-state'))return;
  setMode(state.reading?'source':state.source?'edit':'reading');
 }
 function setMode(mode){
+ const current=state.reading?'reading':state.source?'source':'edit';
+ if(mode===current){closePopovers();updateModeControl();return;}
+ const position=state.reading?visibleReadingPosition():editor.visiblePosition();
  if(state.reading!==(mode==='reading'))toggleReading();
  state.source=mode==='source';editor.setSource(state.source);closePopovers();updateModeControl();
  if(!state.reading)editor.focus();
+ if(state.reading)revealReadingPosition(position);else editor.revealPosition(position);
 }
 document.querySelector('#readingToggle').addEventListener('click',()=>{
  if(shell.classList.contains('welcome-state'))return;
