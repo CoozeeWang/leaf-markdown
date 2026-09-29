@@ -1218,6 +1218,13 @@ export function createLeafEditor(options) {
     view,
     setDropPoint,
     setReading(value) { reading = value; },
+    visiblePosition() {
+      const rect = view.scrollDOM.getBoundingClientRect();
+      return view.posAtCoords({ x: rect.left + Math.min(100, rect.width / 2), y: rect.top + Math.min(40, rect.height / 4) }) ?? view.viewport.from;
+    },
+    revealPosition(position) {
+      view.dispatch({ effects: EditorView.scrollIntoView(position, { y: 'start', yMargin: 40 }) });
+    },
     createProperties() { openYamlProperties(view); },
     // The region is a block widget, so it is only in the DOM while it is near
     // the viewport. The fold is kept in editor state, which is what makes this

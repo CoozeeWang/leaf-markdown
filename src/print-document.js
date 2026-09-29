@@ -18,7 +18,7 @@ const markdown = parser.configure(leafMarkdownExtensions);
 // its number inside a callout instead of starting a second, local numbering.
 export function renderPrintDocument(target, source, {
   name = '未命名.md', numbered = false, properties = false,
-  fallbackTitle = true, fileNameTitle = false, expandCallouts = true, footnotes: shared,
+  fallbackTitle = true, fileNameTitle = false, expandCallouts = true, sourcePositions = false, footnotes: shared,
 } = {}) {
   const root = !shared;
   const state = shared ?? createFootnoteState(source);
@@ -33,6 +33,10 @@ export function renderPrintDocument(target, source, {
   }
   if (properties && model.yaml) {
     const box = add('section'); box.className = 'print-properties'; add('h2', box, '文档属性');
+    if (sourcePositions) {
+      box.dataset.sourceFrom = '0';
+      box.dataset.sourceTo = String(model.yaml.to);
+    }
     // Preserve complex YAML values rather than silently replacing them with a hint.
     if (model.yaml.valid && model.yaml.fields.every(f => f.editable)) {
       const list = add('dl', box);
@@ -47,6 +51,13 @@ export function renderPrintDocument(target, source, {
   // node would leave the tail behind as a code block. Blanking keeps every offset
   // identical and gives the parser nothing to misread, in a list or a callout too.
   const body = root ? maskRanges(region, state.definitions, offset) : region;
+  const markSource = (element, node, doc) => {
+    if (sourcePositions && doc === body) {
+      element.dataset.sourceFrom = String(node.from + offset);
+      element.dataset.sourceTo = String(node.to + offset);
+    }
+    return element;
+  };
   function visit(node, parent, doc) {
     const isMain = doc === body;
     const text = doc.slice(node.from, node.to);
@@ -54,6 +65,7 @@ export function renderPrintDocument(target, source, {
     if (callout) {
       const box = add(callout.fold && !expandCallouts ? 'details' : 'section', parent);
       box.className = 'leaf-callout'; box.dataset.type = callout.type;
+      markSource(box, node, doc);
       if (box.tagName === 'DETAILS') box.open = callout.fold !== '-';
       const title = add(box.tagName === 'DETAILS' ? 'summary' : 'div', box); title.className = 'leaf-callout-title';
       const badge = add('span', title); badge.className = 'leaf-callout-type-icon'; badge.innerHTML = calloutBadge(callout.type);
@@ -72,15 +84,15 @@ export function renderPrintDocument(target, source, {
         content = doc.slice(start, node.to).replace(/[ \t]+#+[ \t]*$/, '');
       }
       if (node.name.startsWith('Setext')) content = content.replace(/\r?\n[ \t]*(?:=+|-+)[ \t]*$/, '');
-      const h = add(`h${level}`, parent);
+      const h = markSource(add(`h${level}`, parent), node, doc);
       if (isMain && heading) h.dataset.sourceLine = String(source.slice(0, heading.from).split('\n').length);
       if (numbered && isMain && heading) add('span', h, heading.number + ' ').className = 'print-heading-number';
       const title = add('span', h); renderInline(title, content, state); return;
     }
     if (node.name === 'Table') {
       const block = model.blocks.find(b => b.kind === 'table' && b.from === node.from + offset);
-      if (!block) { add('pre', parent, text); return; }
-      const table = add('table', parent); applyTableWidths(table, block);
+      if (!block) { markSource(add('pre', parent, text), node, doc); return; }
+      const table = markSource(add('table', parent), node, doc); applyTableWidths(table, block);
       const head = add('thead', table), tbody = add('tbody', table);
       block.rows.forEach((row, i) => {
         const tr = add('tr', i ? tbody : head);
@@ -92,21 +104,21 @@ export function renderPrintDocument(target, source, {
     }
     if (node.name === 'FencedCode' || node.name === 'CodeBlock') {
       const code = node.getChild('CodeText');
-      const pre = add('pre', parent), info = node.getChild('CodeInfo');
+      const pre = markSource(add('pre', parent), node, doc), info = node.getChild('CodeInfo');
       if (info) pre.dataset.language = doc.slice(info.from, info.to);
       add('code', pre, code ? doc.slice(code.from, code.to) : ''); return;
     }
-    if (node.name === 'HorizontalRule') { add('hr', parent); return; }
-    if (node.name === 'Paragraph') { renderInline(add('p', parent), text, state); return; }
+    if (node.name === 'HorizontalRule') { markSource(add('hr', parent), node, doc); return; }
+    if (node.name === 'Paragraph') { renderInline(markSource(add('p', parent), node, doc), text, state); return; }
     if (node.name === 'Task') {
-      const p = add('p', parent); p.textContent = /^\[[xX]\]/.test(text) ? '☑ ' : '☐ ';
+      const p = markSource(add('p', parent), node, doc); p.textContent = /^\[[xX]\]/.test(text) ? '☑ ' : '☐ ';
       renderInline(add('span', p), text.replace(/^\[[ xX]\]\s*/, ''), state); return;
     }
     if (['ListMark', 'QuoteMark', 'CodeMark', 'CodeInfo'].includes(node.name)) return;
     const tags = { BulletList: 'ul', OrderedList: 'ol', ListItem: 'li', Blockquote: 'blockquote' };
-    const container = tags[node.name] ? add(tags[node.name], parent) : parent;
+    const container = tags[node.name] ? markSource(add(tags[node.name], parent), node, doc) : parent;
     if (node.name === 'OrderedList') container.start = Number(/^\d+/.exec(text)?.[0] ?? 1);
-    if (!node.firstChild) { if (text.trim()) add('p', container, text); return; }
+    if (!node.firstChild) { if (text.trim()) markSource(add('p', container, text), node, doc); return; }
     for (let child = node.firstChild; child; child = child.nextSibling) visit(child, container, doc);
   }
   const renderBlocks = (container, text) => visit(markdown.parse(text).topNode, container, text);
@@ -126,6 +138,11 @@ export function renderPrintDocument(target, source, {
     list.style.setProperty('--footnote-marker-width', `${String(state.list.length).length + 2}ch`);
     for (const note of state.list) {
       const item = add('li', list); item.id = `fn-${note.number}`;
+      const definition = state.notesByLabel.get(note.label)?.def;
+      if (sourcePositions && definition) {
+        item.dataset.sourceFrom = String(definition.from);
+        item.dataset.sourceTo = String(definition.to);
+      }
       const entry = add('div', item); entry.className = 'footnote-text';
       renderBlocks(entry, note.body);
       const back = document.createElement('a');
@@ -159,7 +176,7 @@ function lastInlineHost(entry) {
 function createFootnoteState(source) {
   const index = indexFootnotes(source);
   const { map, list } = displayNotes(index);
-  return { map, list, definitions: index.definitions, seen: new Map() };
+  return { map, list, definitions: index.definitions, notesByLabel: new Map(index.notes.map(note => [note.id, note])), seen: new Map() };
 }
 
 // Replace the definition blocks with spaces, keeping every newline, so the text
