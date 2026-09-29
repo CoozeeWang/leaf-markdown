@@ -1777,16 +1777,25 @@ function showTooltip(target) {
   if (!target?.isConnected || !target.dataset.tooltip) return;
   tooltipTarget = target;
   tooltip.dataset.kind = target.dataset.tooltipKind || 'default';
+  tooltip.dataset.placement = target.dataset.tooltipPlacement || 'default';
+  tooltip.style.maxWidth = '';
+  const imageRect = target.dataset.tooltipPlacement === 'image-top-right'
+    ? target.querySelector('.leaf-image')?.getBoundingClientRect() : null;
+  if (imageRect) {
+    // Leave room for the reveal button on small images.
+    if (imageRect.width <= 38) { hideTooltip(); return; }
+    tooltip.style.maxWidth = `${Math.min(window.innerWidth - 16, imageRect.width - 34)}px`;
+  }
   renderShortcutText(tooltip, target.dataset.tooltip);
   tooltip.hidden = false;
   const targetRect = target.getBoundingClientRect();
   const tooltipRect = tooltip.getBoundingClientRect();
   const left = Math.min(
     window.innerWidth - tooltipRect.width - 8,
-    Math.max(8, targetRect.left + targetRect.width / 2 - tooltipRect.width / 2),
+    Math.max(8, imageRect ? imageRect.right - tooltipRect.width - 4 : targetRect.left + targetRect.width / 2 - tooltipRect.width / 2),
   );
-  let top = targetRect.bottom + 8;
-  if (top + tooltipRect.height > window.innerHeight - 8) top = targetRect.top - tooltipRect.height - 8;
+  let top = imageRect ? Math.max(8, imageRect.top + 4) : targetRect.bottom + 8;
+  if (!imageRect && top + tooltipRect.height > window.innerHeight - 8) top = targetRect.top - tooltipRect.height - 8;
   tooltip.style.left = `${left}px`;
   tooltip.style.top = `${top}px`;
 }

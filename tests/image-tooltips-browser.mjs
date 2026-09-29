@@ -21,9 +21,16 @@ for(const [engine,options] of targets) {
   for(const theme of ['light','dark']) {
    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
    await page.setViewportSize({width:theme==='dark'?440:900,height:700});
+   await image.evaluate((el,theme)=>{el.style.width=theme==='light'?'320px':'120px';el.style.height=theme==='light'?'200px':'80px';},theme);
    await image.hover();
    await page.waitForFunction(()=>!document.querySelector('#tooltip').hidden&&document.querySelector('#tooltip').textContent.includes('拖动图片'));
    assert.equal(await image.evaluate(el=>el.closest('[title]')),null,'image instructions must not also trigger a native tooltip');
+   assert.equal((await tip.textContent()).replace(/\s/g,''),'按住⌘拖动图片');
+   const imageBox=await image.boundingBox(),tipBox=await tip.boundingBox(),actionBox=await action.boundingBox();
+   assert.ok(Math.abs(tipBox.y-actionBox.y)<1,'drag hint aligns with reveal button');
+   assert.ok(Math.abs(tipBox.x+tipBox.width-(imageBox.x+imageBox.width-4))<1,'drag hint anchors to image right inset');
+   assert.ok(tipBox.x>=actionBox.x+actionBox.width,'small image hint does not cover reveal control');
+   await page.screenshot({path:artifactPath(`image-drag-hint-${engine.name()}-${theme}.png`)});
    const imageLook=await look();
    assert.equal(imageLook.font,'12px');assert.equal(imageLook.weight,'400');assert.equal(imageLook.inBounds,true);
    await action.hover();
