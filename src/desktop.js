@@ -95,9 +95,14 @@ export async function initDesktop(callbacks) {
     restore: hooks.restore,
     select: path => save({ defaultPath: path || '未命名.md', filters }),
     read: path => invoke('read_document', { path }),
+    observe: () => invoke('observe_document'),
     async readTarget(path) { try { return await invoke('read_document', { path }); } catch { return null; } },
     rename: (path,name,expected,content) => invoke('rename_document',{path,name,expected,content}),
     renamed(content,path,previous) {
+      try { const items=JSON.parse(localStorage.getItem('leaf-desktop-recent')||'[]');localStorage.setItem('leaf-desktop-recent',JSON.stringify(items.filter(x=>x.path!==previous))); } catch {}
+      rememberDesktopFile(path);hooks.saved(content,fileNameFromPath(path),path);
+    },
+    followed(content,path,previous) {
       try { const items=JSON.parse(localStorage.getItem('leaf-desktop-recent')||'[]');localStorage.setItem('leaf-desktop-recent',JSON.stringify(items.filter(x=>x.path!==previous))); } catch {}
       rememberDesktopFile(path);hooks.saved(content,fileNameFromPath(path),path);
     },
@@ -143,9 +148,9 @@ export async function initDesktop(callbacks) {
   const path = await invoke('initial_path');
   if (path) {
     try {
-      const content = await invoke('read_document', { path });
-      await session.initialize(path, content);
-      rememberDesktopFile(path);
+      const observed = await invoke('observe_document');
+      await session.initialize(observed.path, observed.content);
+      rememberDesktopFile(observed.path);
     } catch (error) {
       // A failed load never binds an empty/welcome buffer to the failed path.
       await session.initialize(null, '');

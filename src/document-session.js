@@ -11,6 +11,13 @@ export function createDocumentSession(io) {
     return result;
   };
   const status = (text, kind = 'error', options) => io.status(text, kind, options);
+  const follow = observation => {
+    if (observation.path === path) return;
+    const previous = path;
+    path = observation.path;
+    pollFailure = null;
+    io.followed?.(disk, path, previous);
+  };
   return {
     get path() { return path; },
     get paused() { return paused; },
@@ -33,6 +40,7 @@ export function createDocumentSession(io) {
       return serialize(async () => {
         if (!ready || (paused && !manual)) return false;
         try {
+          if (path && !as && io.observe) follow(await io.observe());
           let target = path, expected = disk;
           if (!target || as) {
             target = await io.select(path);
@@ -59,6 +67,7 @@ export function createDocumentSession(io) {
     rename(name) {
       return serialize(async () => {
         if(!ready || !path) throw new Error('请先保存文档，再修改文件名');
+        if (io.observe) follow(await io.observe());
         await io.checkpoint(io.content());
         const result=await io.rename(path,name,disk,io.content());
         const target=typeof result==='string'?result:result.path;
@@ -78,7 +87,9 @@ export function createDocumentSession(io) {
         if (!ready || !path || paused) return;
         const at = revision;
         try {
-          const current = await io.read(path);
+          const observation = io.observe ? await io.observe() : { path, content: await io.read(path) };
+          follow(observation);
+          const current = observation.content;
           const recovered = pollFailure !== null;
           pollFailure = null;
           if (current === disk) {

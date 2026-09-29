@@ -43,6 +43,37 @@ test('an external read in flight cannot overwrite input made before it returns',
   state.content = 'my typing'; session.edited(); finish.resolve('external'); await poll;
   assert.equal(state.content, 'my typing'); assert.match(state.statuses.at(-1), /其他程序修改/);
 });
+test('a verified external rename updates the path and keeps unsaved text', async () => {
+  const followed = [];
+  const { session, state } = await setup({
+    observe: async () => ({ path: '/renamed.md', content: 'disk' }),
+    followed: (...args) => followed.push(args),
+  });
+  state.content = 'my edit'; session.edited();
+  await session.poll();
+  assert.equal(session.path, '/renamed.md');
+  assert.equal(state.content, 'my edit');
+  assert.deepEqual(followed, [['disk', '/renamed.md', '/file.md']]);
+  assert.equal(await session.save(), true);
+  assert.equal(state.writes[0].path, '/renamed.md');
+  assert.equal(state.writes[0].expected, 'disk');
+});
+test('save follows a verified move before writing, even without a poll', async () => {
+  const { session, state } = await setup({ observe: async () => ({ path: '/other/moved.md', content: 'disk' }) });
+  state.content = 'changed'; session.edited();
+  assert.equal(await session.save(), true);
+  assert.equal(state.writes[0].path, '/other/moved.md');
+  assert.equal(session.path, '/other/moved.md');
+});
+test('an uncertain location never changes the path or overwrites edits', async () => {
+  const { session, state } = await setup({ observe: async () => { throw new Error('No such file or directory'); } });
+  state.content = 'my edit'; session.edited();
+  await session.poll();
+  assert.equal(session.path, '/file.md');
+  assert.equal(state.content, 'my edit');
+  assert.equal(await session.save(), false);
+  assert.equal(state.writes.length, 0);
+});
 test('a missing source reports once until it recovers or the document is saved elsewhere', async () => {
   const { session, state, io } = await setup();
   const read = io.read;
