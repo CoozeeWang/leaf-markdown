@@ -79,3 +79,9 @@ macOS 构建入口会为打包子进程设置 `en_US.UTF-8`，避免系统 Perl 
 目前是未正式签名的内部构建；尚不能保证其他机器安装顺利。最低系统要求以实际完成的验收记录为准，不能仅凭配置中的最低版本宣传支持。
 
 These are internal builds without distribution signing. Installation on another computer is not yet certified. Claim only operating-system versions that have passed the native checklist.
+
+## 文档图标 / Document icons
+
+macOS 的 `src-tauri/Info.plist` 在打包时覆盖文档类型数组，为现有扩展名指定随包的 `icon.icns`；更改 `bundle.fileAssociations` 时同步该数组。Windows 沿用 Tauri NSIS 的 `DefaultIcon` 注册，使用可执行文件内的 Leaf 图标，不另写系统默认程序选择。
+
+macOS 构建后运行 `node tests/document-icons-package.mjs src-tauri/target/release/bundle/macos/Leaf.app`，检查真正打包的关联声明和图标资源。`Internal test packages` 自动执行对应平台检查；Windows 的 `tests/document-icons-windows.ps1` 仅允许在一次性 GitHub Actions runner 中静默安装／检查／卸载，验证图标注册、可提取图标、Windows UserChoice 与合成文档不变。它不替代用户在系统设置中切换默认应用、双击打开、Finder／Explorer 图标缓存刷新和不同主题尺寸的人工验收。

@@ -49,6 +49,17 @@ jobs:
       - name: Build installer
         shell: bash
         run: npm run desktop:build -- --target "$LEAF_BUILD_TARGET" --config "$LEAF_BUILD_CONFIG"
+      - name: Verify Windows document icons
+        if: inputs.platform == 'windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri/target/$env:LEAF_BUILD_TARGET/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (!$installer) { throw 'NSIS installer not found' }
+          ./tests/document-icons-windows.ps1 -Installer $installer.FullName
+      - name: Verify macOS document icons
+        if: inputs.platform != 'windows'
+        shell: bash
+        run: node tests/document-icons-package.mjs "src-tauri/target/$LEAF_BUILD_TARGET/release/bundle/macos/Leaf.app"
       - name: Generate checksums
         shell: bash
         run: node scripts/package-checksums.mjs "$LEAF_BUILD_TARGET"
