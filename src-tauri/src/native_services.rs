@@ -8,7 +8,7 @@ thread_local! {
     static PROVIDER: RefCell<Option<(Retained<AnyObject>, tauri::AppHandle)>> = const { RefCell::new(None) };
 }
 
-unsafe fn folder(pasteboard: &AnyObject) -> Result<PathBuf, String> {
+unsafe fn selected_path(pasteboard: &AnyObject) -> Result<PathBuf, String> {
     let classes: Retained<AnyObject> = msg_send![class!(NSArray), arrayWithObject: class!(NSURL)];
     let objects: Option<Retained<AnyObject>> = msg_send![pasteboard, readObjectsForClasses: &*classes, options: std::ptr::null::<AnyObject>()];
     let objects = objects.ok_or("请选择一个文件夹或文件，再使用 Leaf 新建文档。")?;
@@ -19,18 +19,22 @@ unsafe fn folder(pasteboard: &AnyObject) -> Result<PathBuf, String> {
     if !local { return Err("只能在本机文件夹中新建文档。".into()); }
     let path: Option<Retained<NSString>> = msg_send![url, path];
     let path = PathBuf::from(path.ok_or("无法读取所选文件的位置。")?.to_string());
+    Ok(path)
+}
+
+fn selection_folder(path: PathBuf) -> Result<PathBuf, String> {
     if path.is_dir() { Ok(path) }
     else if path.is_file() { path.parent().map(PathBuf::from).ok_or("无法确定目标文件夹。".into()) }
     else { Err("所选文件或文件夹已不存在，或无法访问。".into()) }
 }
 
 extern "C-unwind" fn new_markdown(_this: &AnyObject, _cmd: Sel, pasteboard: &AnyObject, _data: *mut AnyObject, _error: *mut *mut AnyObject) {
-    let target = unsafe { folder(pasteboard) };
+    let target = unsafe { selected_path(pasteboard) };
     // Return promptly to Services; creation and window building must not block
     // AppKit. Failures are reported by Leaf's native dialog after dispatch.
     PROVIDER.with(|provider| {
         if let Some((_, app)) = provider.borrow().as_ref() {
-            crate::create_from_file_manager(app.clone(), target);
+            crate::create_from_file_manager(app.clone(), move || target.and_then(selection_folder));
         }
     });
 }
@@ -71,10 +75,10 @@ mod tests {
                 let array: Retained<AnyObject> = msg_send![class!(NSArray), arrayWithObject: &*url];
                 let ok: bool = msg_send![&*board, writeObjects: &*array];
                 assert!(ok);
-                assert_eq!(folder(&board).unwrap(), child);
+                assert_eq!(selection_folder(selected_path(&board).unwrap()).unwrap(), child);
             }
             let _: isize = msg_send![&*board, clearContents];
-            assert!(folder(&board).is_err());
+            assert!(selected_path(&board).is_err());
             let _: () = msg_send![&*board, releaseGlobally];
             assert!(provider_class().instance_method(sel!(leafNewMarkdown:userData:error:)).is_some());
         });

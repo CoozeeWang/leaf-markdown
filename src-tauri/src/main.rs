@@ -93,10 +93,10 @@ fn menu_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
         })
 }
 
-fn create_from_file_manager(app: tauri::AppHandle, folder: Result<PathBuf, String>) {
+fn create_from_file_manager(app: tauri::AppHandle, target: impl FnOnce() -> Result<PathBuf, String> + Send + 'static) {
     use tauri_plugin_dialog::DialogExt;
     tauri::async_runtime::spawn_blocking(move || {
-        let result = folder.and_then(|folder| new_markdown::create(&folder)).and_then(|path| {
+        let result = target().and_then(|folder| new_markdown::create(&folder)).and_then(|path| {
             open_document(app.clone(), Some(path.to_string_lossy().into_owned()))
                 .map_err(|error| format!("文档已创建，但未能打开：{}\n{error}", path.display()))
         });
@@ -108,7 +108,7 @@ fn create_from_file_manager(app: tauri::AppHandle, folder: Result<PathBuf, Strin
 fn open_windows_arguments(app: &tauri::AppHandle, args: Vec<String>, cwd: &str) {
     use tauri_plugin_dialog::DialogExt;
     if let Some(folder) = new_markdown::argument(&args, std::path::Path::new(cwd)) {
-        create_from_file_manager(app.clone(), folder);
+        create_from_file_manager(app.clone(), move || folder);
         return;
     }
     let paths = document_arguments(args, std::path::Path::new(cwd));

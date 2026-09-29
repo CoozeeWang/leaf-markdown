@@ -11,7 +11,9 @@ pub fn create(folder: &Path) -> Result<PathBuf, String> {
                 file.sync_all().map_err(|e| format!("文档已创建，但未能确认写入：{}\n{e}", path.display()))?;
                 return Ok(path);
             }
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+            // Windows reports AccessDenied when a directory occupies the name.
+            // Inspect the entry only after atomic creation failed, without following links.
+            Err(e) if e.kind() == ErrorKind::AlreadyExists || path.symlink_metadata().is_ok() => continue,
             Err(e) => return Err(format!("无法在此文件夹新建文档：{}\n请检查文件夹是否可写。\n{e}", folder.display())),
         }
     }
