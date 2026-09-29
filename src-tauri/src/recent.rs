@@ -101,7 +101,17 @@ impl Recent {
             *data = next;
             data.entries.clone()
         };
-        self.refresh(app, &entries)
+        let menu = self.menu.lock().unwrap().clone();
+        if let Some(menu) = menu {
+            let app = app.clone();
+            let dispatch = app.clone();
+            dispatch.run_on_main_thread(move || {
+                if let Err(error) = Self::refresh_menu(&app, &menu, &entries) {
+                    eprintln!("Recent menu: {error}");
+                }
+            }).map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     pub fn remember(&self, app: &AppHandle, path: &Path) -> Result<(), String> {
@@ -145,13 +155,11 @@ impl Recent {
     }
 
     pub fn set_menu(&self, app: &AppHandle, menu: Submenu<tauri::Wry>) -> Result<(), String> {
-        *self.menu.lock().unwrap() = Some(menu);
-        self.refresh(app, &self.list())
+        *self.menu.lock().unwrap() = Some(menu.clone());
+        Self::refresh_menu(app, &menu, &self.list())
     }
 
-    fn refresh(&self, app: &AppHandle, entries: &[Entry]) -> Result<(), String> {
-        let menu = self.menu.lock().unwrap();
-        let Some(menu) = menu.as_ref() else { return Ok(()); };
+    fn refresh_menu(app: &AppHandle, menu: &Submenu<tauri::Wry>, entries: &[Entry]) -> Result<(), String> {
         for item in menu.items().map_err(|e| e.to_string())? { menu.remove(&item).map_err(|e| e.to_string())?; }
         if entries.is_empty() {
             menu.append(&MenuItem::with_id(app, "recent-empty", "暂无最近打开的文件", false, None::<&str>).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
