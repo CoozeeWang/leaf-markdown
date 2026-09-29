@@ -74,6 +74,20 @@ test('an uncertain location never changes the path or overwrites edits', async (
   assert.equal(await session.save(), false);
   assert.equal(state.writes.length, 0);
 });
+test('a temporarily inaccessible source keeps relocation and save-as choices after Save', async () => {
+  let shown;
+  const { session, state } = await setup({
+    observe: async () => { throw new Error('Permission denied'); },
+    unavailableActions: () => [{ label: '重新定位原文件' }, { label: '另存为' }],
+    status: (message, kind, options) => { shown = { message, kind, options }; },
+  });
+  state.content = 'edits'; session.edited();
+  assert.equal(await session.save(), false);
+  assert.match(shown.message, /原文件不可用/);
+  assert.deepEqual(shown.options.actions.map(action => action.label), ['重新定位原文件', '另存为']);
+  assert.equal(state.content, 'edits');
+  assert.equal(state.writes.length, 0);
+});
 test('explicit relocation keeps dirty edits and redirects the next save', async () => {
   const followed = [];
   const { session, state, io } = await setup({

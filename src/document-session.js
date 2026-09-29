@@ -40,8 +40,12 @@ export function createDocumentSession(io) {
     save({ as = false, manual = true } = {}) {
       return serialize(async () => {
         if (!ready || (paused && !manual)) return false;
+        let locationCheckFailed = false;
         try {
-          if (path && !as && io.observe) follow(await io.observe());
+          if (path && !as && io.observe) {
+            try { follow(await io.observe()); }
+            catch (error) { locationCheckFailed = true; throw error; }
+          }
           let target = path, expected = disk;
           if (!target || as) {
             target = await io.select(path);
@@ -63,10 +67,10 @@ export function createDocumentSession(io) {
           status(cleanupWarning || (io.content() === content ? '已保存' : '等待自动保存…'), cleanupWarning ? 'error' : io.content() === content ? 'saved' : 'pending', { announce: manual });
           return true;
         } catch (error) {
-          status(unavailable(error)
+          status(locationCheckFailed || unavailable(error)
             ? '原文件不可用，修改尚未保存。请重新定位原文件，或另存为。'
             : `修改尚未保存。请重试或另存为。详情：${error}`,
-          'error', unavailable(error) ? { actions: io.unavailableActions?.() } : undefined);
+          'error', locationCheckFailed || unavailable(error) ? { actions: io.unavailableActions?.() } : undefined);
           return false;
         }
       });
