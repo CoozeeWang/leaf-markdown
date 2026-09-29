@@ -3,14 +3,25 @@
 .leaf-image img[hidden] { display:none; }
 .leaf-image-actions {
   position:absolute; top:0; left:0; z-index:1;
-  padding:5px 8px; border:1px solid var(--line,#dedfd7); border-radius:6px;
+  display:flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0;
+  border:1px solid var(--line,#dedfd7); border-radius:6px;
   background:var(--surface-strong,#fff); color:var(--text,#353b38);
   box-shadow:var(--shadow); font-family:inherit; font-size:12px; line-height:1.4; cursor:pointer;
   opacity:0; pointer-events:none;
 }
 .leaf-image:hover .leaf-image-actions, .leaf-image:focus-within .leaf-image-actions { opacity:1; pointer-events:auto; }
+.leaf-image-actions:hover { background:var(--accent-soft,#edf2eb); color:var(--accent,#607b68); }
 .leaf-image-actions:focus-visible { outline:2px solid var(--accent,#607b68); outline-offset:2px; }
 .leaf-image-actions[hidden], .leaf-image:has(img[hidden]) .leaf-image-actions { display:none; }
+.leaf-image-drag-hint { display:none; }
+.cm-editor .leaf-image:hover .leaf-image-drag-hint,
+.cm-editor .leaf-image:focus-within .leaf-image-drag-hint {
+  display:block; position:absolute; left:0; bottom:0; z-index:1;
+  max-width:100%; box-sizing:border-box; padding:3px 6px; border-radius:4px;
+  background:var(--surface-strong,#fff); color:var(--muted,#697164);
+  font:11px/1.4 var(--ui-font,system-ui); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none;
+}
+.leaf-image:has(img[hidden]) .leaf-image-drag-hint { display:none; }
 .leaf-image-menu {
   position:fixed; z-index:1000; min-width:170px; overflow:auto;
   border:1px solid var(--line,#dedfd7); border-radius:8px;
@@ -50,7 +61,7 @@
 .leaf-writing-dialog button { padding:7px 14px; color:inherit; background:var(--surface); border:1px solid var(--line); border-radius:6px; }
 .leaf-writing-backdrop { position:fixed; inset:0; z-index:1000; background:#0004; display:flex; align-items:center; justify-content:center; }
 .cm-source-mode .cm-content { font-family:Menlo,monospace; }
-@media print { .leaf-image img { max-height:220mm; } .leaf-image-actions, .leaf-image-menu { display:none; } }
+@media print { .leaf-image img { max-height:220mm; } .leaf-image-actions, .leaf-image-menu, .leaf-image-drag-hint { display:none !important; } }
 /* On paper the placeholder is read as text, so it drops the card. */
 @media print { .leaf-image-status[data-kind] { display:block; padding:0; border:0; background:none; } }
 

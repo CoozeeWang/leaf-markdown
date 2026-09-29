@@ -26,6 +26,27 @@ fn name(path: &str) -> String {
     Path::new(path).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| path.into())
 }
 
+// Native menus stay compact; only duplicate names need a location suffix.
+fn menu_labels(entries: &[Entry]) -> Vec<String> {
+    let parents: Vec<Vec<&str>> = entries.iter().map(|entry| {
+        let mut parts: Vec<_> = entry.path.split(['/', '\\']).filter(|part| !part.is_empty()).collect();
+        parts.pop();
+        parts
+    }).collect();
+    entries.iter().enumerate().map(|(i, entry)| {
+        let peers: Vec<_> = entries.iter().enumerate().filter(|(j, other)| *j != i && other.name == entry.name).map(|(j, _)| j).collect();
+        if peers.is_empty() { return entry.name.clone(); }
+        let parts = &parents[i];
+        for depth in 1..=parts.len() {
+            let suffix = &parts[parts.len()-depth..];
+            if peers.iter().all(|&j| parents[j].len() < depth || &parents[j][parents[j].len()-depth..] != suffix) {
+                return format!("{} — {}", entry.name, suffix.join("/"));
+            }
+        }
+        format!("{} — {}", entry.name, if parts.is_empty() { "/".into() } else { parts.join("/") })
+    }).collect()
+}
+
 fn identity(path: &Path) -> Option<(u64, u128)> {
     crate::document_location::Anchor::open(path).ok().map(|anchor| anchor.token())
 }
@@ -164,8 +185,7 @@ impl Recent {
         if entries.is_empty() {
             menu.append(&MenuItem::with_id(app, "recent-empty", "暂无最近打开的文件", false, None::<&str>).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         }
-        for entry in entries {
-            let label = format!("{} — {}", entry.name, Path::new(&entry.path).parent().unwrap_or(Path::new("")).display());
+        for (entry, label) in entries.iter().zip(menu_labels(entries)) {
             let id = format!("recent-{}", crate::recovery::file_key(Path::new(&entry.path)));
             menu.append(&MenuItem::with_id(app, id, label, true, None::<&str>).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         }
@@ -278,5 +298,16 @@ mod tests {
         let mut entries = store.list();
         retain_valid(&mut entries);
         assert!(entries.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod menu_label_tests {
+    use super::*;
+    #[test]
+    fn shows_locations_only_to_disambiguate_and_uses_shortest_suffix() {
+        let entries: Vec<_> = ["/Work/Projects/team/notes.md", "/Work/Reports/team/notes.md", "/Work/single.md", "C:\\Drafts\\notes.md"]
+            .iter().map(|path| Entry { path: (*path).into(), name: path.rsplit(['/', '\\']).next().unwrap().into(), identity: None }).collect();
+        assert_eq!(menu_labels(&entries), ["notes.md — Projects/team", "notes.md — Reports/team", "single.md", "notes.md — Drafts"]);
     }
 }
