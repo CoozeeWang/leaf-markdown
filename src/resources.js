@@ -169,6 +169,7 @@ export async function loadImage(img) {
   img.dispatchEvent(new Event('leaf-image-ready', { bubbles: true }));
 }
 export function refreshImages(root = document) { root.querySelectorAll('img[data-resource]').forEach(loadImage); }
+export function retryMissingImages(root = document) { root.querySelectorAll('img[data-failure="missing"], img[data-failure="moved-missing"]').forEach(loadImage); }
 export async function waitForImages(root) {
   const until = Date.now() + 16000;
   while ([...root.querySelectorAll('img[data-resource]')].some(img => img.dataset.loaded === 'pending')) {

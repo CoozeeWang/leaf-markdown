@@ -5,7 +5,7 @@ import { positionMenu } from './menu-position.js';
 import {installMenuInteraction} from './menu-interaction.js';
 installMenuInteraction();
 import { setupWriting } from './writing-tools.js';
-import { loadedLocalImagePaths, refreshImages, setMovedMissingImages } from './resources.js';
+import { loadedLocalImagePaths, refreshImages, retryMissingImages, setMovedMissingImages } from './resources.js';
 import { showRecovery, setupWelcomeRecovery } from './recovery-dialog.js';
 import { createLeafEditor } from './editor.js';
 import { setupSidebarResize } from './outline-resize.js';
@@ -1871,6 +1871,7 @@ if (desktop) {
   initDesktop({
     content: () => state.content,
     loadedImages: () => loadedLocalImagePaths(),
+    retryMissingImages: () => retryMissingImages(),
     dirty: () => state.content !== state.savedContent,
     status: setStatus,
     recoveryAvailable: statusNotices.recoveryAvailable,

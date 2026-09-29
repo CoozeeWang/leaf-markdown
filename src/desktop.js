@@ -179,6 +179,7 @@ export async function initDesktop(callbacks) {
   }
   document.addEventListener('leaf-recovery-changed', refreshRecoveryNotice);
   globalThis.addEventListener('focus', refreshRecoveryNotice);
+  globalThis.addEventListener('focus', () => hooks.retryMissingImages?.());
   await refreshRecoveryNotice();
   await listen('leaf-retention-days',({payload})=>document.dispatchEvent(new CustomEvent('leaf-retention-days',{detail:payload})));
   try { document.dispatchEvent(new CustomEvent('leaf-retention-days',{detail:await invoke('recovery_retention')})); }

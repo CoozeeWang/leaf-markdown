@@ -33,7 +33,15 @@ try {
   await page.locator('.leaf-image-status[data-kind="missing"]').waitFor();
   assert.equal(await page.locator('.leaf-image-status-note').textContent(), '文件可能已被移动、重命名或删除');
 
-  await page.evaluate(() => { resources.setResourceReader(async () => bytes); });
+  await page.evaluate(() => {
+    window.imageAvailable = false;
+    resources.setResourceReader(async () => {
+      if (!imageAvailable) throw Error('No such file or directory (os error 2)');
+      return bytes;
+    });
+  });
+  await page.locator('.leaf-image-status[data-kind="missing"]').waitFor();
+  await page.evaluate(() => { window.imageAvailable = true; resources.retryMissingImages(); });
   await page.locator('img[data-loaded="yes"]').waitFor();
   await page.evaluate(() => { resources.setResourceReader(async () => { throw Error('No such file or directory (os error 2)'); }); });
   await page.locator('.leaf-image-status[data-kind="missing"]').waitFor();
