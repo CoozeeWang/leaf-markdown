@@ -352,10 +352,27 @@ fn restore_anchor(anchors: &DocumentAnchors, label: &str, path: &Path, token: Op
 }
 
 #[derive(serde::Serialize)]
-struct DocumentObservation { path: String, content: String }
+#[serde(rename_all = "camelCase")]
+struct DocumentObservation { path: String, content: String, moved_images: Vec<String> }
+
+// The UI only supplies images it actually displayed before the move. Recheck
+// the two directories here, without restoring, copying or rewriting a file.
+fn moved_missing_images(source: &Path, target: &Path, loaded: &[String]) -> Vec<String> {
+    if source.parent() == target.parent() { return Vec::new(); }
+    let Some(directory) = target.parent() else { return Vec::new(); };
+    let mut confirmed = std::collections::BTreeSet::new();
+    for relative in loaded {
+        if let Ok(old) = resources::resolve(source, relative) {
+            let missing = fs::symlink_metadata(directory.join(relative))
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound);
+            if missing && resources::bytes(&old).is_ok() { confirmed.insert(relative.clone()); }
+        }
+    }
+    confirmed.into_iter().collect()
+}
 
 #[tauri::command(async)]
-fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>) -> Result<DocumentObservation, String> {
+fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
     let _guard = recovery.gate.lock().unwrap();
     let mut documents = docs.0.lock().unwrap();
     let source = documents.get(window.label()).cloned().flatten().ok_or("请先保存文档")?;
@@ -367,6 +384,7 @@ fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: t
     let target = fs::canonicalize(&located.path).map_err(|e| e.to_string())?;
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     if !anchors.get(window.label()).is_some_and(|anchor| anchor.matches_path(&target)) { return Err("原文件在原位置找不到。".into()); }
+    let moved_images = if target != source { moved_missing_images(&source, &target, &loaded_images) } else { Vec::new() };
     if target != source {
         if documents.iter().any(|(label, path)| label != window.label() && path.as_ref() == Some(&target)) {
             return Err("该文件已在另一窗口打开".into());
@@ -374,7 +392,7 @@ fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: t
         recovery_store(&app)?.copy_for_rename(&recovery::file_key(&source), &recovery::file_key(&target), &target.to_string_lossy())?;
         documents.insert(window.label().into(), Some(target.clone()));
     }
-    Ok(DocumentObservation { path: target.to_string_lossy().into_owned(), content: located.content })
+    Ok(DocumentObservation { path: target.to_string_lossy().into_owned(), content: located.content, moved_images })
 }
 
 // This path is supplied by an explicit user choice. An unchanged disk baseline
@@ -398,7 +416,7 @@ fn verify_relocation(path: &str, expected: &str) -> Result<RelocationCandidate, 
 }
 
 #[tauri::command(async)]
-fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, expected: String) -> Result<DocumentObservation, String> {
+fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, expected: String, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
     let _guard = recovery.gate.lock().unwrap();
     let mut documents = docs.0.lock().unwrap();
     let source = documents.get(window.label()).cloned().flatten().ok_or("请先保存文档")?;
@@ -410,6 +428,7 @@ fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: 
     if candidate.anchor.as_ref().is_some_and(|anchor| !anchor.matches_path(target)) {
         return Err("所选文件的位置已变化，请重新选择。".into());
     }
+    let moved_images = if target != &source { moved_missing_images(&source, target, &loaded_images) } else { Vec::new() };
     if target != &source {
         recovery_store(&app)?.copy_for_rename(&recovery::file_key(&source), &recovery::file_key(&target), &target.to_string_lossy())?;
         documents.insert(window.label().into(), Some(target.clone()));
@@ -418,7 +437,7 @@ fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: 
     if let Some(anchor) = candidate.anchor { anchors.0.lock().unwrap().insert(window.label().into(), anchor); }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = anchors;
-    Ok(DocumentObservation { path: target.to_string_lossy().into_owned(), content: candidate.content })
+    Ok(DocumentObservation { path: target.to_string_lossy().into_owned(), content: candidate.content, moved_images })
 }
 
 fn recovery_store(app: &tauri::AppHandle) -> Result<recovery::Store, String> {
@@ -693,6 +712,35 @@ fn atomic_save(path: &str, content: &str, expected: Option<String>) -> Result<fs
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn moved_image_reason_requires_a_previously_loaded_file_left_behind() {
+        let root = tempfile::tempdir().unwrap();
+        let before = root.path().join("before");
+        let after = root.path().join("after");
+        fs::create_dir_all(before.join("assets")).unwrap();
+        fs::create_dir_all(after.join("assets")).unwrap();
+        let old_doc = before.join("note.md");
+        let new_doc = after.join("note.md");
+        fs::write(&new_doc, "![photo](assets/photo.png)").unwrap();
+        fs::write(before.join("assets/photo.png"), b"picture").unwrap();
+        let loaded = vec!["assets/photo.png".into(), "assets/never.png".into(), "../private.png".into()];
+        assert_eq!(moved_missing_images(&old_doc, &new_doc, &loaded), vec!["assets/photo.png"]);
+        fs::write(after.join("assets/photo.png"), b"destination picture").unwrap();
+        assert!(moved_missing_images(&old_doc, &new_doc, &loaded).is_empty());
+        fs::remove_file(after.join("assets/photo.png")).unwrap();
+        fs::remove_file(before.join("assets/photo.png")).unwrap();
+        assert!(moved_missing_images(&old_doc, &new_doc, &loaded).is_empty());
+        assert_eq!(fs::read_to_string(&new_doc).unwrap(), "![photo](assets/photo.png)");
+        assert!(!before.join("note.md").exists());
+    }
+
+    #[test]
+    fn same_folder_rename_does_not_claim_document_moved_away_from_images() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("photo.png"), b"picture").unwrap();
+        assert!(moved_missing_images(&root.path().join("old.md"), &root.path().join("new.md"), &["photo.png".into()]).is_empty());
+    }
+
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     #[test]
     fn saving_rebinds_the_identity_used_for_later_external_renames() {

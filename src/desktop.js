@@ -96,22 +96,22 @@ export async function initDesktop(callbacks) {
     restore: hooks.restore,
     select: path => save({ defaultPath: path || '未命名.md', filters }),
     selectExisting: () => open({ multiple: false, filters, title: '重新定位原文件' }),
-    relocate: (path, expected) => invoke('relocate_document', { path, expected }),
+    relocate: (path, expected) => invoke('relocate_document', { path, expected, loadedImages: hooks.loadedImages?.() ?? [] }),
     unavailableActions: () => [
       { label: '重新定位原文件', run: desktopRelocate },
       { label: '另存为', run: () => desktopSave(true) },
     ],
     read: path => invoke('read_document', { path }),
-    observe: () => invoke('observe_document'),
+    observe: () => invoke('observe_document', { loadedImages: hooks.loadedImages?.() ?? [] }),
     async readTarget(path) { try { return await invoke('read_document', { path }); } catch { return null; } },
     rename: (path,name,expected,content) => invoke('rename_document',{path,name,expected,content}),
     renamed(content,path,previous) {
       try { const items=JSON.parse(localStorage.getItem('leaf-desktop-recent')||'[]');localStorage.setItem('leaf-desktop-recent',JSON.stringify(items.filter(x=>x.path!==previous))); } catch {}
       rememberDesktopFile(path);hooks.saved(content,fileNameFromPath(path),path);
     },
-    followed(content,path,previous) {
+    followed(content,path,previous,movedImages) {
       try { const items=JSON.parse(localStorage.getItem('leaf-desktop-recent')||'[]');localStorage.setItem('leaf-desktop-recent',JSON.stringify(items.filter(x=>x.path!==previous))); } catch {}
-      rememberDesktopFile(path);hooks.saved(content,fileNameFromPath(path),path);
+      rememberDesktopFile(path);hooks.followed?.(content,fileNameFromPath(path),path,movedImages);
     },
     write: (path, content, expected) => invoke('write_document', { path, content, expected, resources: localResourcePaths(content) }),
     checkpoint: (content, preserve = false) => invoke('recovery_checkpoint', { content, preserve }),
@@ -155,7 +155,7 @@ export async function initDesktop(callbacks) {
   const path = await invoke('initial_path');
   if (path) {
     try {
-      const observed = await invoke('observe_document');
+      const observed = await invoke('observe_document', { loadedImages: [] });
       await session.initialize(observed.path, observed.content);
       rememberDesktopFile(observed.path);
     } catch (error) {

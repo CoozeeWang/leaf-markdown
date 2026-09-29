@@ -5,7 +5,7 @@ import { positionMenu } from './menu-position.js';
 import {installMenuInteraction} from './menu-interaction.js';
 installMenuInteraction();
 import { setupWriting } from './writing-tools.js';
-import { refreshImages } from './resources.js';
+import { loadedLocalImagePaths, refreshImages, setMovedMissingImages } from './resources.js';
 import { showRecovery, setupWelcomeRecovery } from './recovery-dialog.js';
 import { createLeafEditor } from './editor.js';
 import { setupSidebarResize } from './outline-resize.js';
@@ -1021,6 +1021,7 @@ async function renderRecentFiles() {
 }
 
 async function setDocument(content, name, handle = null, file = null) {
+  setMovedMissingImages();
   statusNotices.reset();
   collapsedOutline.clear();
   state.outline = [];
@@ -1869,6 +1870,7 @@ if (desktop) {
   editor.setReading(true);
   initDesktop({
     content: () => state.content,
+    loadedImages: () => loadedLocalImagePaths(),
     dirty: () => state.content !== state.savedContent,
     status: setStatus,
     recoveryAvailable: statusNotices.recoveryAvailable,
@@ -1899,7 +1901,8 @@ if (desktop) {
       // Native Tauri drag events do not pass through contentDOM's dragover.
       editor.setDropPoint(active&&!opening&&!state.reading ? point : null);
     },
-    saved(content, name, path) { const changed = state.resourcePath !== path; state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); if (changed) refreshImages(); },
+    saved(content, name, path) { const changed = state.resourcePath !== path; state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); if (changed) { setMovedMissingImages(); refreshImages(); } },
+    followed(content, name, path, movedImages) { state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); setMovedMissingImages(movedImages); refreshImages(); },
   }).catch(error => setStatus(`桌面初始化失败：${error}`, 'error')).finally(() => {
     shell.style.pointerEvents = '';
     editor.setReading(state.reading);

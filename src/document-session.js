@@ -17,7 +17,7 @@ export function createDocumentSession(io) {
     const previous = path;
     path = observation.path;
     pollFailure = null;
-    io.followed?.(disk, path, previous);
+    io.followed?.(disk, path, previous, observation.movedImages ?? []);
   };
   return {
     get path() { return path; },

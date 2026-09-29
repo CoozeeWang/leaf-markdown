@@ -1,8 +1,16 @@
 import { uiIcon } from './ui-icons.js';
 let readLocal = null;
 let revealLocal = null;
+let movedMissing = new Set();
 export function setResourceReader(reader) { readLocal = reader; refreshImages(); }
 export function setResourceRevealer(revealer) { revealLocal = revealer; }
+export function loadedLocalImagePaths(root = document) {
+  return [...new Set([...root.querySelectorAll('img[data-resource][data-loaded="yes"]')]
+    .map(img => safeTarget(img.dataset.resource, true))
+    .filter(path => path && !/^https?:\/\//i.test(path))
+    .map(decodeURIComponent))];
+}
+export function setMovedMissingImages(paths = []) { movedMissing = new Set(paths); }
 export function safeTarget(value, image = false) {
   let target = String(value || '').trim().replace(/^<|>$/g, '');
   if (/[\u0000-\u001f\u007f]/.test(target)) return null;
@@ -59,6 +67,7 @@ function failureText(kind, target) {
   if (kind === 'unsupported-here') return [`无法预览 ${ext} 图片：${file}`, `${platformName()} 版暂不支持这个格式，图片已存入文档旁的 assets 目录`];
   if (kind === 'format') return [`无法预览：${file}`, '暂不支持这个图片格式，转换成 PNG 或 JPEG 后可显示'];
   if (kind === 'missing') return [`找不到图片：${file}`, '文件可能已被移动、重命名或删除'];
+  if (kind === 'moved-missing') return [`找不到图片：${file}`, '文档已移动，图片仍在原文件夹。请将图片也移到新位置。'];
   if (kind === 'large') return [`图片太大：${file}`, '超过 32 MB 上限，压缩或转换格式后再插入'];
   if (kind === 'desktop') return [`无法预览：${file}`, '本地图片需在桌面版打开'];
   if (kind === 'path') return [`无法预览：${file}`, '这个图片路径不受支持'];
@@ -130,7 +139,11 @@ export async function loadImage(img) {
       // "Missing" is the everyday case, but the reader also refuses oversized
       // files, and that needs its own sentence rather than a wrong accusation.
       // Tauri rejects commands with a bare string, not an Error.
-      catch (error) { throw fail(/32 MB/.test(String(error?.message ?? error)) ? 'large' : 'missing'); }
+      catch (error) {
+        const detail = String(error?.message ?? error);
+        const absent = /\b(?:ENOENT|os error 2)\b|no such file or directory|the system cannot find the (?:file|path) specified/i.test(detail);
+        throw fail(/32 MB/.test(detail) ? 'large' : absent && movedMissing.has(decodeURIComponent(target)) ? 'moved-missing' : 'missing');
+      }
       try { type = mime(bytes); }
       catch { throw fail('format'); }
       url = URL.createObjectURL(new Blob([bytes], { type })); revoke = true;
@@ -141,6 +154,7 @@ export async function loadImage(img) {
       await Promise.race([img.decode(), new Promise((_, reject) => setTimeout(() => reject(new Error('图片加载超时')), 15000))]);
       if (img._resourceToken !== token) return;
       img.hidden = false; status.textContent = ''; img.dataset.loaded = 'yes';
+      movedMissing.delete(decodeURIComponent(target));
     } catch (error) {
       // A known type that still will not decode is this platform refusing the
       // format, not a damaged file -- HEIC on Windows is the expected case.

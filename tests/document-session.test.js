@@ -46,14 +46,14 @@ test('an external read in flight cannot overwrite input made before it returns',
 test('a verified external rename updates the path and keeps unsaved text', async () => {
   const followed = [];
   const { session, state } = await setup({
-    observe: async () => ({ path: '/renamed.md', content: 'disk' }),
+    observe: async () => ({ path: '/renamed.md', content: 'disk', movedImages: ['assets/photo.png'] }),
     followed: (...args) => followed.push(args),
   });
   state.content = 'my edit'; session.edited();
   await session.poll();
   assert.equal(session.path, '/renamed.md');
   assert.equal(state.content, 'my edit');
-  assert.deepEqual(followed, [['disk', '/renamed.md', '/file.md']]);
+  assert.deepEqual(followed, [['disk', '/renamed.md', '/file.md', ['assets/photo.png']]]);
   assert.equal(await session.save(), true);
   assert.equal(state.writes[0].path, '/renamed.md');
   assert.equal(state.writes[0].expected, 'disk');
@@ -104,7 +104,7 @@ test('explicit relocation keeps dirty edits and redirects the next save', async 
   await session.poll();
   assert.equal(await session.relocate(), true);
   assert.equal(state.content, 'unsaved edits');
-  assert.deepEqual(followed, [['disk', '/moved/original.md', '/file.md']]);
+  assert.deepEqual(followed, [['disk', '/moved/original.md', '/file.md', []]]);
   assert.ok(state.checkpoints.some(item => item.content === 'unsaved edits'));
   assert.equal(await session.save(), false, 'an unverified later observation must still block saving');
   assert.equal(state.writes.length, 0);
