@@ -998,7 +998,7 @@ function transactionDone(tx) {
 
 async function readRecentFiles() {
   if (desktop) {
-    try { return JSON.parse(localStorage.getItem('leaf-desktop-recent')||'[]').slice(0,8); } catch { return []; }
+    try { return await invoke('recent_list'); } catch { return []; }
   }
   if (!('indexedDB' in window)) return [];
   const db = await openDatabase();
@@ -1041,7 +1041,14 @@ async function renderRecentFiles() {
     button.addEventListener('click', async () => {
       if(desktop){
         try { await invoke('open_document',{path:item.path});recentPopover.hidden=true; }
-        catch { list.replaceChildren(Object.assign(document.createElement('span'),{className:'empty-hint',textContent:'无法打开：文件可能已移动或删除。'})); }
+        catch {
+          list.querySelector('.recent-error')?.remove();
+          const error = document.createElement('span');
+          error.className = 'empty-hint recent-error';
+          error.setAttribute('role', 'alert');
+          error.textContent = '无法打开：文件可能已移动或删除。可清理失效记录。';
+          list.prepend(error);
+        }
         return;
       }
       const permission = await item.handle.queryPermission({ mode: 'readwrite' });
@@ -1050,6 +1057,15 @@ async function renderRecentFiles() {
       recentPopover.hidden = true;
     });
     list.append(button);
+  }
+  if (desktop) {
+    const clear = document.createElement('button');
+    clear.textContent = '清理失效记录';
+    clear.addEventListener('click', async () => {
+      try { await invoke('recent_clear_missing'); await renderRecentFiles(); }
+      catch (error) { setStatus(`清理最近记录失败：${error}`, 'error'); }
+    });
+    list.append(clear);
   }
 }
 

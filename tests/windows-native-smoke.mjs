@@ -135,7 +135,7 @@ try {
   await existing.locator('.cm-content').fill('# Saved at moved path');
   await until(async () => (await readFile(moved, 'utf8')) === '# Saved at moved path', 'save after external move');
   assert.equal(await readFile(renamed, 'utf8'), 'substitute');
-  const recent = await existing.evaluate(() => JSON.parse(localStorage.getItem('leaf-desktop-recent') || '[]'));
+  const recent = await invoke(existing, 'recent_list');
   const samePath = (a, b) => a.replace(/^\\\\\?\\/, '').toLowerCase() === b.replace(/^\\\\\?\\/, '').toLowerCase();
   assert.equal(recent[0]?.name, 'moved.md');
   assert(samePath(await realpath(recent[0].path), await realpath(moved)), `recent=${recent[0].path}, moved=${moved}`);
