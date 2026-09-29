@@ -1,7 +1,7 @@
 // Exercise the shipped WebView2 runtime, including the IPC that creates windows.
 import { chromium } from 'playwright';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtemp, writeFile, mkdir, rename, readFile } from 'node:fs/promises';
+import { mkdtemp, writeFile, mkdir, rename, readFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import net from 'node:net';
@@ -137,8 +137,9 @@ try {
   assert.equal(await readFile(renamed, 'utf8'), 'substitute');
   const recent = await existing.evaluate(() => JSON.parse(localStorage.getItem('leaf-desktop-recent') || '[]'));
   const samePath = (a, b) => a.replace(/^\\\\\?\\/, '').toLowerCase() === b.replace(/^\\\\\?\\/, '').toLowerCase();
-  assert(samePath(recent[0].path, moved));
-  assert(!recent.some(item => samePath(item.path, fixture) || samePath(item.path, renamed)));
+  assert.equal(recent[0]?.name, 'moved.md');
+  assert(samePath(await realpath(recent[0].path), await realpath(moved)), `recent=${recent[0].path}, moved=${moved}`);
+  assert(!recent.some(item => item.name === 'existing.md' || item.name === 'renamed.md'));
   const documents = pages().filter(p => p.url().includes('document=1'));
   for (const page of documents) {
     await closeNative(page);
