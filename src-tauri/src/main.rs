@@ -336,6 +336,21 @@ fn anchor_matches(anchors: &DocumentAnchors, label: &str, path: &Path) -> bool {
     { let _ = (anchors, label, path); true }
 }
 
+#[cfg(target_os = "windows")]
+fn release_anchor(anchors: &DocumentAnchors, label: &str) -> Option<(u64, u128)> {
+    let old = anchors.0.lock().unwrap().remove(label)?;
+    let token = old.token();
+    drop(old);
+    Some(token)
+}
+
+#[cfg(target_os = "windows")]
+fn restore_anchor(anchors: &DocumentAnchors, label: &str, path: &Path, token: Option<(u64, u128)>) {
+    if let (Some(token), Ok(anchor)) = (token, document_location::Anchor::open(path)) {
+        if anchor.token() == token { anchors.0.lock().unwrap().insert(label.into(), anchor); }
+    }
+}
+
 #[derive(serde::Serialize)]
 struct DocumentObservation { path: String, content: String }
 
@@ -499,11 +514,17 @@ fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::
     let rewritten=resources::rewrite_paths(&expected,&mappings);
     let target=rename_file(&source,&name,&expected)?;
     let replaced = if rewritten!=expected {
+        #[cfg(target_os = "windows")]
+        let old_token = release_anchor(&anchors, window.label());
         match atomic_save(target.to_str().ok_or("文件路径无效")?,&rewritten,Some(expected.clone())) {
             Ok(file) => Some(file),
             Err(error) => {
-            let _=rename_file(&target,source.file_name().and_then(|s|s.to_str()).ok_or("文件名无效")?,&expected);
-            return Err(error);
+                let rolled_back = rename_file(&target,source.file_name().and_then(|s|s.to_str()).ok_or("文件名无效")?,&expected).is_ok();
+                #[cfg(target_os = "windows")]
+                if rolled_back { restore_anchor(&anchors, window.label(), &source, old_token); }
+                #[cfg(not(target_os = "windows"))]
+                let _ = rolled_back;
+                return Err(error);
             }
         }
     } else { None };
@@ -554,7 +575,18 @@ fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tau
         for version in record.versions { text.push('\n'); text.push_str(&version.content); }
     }
     let mut cleanup_warning=None;
-    let saved_file = atomic_save(target_string, &content, expected)?;
+    #[cfg(target_os = "windows")]
+    let old_token = if documents.get(window.label()).and_then(|p| p.as_ref()) == Some(&target) {
+        release_anchor(&anchors, window.label())
+    } else { None };
+    let saved_file = match atomic_save(target_string, &content, expected) {
+        Ok(file) => file,
+        Err(error) => {
+            #[cfg(target_os = "windows")]
+            restore_anchor(&anchors, window.label(), &target, old_token);
+            return Err(error);
+        }
+    };
     let buffers: Vec<String> = app.state::<OpenBuffers>().0.lock().unwrap().iter().filter(|(label,_)| label.as_str()!=window.label()).map(|(_,content)|content.clone()).collect();
     if let Some(before) = previous {
         if let Err(error) = resources::collect_removed_protected(&image_store, &target, &before, &content, &buffers) { cleanup_warning=Some(format!("文档已保存，图片清理未完成：{error}")); }
@@ -609,7 +641,12 @@ mod tests {
         fs::write(&path, "first").unwrap();
         let anchors = DocumentAnchors::default();
         anchors.0.lock().unwrap().insert("document-test".into(), document_location::Anchor::open(&path).unwrap());
+        #[cfg(target_os = "windows")]
+        let original = release_anchor(&anchors, "document-test");
         let saved = atomic_save(path.to_str().unwrap(), "second", Some("first".into())).unwrap();
+        #[cfg(target_os = "windows")]
+        assert!(original.is_some());
+        #[cfg(not(target_os = "windows"))]
         assert!(!anchor_matches(&anchors, "document-test", &path));
         rebind_anchor(&anchors, "document-test", saved);
         assert!(anchor_matches(&anchors, "document-test", &path));

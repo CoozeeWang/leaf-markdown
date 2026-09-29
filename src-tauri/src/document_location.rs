@@ -19,22 +19,24 @@ pub struct Located {
 }
 
 impl Anchor {
-    pub fn open(path: &Path) -> io::Result<Self> { Self::from_file(File::open(path)?) }
+    pub fn open(path: &Path) -> io::Result<Self> { Self::from_file(open_shared(path)?) }
 
     pub fn from_file(file: File) -> io::Result<Self> {
         let identity = identity(&file)?;
         Ok(Self { file, identity })
     }
 
+    pub fn token(&self) -> (u64, u128) { (self.identity.first, self.identity.second) }
+
     pub fn matches_path(&self, path: &Path) -> bool {
-        File::open(path).and_then(|file| identity(&file)).is_ok_and(|id| id == self.identity)
+        open_shared(path).and_then(|file| identity(&file)).is_ok_and(|id| id == self.identity)
     }
 
     pub fn locate(&self) -> io::Result<Located> {
         let candidate = path_from_handle(&self.file)?;
         // Read through the verified handle, then recheck the name. A concurrent
         // replacement can otherwise make the next save target another file.
-        let mut file = File::open(&candidate)?;
+        let mut file = open_shared(&candidate)?;
         if identity(&file)? != self.identity { return Err(unavailable()); }
         let mut content = String::new();
         file.read_to_string(&mut content)?;
@@ -42,6 +44,20 @@ impl Anchor {
         Ok(Located { path: candidate, content })
     }
 }
+
+#[cfg(target_os = "windows")]
+fn open_shared(path: &Path) -> io::Result<File> {
+    use std::{fs::OpenOptions, os::windows::fs::OpenOptionsExt};
+    // Spell out Rust's default share mode. It permits Finder/Explorer moves;
+    // replacing an already open target still needs a separate Windows path.
+    const FILE_SHARE_READ: u32 = 1;
+    const FILE_SHARE_WRITE: u32 = 2;
+    const FILE_SHARE_DELETE: u32 = 4;
+    OpenOptions::new().read(true).share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).open(path)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn open_shared(path: &Path) -> io::Result<File> { File::open(path) }
 
 fn unavailable() -> io::Error { io::Error::new(io::ErrorKind::NotFound, "No such file or directory (tracked document unavailable)") }
 
@@ -143,8 +159,13 @@ mod tests {
         let path = dir.path().join("document.md");
         fs::write(&path, "first").unwrap();
         let anchor = Anchor::open(&path).unwrap();
+        let original = anchor.token();
+        #[cfg(target_os = "windows")]
+        drop(anchor);
         let temp = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
         temp.persist(&path).unwrap();
+        #[cfg(not(target_os = "windows"))]
         assert!(!anchor.matches_path(&path));
+        assert_ne!(Anchor::open(&path).unwrap().token(), original);
     }
 }
