@@ -16,7 +16,7 @@ export async function desktopImageFixture(page, source, {platform}={}) {
         if(command==='initial_path')return '/fixture/images.md';
         if(command==='observe_document')return {path:'/fixture/images.md',content:disk};
         if(command==='read_document')return disk;
-        if(command==='recovery_list')return [];
+        if(command==='recovery_list'||command==='recent_list')return [];
         if(command==='recovery_retention')return 30;
         if(command==='plugin:dialog|open')return ['/fixture/toolbar.svg'];
         if(command==='import_attachment'){

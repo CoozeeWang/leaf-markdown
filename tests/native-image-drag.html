@@ -1,0 +1,33 @@
+<!doctype html><html><meta charset="utf-8">
+<div id="editor" style="height:650px;--content-width:780px;--editor-font-size:17px"></div>
+<script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import {setResourceReader} from '/src/resources.js';
+import '/src/style.css';
+const pause=()=>new Promise(resolve=>setTimeout(resolve,150));
+window.startTest=async()=>{
+ try {
+  setResourceReader(async()=>new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="green"/></svg>'));
+  const raw='![Native](assets/photo.svg)',source=`Intro\r\n\r\n${raw}\r\n\r\nTarget\r\n\r\nEnd\r\n`;
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:source}),v=editor.view;
+  await pause();await pause();
+  const img=v.dom.querySelector('img[alt="Native"]'),b=img.getBoundingClientRect(),r=v.coordsAtPos(v.state.doc.toString().indexOf('End'));
+  const event=(name,x,y)=>new MouseEvent(name,{bubbles:true,cancelable:true,button:0,buttons:name==='mouseup'?0:1,metaKey:true,clientX:x,clientY:y});
+  img.dispatchEvent(event('mousedown',b.x+b.width/2,b.y+b.height/2));
+  window.dispatchEvent(event('mousemove',r.left,(r.top+r.bottom)/2));
+  await pause();
+  if(!v.dom.querySelector('.leaf-file-drop-cursor'))throw Error('missing move marker');
+  window.dispatchEvent(event('mouseup',r.left,(r.top+r.bottom)/2));
+  const moved=editor.getValue();
+  if(moved.indexOf(raw)<moved.indexOf('Target')||moved.split(raw).length!==2)throw Error('incorrect move');
+  if(moved.replaceAll('\r\n','').includes('\n'))throw Error('lost CRLF');
+  editor.undo();if(editor.getValue()!==source)throw Error('undo did not restore source');
+  editor.redo();if(editor.getValue()!==moved)throw Error('redo failed');
+  editor.setValue(moved);await pause();
+  if(!v.dom.querySelector('img[alt="Native"]'))throw Error('reopen lost image');
+  editor.destroy();
+  document.title='LeafTest PASS native WKWebView image move, CRLF, undo/redo and reopen (synthetic mouse events)';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};
+document.title='LeafSource';
+</script></html>

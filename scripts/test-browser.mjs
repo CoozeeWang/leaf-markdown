@@ -9,7 +9,7 @@ const core = [
   'highlight-band', 'selection-compositing', 'selection-edges',
   'footnote-insert', 'footnote-live-preview', 'footnote-panel', 'footnote-auto-delete',
   'footnote-callout', 'footnote-rename', 'footnote-regressions', 'footnotes-print',
-  'version-display', 'properties-insert-guard', 'image-drop', 'image-insertion', 'image-reveal',
+  'version-display', 'properties-insert-guard', 'image-drop', 'image-insertion', 'image-reveal', 'image-drag',
   'paragraph-blank-lines',
   'list-images', 'clipboard-images',
   'recovery-notice', 'file-feedback', 'status-notices',

@@ -177,6 +177,9 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
   }
   document.addEventListener('mousedown',event=>{
     const link=event.target.closest?.('[data-leaf-link]');if(!link||!(event.metaKey||event.ctrlKey))return;
+    // In the editor the modified image gesture belongs to image movement.
+    // Reading-view links retain their existing open behavior.
+    if(editable() && view.dom.contains(event.target) && event.target.matches?.('.leaf-image img'))return;
     event.preventDefault();event.stopImmediatePropagation();void openTarget(link.dataset.leafLink);
   },true);
   document.addEventListener('click',event=>{
