@@ -98,6 +98,7 @@ class InlinePreview extends WidgetType {
     if (this.rule) { span.className = 'leaf-rule'; span.setAttribute('role', 'separator'); }
     else { renderInline(span, this.text, this.footnotes && { ...this.footnotes, seen: new Map() }); if (this.title) span.title = this.title; }
     span.addEventListener('mousedown', event => {
+      if (event.button !== 0) return;
       event.preventDefault(); view.dispatch({ selection: { anchor: span._preview.from } }); view.focus();
       // A marker stands for a note: clicking it takes the reader to that note in
       // the notes panel, the way a printed footnote sends you to the foot of the

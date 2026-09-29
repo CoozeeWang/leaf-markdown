@@ -187,8 +187,8 @@ fn reveal_document(window: tauri::WebviewWindow, docs: tauri::State<Documents>) 
 #[tauri::command(async)]
 fn reveal_resource(app: tauri::AppHandle, window: tauri::WebviewWindow, relative: String) -> Result<(), String> {
     let doc = resource_document(&app, window.label())?;
-    let path = resources::resolve(&doc, &relative)?;
-    if !path.exists() { return Err("文件已不在原位置".into()); }
+    let path = resources::resolve(&doc, &relative).map_err(|_| "找不到可访问的本地图片，请检查图片文件和路径".to_string())?;
+    if !path.is_file() { return Err("图片文件已不在原位置".into()); }
     reveal_in_file_manager(&path)
 }
 #[tauri::command(async)]
