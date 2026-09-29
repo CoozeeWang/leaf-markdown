@@ -104,6 +104,7 @@ class InlinePreview extends WidgetType {
         if (span.querySelector('.leaf-image')) {
           span.dataset.tooltip = this.title;
           span.dataset.tooltipKind = 'image';
+          span.dataset.tooltipPlacement = 'image-top-right';
         } else span.title = this.title;
       }
     }
@@ -411,7 +412,7 @@ function livePreviewDecorations(view) {
         const signature = citationSignature(raw, noteNumbers);
         // A citation is not a link you can open, so it must not keep offering
         // "click to edit link" -- that promises an action the marker has not got.
-        const title = node.name === 'Image' ? shortcutText('点击编辑图片 · ⌘K 编辑替代文字与路径') + ` · 按住 ${shortcutText('⌘').replace(/\+$/, '')} 拖动图片` : node.name === 'Link' && signature !== null ? '' : '点击编辑链接';
+        const title = node.name === 'Image' ? `按住 ${shortcutText('⌘').replace(/\+$/, '')} 拖动图片` : node.name === 'Link' && signature !== null ? '' : '点击编辑链接';
         const note = node.name === 'Link' ? citationLabel(raw, noteNumbers) : null;
         ranges.push(Decoration.replace({ widget: new InlinePreview(node.from, raw, { rule: node.name === 'HorizontalRule', title, footnotes, signature: signature ?? '', note }) }).range(node.from, node.to));
         return false;

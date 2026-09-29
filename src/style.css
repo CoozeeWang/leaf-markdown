@@ -774,6 +774,10 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
   letter-spacing:normal;
 }
 .ui-tooltip[data-kind="image"] .shortcut-keys > span { font-weight:400; }
+.ui-tooltip[data-placement="image-top-right"] {
+  box-sizing:border-box; height:22px; padding:2px 6px; line-height:16px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
 
 
 .drop-overlay { display: none; position: absolute; inset: 14px; z-index: 120; align-items: center; justify-content: center; border: 2px dashed var(--accent); border-radius: 15px; background: color-mix(in srgb, var(--surface) 94%, transparent); color: var(--accent); font-size: 18px; font-weight: 650; }
