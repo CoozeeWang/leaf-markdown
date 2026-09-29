@@ -1774,8 +1774,9 @@ function hideTooltip() {
 }
 
 function showTooltip(target) {
-  if (!target?.dataset.tooltip) return;
+  if (!target?.isConnected || !target.dataset.tooltip) return;
   tooltipTarget = target;
+  tooltip.dataset.kind = target.dataset.tooltipKind || 'default';
   renderShortcutText(tooltip, target.dataset.tooltip);
   tooltip.hidden = false;
   const targetRect = target.getBoundingClientRect();

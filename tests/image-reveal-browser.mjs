@@ -92,7 +92,7 @@ try {
   await dropped.getByRole('button', { name: label }).click();
   assert.deepEqual(await page.evaluate(() => reveals.at(-1)), { relative: 'assets/dropped.png' }, 'newly inserted images use the same action');
   assert.equal(await dropped.locator('.leaf-image-drag-hint').count(), 0);
-  assert.match(await dropped.evaluate(node => node.closest('[title]')?.title), process.env.LEAF_IMAGE_PLATFORM === 'Win32' ? /Ctrl/ : /⌘/);
+  assert.match(await dropped.evaluate(node => node.closest('[data-tooltip]')?.dataset.tooltip), process.env.LEAF_IMAGE_PLATFORM === 'Win32' ? /Ctrl/ : /⌘/);
   await page.emulateMedia({ media: 'print' });
   assert.equal(await dropped.getByRole('button', { name: label, includeHidden: true }).isVisible(), false, 'print hides image controls');
   assert.deepEqual(errors, []);
