@@ -3,6 +3,7 @@ export const uiIconPaths = {
   outline: '<path d="M4 5h16M4 12h3m4 0h9M4 19h3m4 0h9"/>',
   notes: '<path d="M4 11h8M4 15h13M4 19h13"/><path d="M17 5.4 19 4.1V10"/>',
   open: '<path d="M3 7V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1"/><path d="M3.5 9h17l-2.4 8.5a2 2 0 0 1-1.9 1.5H5.8a2 2 0 0 1-1.9-1.5Z"/>',
+  folder: '<path d="M3 7V5.5A1.5 1.5 0 0 1 4.5 4H9l2 3h8.5A1.5 1.5 0 0 1 21 8.5v10A1.5 1.5 0 0 1 19.5 20h-15A1.5 1.5 0 0 1 3 18.5Z"/>',
   history: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
   // Save keeps the disk: a tray with an arrow pointed either way makes both

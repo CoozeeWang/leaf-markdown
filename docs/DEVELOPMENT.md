@@ -96,4 +96,4 @@ Windows 安装包通过 `windows-hooks.nsh` 注册当前用户的文件夹／文
 两平台均原子创建 `未命名.md`，重名依次使用 `未命名 2.md` 等，随后打开 Leaf。可用现有标题改名；失败显示原生错误提示，已创建但打开失败的文件保留并告知位置。Rust 测试覆盖并发、重名、无效目录和 Finder 专用粘贴板输入；Mac 原生粘贴板测试需要可访问系统粘贴板服务的会话。安装包检查还覆盖服务声明、Windows 实际安装／冷启动／已有实例创建和卸载，不代替 Finder／Explorer 菜单的安装版人工操作。
 
 
-图片定位图标与拖动提示的交互回归使用 `image-reveal-browser.mjs`；通过 `LEAF_IMAGE_PLATFORM=MacIntel`／`Win32` 核对平台文案，`LEAF_IMAGE_REVEAL_ENGINE=webkit` 核对 WebKit。原生最近文件菜单标签由 Rust 回归验证，同名文档只补最短可区分目录。Finder 启用“显示图标预览”时可用内容缩略图代替应用图标；诊断应分别核对默认应用、系统返回的文件图标与 Finder 预览状态，不替用户关闭显示偏好。
+图片定位图标与悬浮说明的交互回归使用 `image-reveal-browser.mjs`；通过 `LEAF_IMAGE_PLATFORM=MacIntel`／`Win32` 核对平台文案，`LEAF_IMAGE_REVEAL_ENGINE=webkit` 核对 WebKit。原生最近文件菜单标签由 Rust 回归验证，同名文档只补最短可区分目录。Finder 启用“显示图标预览”时可用内容缩略图代替应用图标；诊断应分别核对默认应用、系统返回的文件图标与 Finder 预览状态，不替用户关闭显示偏好。
