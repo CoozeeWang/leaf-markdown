@@ -9,6 +9,7 @@
       <key>NSMessage</key><string>leafNewMarkdown</string>
       <key>NSPortName</key><string>Leaf</string>
       <key>NSSendTypes</key><array><string>public.file-url</string></array>
+      <key>NSSendFileTypes</key><array><string>public.item</string></array>
       <key>NSRequiredContext</key><dict><key>NSApplicationIdentifier</key><string>com.apple.finder</string></dict>
     </dict>
   </array>
