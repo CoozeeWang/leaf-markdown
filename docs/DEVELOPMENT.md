@@ -45,6 +45,8 @@ cargo run --locked --example native-table-keys -- ../tests/native-image-insertio
 
 拖放标记的自动换行定位检查可用同一入口运行 `../tests/native-image-drop.html` 与 `http://127.0.0.1:41732/tests/native-image-drop.html`，无需 `--foreground`。它在实际 macOS WKWebView 中核对标记所在的视觉行、原光标不移动及取消恢复，但输入坐标是测试构造的，不代表 Finder 真拖放已验收。浏览器拖放回归同时覆盖 Chromium 与 WebKit。
 
+图片移动回归为 `image-move.test.js` 和 `image-drag-browser.mjs`，覆盖 Cmd／Ctrl 鼠标拖动、取消、属性保护、结构化图片、边缘滚动、一次撤销及模拟文件保存重开。macOS 可用同一开发服务器和 `native-table-keys` 示例运行 `../tests/native-image-drag.html` 与 `http://127.0.0.1:41732/tests/native-image-drag.html`；该夹具使用合成鼠标事件检查实际 WKWebView、CRLF 与撤销／重做，不代替安装版人工拖动验收。
+
 ## 开发与打包 / Development and packaging
 
 `list-images-browser.mjs` 在 Chromium 和 WebKit 中检查列表图片取消缩进、重新缩进、相邻列表项、撤销／重做、预览／阅读／导出一致性及模拟保存重开。macOS 可用上述开发服务器和 `native-table-keys` 示例运行 `../tests/native-list-images.html` 与 `http://127.0.0.1:41732/tests/native-list-images.html`；它在实际 WKWebView 中通过 AppKit 发送 Shift+Tab 并检查布局和快捷键处理，图片字节为合成输入，不代替安装版真实文件验收。

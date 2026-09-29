@@ -53,6 +53,8 @@ import { fileDropTarget, fileDropFeedback, setFileDropTarget, setFileDragging } 
 import { paragraphDeletion, selectedParagraphDeletion } from './paragraph-delete.js';
 import {outlineFolding} from './outline-folding.js';
 import { classifyInlineTag, pairInlineTags } from './inline-html.js';
+import { imageDrag } from './image-drag.js';
+import { shortcutText } from './platform-shortcuts.js';
 
 const toggleBlankMarkers = StateEffect.define();
 const typedProperties = StateEffect.define();
@@ -401,7 +403,7 @@ function livePreviewDecorations(view) {
         const signature = citationSignature(raw, noteNumbers);
         // A citation is not a link you can open, so it must not keep offering
         // "click to edit link" -- that promises an action the marker has not got.
-        const title = node.name === 'Image' ? '点击编辑图片 · ⌘K 编辑替代文字与路径' : node.name === 'Link' && signature !== null ? '' : '点击编辑链接';
+        const title = node.name === 'Image' ? shortcutText('点击编辑图片 · ⌘K 编辑替代文字与路径') + ` · 按住 ${shortcutText('⌘').replace(/\+$/, '')} 拖动图片` : node.name === 'Link' && signature !== null ? '' : '点击编辑链接';
         const note = node.name === 'Link' ? citationLabel(raw, noteNumbers) : null;
         ranges.push(Decoration.replace({ widget: new InlinePreview(node.from, raw, { rule: node.name === 'HorizontalRule', title, footnotes, signature: signature ?? '', note }) }).range(node.from, node.to));
         return false;
@@ -1086,6 +1088,7 @@ export function createLeafEditor(options) {
       leafSelection,
       dropCursor(),
       fileDropFeedback,
+      imageDrag(() => !reading && !view.state.field(sourceMode)),
       highlightActiveLine(),
       bracketMatching(),
       markdown({ extensions: leafMarkdownExtensions, addKeymap: false }),
