@@ -14,7 +14,7 @@ test('the version is declared identically everywhere it is read from', () => {
   assert.match(pkg.version, /^\d+\.\d+\.\d+(-[a-z]+\.\d+)?$/, 'package.json holds a version');
   assert.equal(JSON.parse(read('src-tauri/tauri.conf.json')).version, pkg.version);
   assert.equal(/^version = "(.+)"$/m.exec(read('src-tauri/Cargo.toml'))[1], pkg.version);
-  assert.equal(/^name = "leaf"\nversion = "(.+)"/m.exec(read('src-tauri/Cargo.lock'))[1], pkg.version);
+  assert.equal(/^name = "leaf"\r?\nversion = "(.+)"/m.exec(read('src-tauri/Cargo.lock'))[1], pkg.version);
   const npmLock = JSON.parse(read('package-lock.json'));
   assert.equal(npmLock.version, pkg.version);
   assert.equal(npmLock.packages[''].version, pkg.version);
