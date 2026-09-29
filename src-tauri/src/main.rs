@@ -282,13 +282,21 @@ fn new_document(path: String) -> Result<(), String> {
 
 #[tauri::command(async)]
 fn open_document(app: tauri::AppHandle, path: Option<String>) -> Result<(), String> {
-    create_document(app, path, None)
+    create_document(app, path, None, None)
 }
 
-fn create_document(app: tauri::AppHandle, path: Option<String>, recovered: Option<String>) -> Result<(), String> {
+fn create_document(app: tauri::AppHandle, path: Option<String>, recovered: Option<String>, expected_identity: Option<(u64, u128)>) -> Result<(), String> {
     let path = path.map(|p| fs::canonicalize(p).map_err(|e| e.to_string())).transpose()?;
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     let anchor = path.as_ref().map(|p| document_location::Anchor::open(p).map_err(|e| e.to_string())).transpose()?;
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if let Some(expected) = expected_identity {
+        if anchor.as_ref().map(document_location::Anchor::token) != Some(expected) {
+            return Err("原文件已移动、删除或被其他文件替换".into());
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = expected_identity;
     if let Some(ref target) = path {
         let docs = app.state::<Documents>();
         let docs = docs.0.lock().unwrap();
@@ -399,6 +407,8 @@ fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: t
         documents.insert(window.label().into(), Some(target.clone()));
     }
     drop(documents);
+    drop(anchors);
+    drop(_guard);
     if target != source {
         if let Err(error) = app.state::<recent::Recent>().replace(&app, &source, &target) { eprintln!("Recent files: {error}"); }
     }
@@ -444,13 +454,14 @@ fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: 
         documents.insert(window.label().into(), Some(target.clone()));
     }
     drop(documents);
-    if target != &source {
-        if let Err(error) = app.state::<recent::Recent>().replace(&app, &source, target) { eprintln!("Recent files: {error}"); }
-    }
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     if let Some(anchor) = candidate.anchor { anchors.0.lock().unwrap().insert(window.label().into(), anchor); }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = anchors;
+    drop(_guard);
+    if target != &source {
+        if let Err(error) = app.state::<recent::Recent>().replace(&app, &source, target) { eprintln!("Recent files: {error}"); }
+    }
     Ok(DocumentObservation { path: target.to_string_lossy().into_owned(), content: candidate.content, moved_images })
 }
 
@@ -538,7 +549,7 @@ fn recovery_open(app: tauri::AppHandle, recovery: tauri::State<RecoveryState>, k
     };
     // Orphan drafts always open as a new unsaved document, never bind silently
     // to the old disk path (which may have changed since the crash).
-    create_document(app, None, Some(content))
+    create_document(app, None, Some(content), None)
 }
 #[tauri::command]
 fn finish_title_rename(window:tauri::WebviewWindow,error:Option<String>)->Result<(),String>{
@@ -607,8 +618,9 @@ fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::
     } else { None };
     documents.insert(window.label().into(),Some(target.clone()));
     drop(documents);
-    if let Err(error) = app.state::<recent::Recent>().replace(&app, &source, &target) { eprintln!("Recent files: {error}"); }
     if let Some(file) = replaced { rebind_anchor(&anchors, window.label(), file); }
+    drop(_guard);
+    if let Err(error) = app.state::<recent::Recent>().replace(&app, &source, &target) { eprintln!("Recent files: {error}"); }
     Ok(ResourceWrite {path:target.to_string_lossy().into_owned(),content:rewritten,mappings,warning:None})
 }
 #[tauri::command(async)]
@@ -672,12 +684,13 @@ fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tau
     }
     documents.insert(window.label().to_owned(), Some(target.clone()));
     drop(documents);
-    if let Err(error) = app.state::<recent::Recent>().remember(&app, &target) { eprintln!("Recent files: {error}"); }
     rebind_anchor(&anchors, window.label(), saved_file);
     // Disk is already saved. A cleanup failure must not be reported as a failed
     // write, since that would leave the editor's comparison baseline stale.
     if let Err(error) = store.saved(&old_key, &content) { eprintln!("Recovery cleanup: {error}"); }
     if key != old_key { if let Err(error) = store.saved(&key, &content) { eprintln!("Recovery cleanup: {error}"); } }
+    drop(_guard);
+    if let Err(error) = app.state::<recent::Recent>().remember(&app, &target) { eprintln!("Recent files: {error}"); }
     Ok(ResourceWrite {path:target.to_string_lossy().into_owned(),content,mappings,warning:cleanup_warning})
 }
 
@@ -879,7 +892,7 @@ fn main() {
     }));
     builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing])
+        .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open])
         .setup(|app| {
             let recent_path = app.path().app_data_dir()?.join("recent-files-v1.json");
             app.manage(recent::Recent::load(recent_path));
@@ -969,7 +982,7 @@ fn main() {
             else if let Some(id) = event.id().as_ref().strip_prefix("recent-") {
                 use tauri_plugin_dialog::DialogExt;
                 if let Some(entry) = app.state::<recent::Recent>().for_id(id) {
-                    if let Err(error) = open_document(app.clone(), Some(entry.path)) {
+                    if let Err(error) = recent::open(app, &entry.path) {
                         app.dialog().message(format!("无法打开最近文件：{error}。文件可能已移动或删除；可从“文件 > 最近打开”清理失效记录。"))
                             .title("Leaf").show(|_| {});
                     }

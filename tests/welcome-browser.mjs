@@ -86,7 +86,7 @@ try {
     if(command==='recent_import'){window.nativeRecent=args.items;return;}
     if(command==='recent_list')return window.nativeRecent;
     if(command==='recent_clear_missing'){window.nativeRecent=[];return 3;}
-    if(command==='open_document'&&args.path===window.missingPath)throw Error('not found');
+    if(command==='recent_open'&&args.path===window.missingPath)throw Error('not found');
     if(command==='initial_path')return null;
     if(command==='plugin:dialog|save')return '/Users/test/新建.md';
     if(command==='recovery_list')return new Promise(resolve=>setTimeout(()=>resolve([]),500));
@@ -108,11 +108,11 @@ try {
  await native.click('#welcomeRecentButton');
  assert.ok(await native.locator('#recentPopover').evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}));
  await native.locator('#recentList button').nth(1).click();
- await native.waitForFunction(()=>nativeCalls.some(c=>c.command==='open_document'&&c.args.path==='/Users/test/项目 B/同名.md'));
+ await native.waitForFunction(()=>nativeCalls.some(c=>c.command==='recent_open'&&c.args.path==='/Users/test/项目 B/同名.md'));
  await native.evaluate(()=>{window.missingPath='/Users/test/项目 A/同名.md';});
  await native.click('#welcomeRecentButton');
  await native.locator('#recentList button').first().click();
- assert.ok(await native.getByRole('alert').innerText().then(text=>text.includes('文件可能已移动或删除')));
+ assert.ok(await native.getByRole('alert').innerText().then(text=>text.includes('文件可能已移动、删除或被替换')));
  await native.getByRole('button',{name:'清理失效记录'}).click();
  assert.equal(await native.locator('#recentList button').count(),0);
  await native.getByRole('button',{name:'新建文档',exact:true}).click();

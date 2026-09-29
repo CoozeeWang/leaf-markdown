@@ -1,10 +1,15 @@
 use std::{fs, io::Write, path::{Path, PathBuf}, sync::Mutex};
-use tauri::{menu::{MenuItem, Submenu}, AppHandle};
+use tauri::{menu::{MenuItem, Submenu}, AppHandle, Manager};
 
 const LIMIT: usize = 8;
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Debug)]
-pub struct Entry { pub path: String, pub name: String }
+pub struct Entry {
+    pub path: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    identity: Option<(u64, u128)>,
+}
 
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 struct Data { #[serde(default)] migrated: bool, #[serde(default)] entries: Vec<Entry> }
@@ -21,26 +26,30 @@ fn name(path: &str) -> String {
     Path::new(path).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| path.into())
 }
 
+fn identity(path: &Path) -> Option<(u64, u128)> {
+    crate::document_location::Anchor::open(path).ok().map(|anchor| anchor.token())
+}
+
 fn markdown(path: &Path) -> bool {
     path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "md" | "markdown" | "mdown"))
 }
 
-fn add(entries: &mut Vec<Entry>, path: String) {
+fn add(entries: &mut Vec<Entry>, path: String, identity: Option<(u64, u128)>) {
     if path.is_empty() { return; }
     entries.retain(|entry| entry.path != path);
-    entries.insert(0, Entry { name: name(&path), path });
+    entries.insert(0, Entry { name: name(&path), path, identity });
     entries.truncate(LIMIT);
 }
 
-fn retain_existing(entries: &mut Vec<Entry>) {
-    entries.retain(|entry| Path::new(&entry.path).is_file());
+fn retain_valid(entries: &mut Vec<Entry>) {
+    entries.retain(|entry| entry.identity.is_some_and(|expected| identity(Path::new(&entry.path)) == Some(expected)));
 }
 
 fn merge_legacy(data: &mut Data, old: Vec<Entry>) {
     if data.migrated { return; }
     for entry in old.into_iter().take(LIMIT) {
         if !markdown(Path::new(&entry.path)) || data.entries.iter().any(|current| current.path == entry.path) { continue; }
-        data.entries.push(Entry { name: name(&entry.path), path: entry.path });
+        data.entries.push(Entry { name: name(&entry.path), identity: identity(Path::new(&entry.path)), path: entry.path });
         data.entries.truncate(LIMIT);
     }
     data.migrated = true;
@@ -97,16 +106,17 @@ impl Recent {
 
     pub fn remember(&self, app: &AppHandle, path: &Path) -> Result<(), String> {
         if !markdown(path) || !path.is_file() { return Ok(()); }
+        let token = identity(path).ok_or("无法确认最近文件身份")?;
         let path = path.to_string_lossy().into_owned();
-        self.change(app, |data| add(&mut data.entries, path))
+        self.change(app, |data| add(&mut data.entries, path, Some(token)))
     }
 
     pub fn replace(&self, app: &AppHandle, old: &Path, new: &Path) -> Result<(), String> {
         let old = old.to_string_lossy().into_owned();
-        let replacement = (markdown(new) && new.is_file()).then(|| new.to_string_lossy().into_owned());
+        let replacement = (markdown(new) && new.is_file()).then(|| identity(new).map(|token| (new.to_string_lossy().into_owned(), token))).flatten();
         self.change(app, |data| {
             data.entries.retain(|entry| entry.path != old);
-            if let Some(new) = replacement { add(&mut data.entries, new); }
+            if let Some((new, token)) = replacement { add(&mut data.entries, new, Some(token)); }
         })
     }
 
@@ -117,12 +127,21 @@ impl Recent {
 
     pub fn clear_missing(&self, app: &AppHandle) -> Result<usize, String> {
         let before = self.list().len();
-        self.change(app, |data| retain_existing(&mut data.entries))?;
+        self.change(app, |data| retain_valid(&mut data.entries))?;
         Ok(before - self.list().len())
     }
 
     pub fn for_id(&self, id: &str) -> Option<Entry> {
         self.data.lock().unwrap().entries.iter().find(|entry| crate::recovery::file_key(Path::new(&entry.path)) == id).cloned()
+    }
+
+    pub fn verified_path(&self, path: &str) -> Result<(PathBuf, (u64, u128)), String> {
+        let data = self.data.lock().unwrap();
+        let entry = data.entries.iter().find(|entry| entry.path == path).ok_or("最近文件记录已变化")?;
+        let expected = entry.identity.ok_or("无法确认原文件身份；请手动打开文件")?;
+        let path = PathBuf::from(path);
+        if identity(&path) != Some(expected) { return Err("原文件已移动、删除或被其他文件替换".into()); }
+        Ok((path, expected))
     }
 
     pub fn set_menu(&self, app: &AppHandle, menu: Submenu<tauri::Wry>) -> Result<(), String> {
@@ -156,18 +175,26 @@ pub fn recent_import(app: AppHandle, recent: tauri::State<Recent>, items: Vec<En
 #[tauri::command(async)]
 pub fn recent_clear_missing(app: AppHandle, recent: tauri::State<Recent>) -> Result<usize, String> { recent.clear_missing(&app) }
 
+pub fn open(app: &AppHandle, path: &str) -> Result<(), String> {
+    let (verified, token) = app.state::<Recent>().verified_path(path)?;
+    crate::create_document(app.clone(), Some(verified.to_string_lossy().into_owned()), None, Some(token))
+}
+
+#[tauri::command(async)]
+pub fn recent_open(app: AppHandle, path: String) -> Result<(), String> { open(&app, &path) }
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn newest_first_deduplicated_and_bounded() {
         let mut entries = Vec::new();
-        for index in 0..10 { add(&mut entries, format!("/test/{index}.md")); }
+        for index in 0..10 { add(&mut entries, format!("/test/{index}.md"), None); }
         assert_eq!(entries.len(), LIMIT);
-        add(&mut entries, "/test/5.md".into());
+        add(&mut entries, "/test/5.md".into(), None);
         assert_eq!(entries[0].name, "5.md");
         assert_eq!(entries.iter().filter(|e| e.path == "/test/5.md").count(), 1);
-        add(&mut entries, String::new());
+        add(&mut entries, String::new(), None);
         assert_eq!(entries.len(), LIMIT);
     }
     #[test]
@@ -176,8 +203,8 @@ mod tests {
         let path = dir.path().join("recent.json");
         let store = Recent::load(path.clone());
         let mut data = Data::default();
-        add(&mut data.entries, "/synthetic/one/report.md".into());
-        add(&mut data.entries, "/synthetic/two/report.md".into());
+        add(&mut data.entries, "/synthetic/one/report.md".into(), None);
+        add(&mut data.entries, "/synthetic/two/report.md".into(), None);
         data.migrated = true;
         store.persist(&data).unwrap();
         let reopened = Recent::load(path);
@@ -186,15 +213,15 @@ mod tests {
         assert_ne!(reopened.list()[0].path, reopened.list()[1].path);
     }
     #[test]
-    fn cleanup_only_removes_missing_files() {
+    fn cleanup_removes_missing_and_unverified_files() {
         let dir = tempfile::tempdir().unwrap();
         let present = dir.path().join("present.md");
         fs::write(&present, "# Synthetic").unwrap();
         let missing = dir.path().join("missing.md");
         let mut entries = Vec::new();
-        add(&mut entries, present.to_string_lossy().into_owned());
-        add(&mut entries, missing.to_string_lossy().into_owned());
-        retain_existing(&mut entries);
+        add(&mut entries, present.to_string_lossy().into_owned(), identity(&present));
+        add(&mut entries, missing.to_string_lossy().into_owned(), None);
+        retain_valid(&mut entries);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].path, present.to_string_lossy());
     }
@@ -212,8 +239,8 @@ mod tests {
     #[test]
     fn legacy_import_appends_once_without_resurrecting_removed_entries() {
         let mut data = Data::default();
-        add(&mut data.entries, "/synthetic/current.md".into());
-        let old = vec![Entry { path: "/synthetic/old.md".into(), name: "old.md".into() }];
+        add(&mut data.entries, "/synthetic/current.md".into(), None);
+        let old = vec![Entry { path: "/synthetic/old.md".into(), name: "old.md".into(), identity: None }];
         merge_legacy(&mut data, old.clone());
         assert_eq!(data.entries.iter().map(|entry| entry.name.as_str()).collect::<Vec<_>>(), ["current.md", "old.md"]);
         data.entries.pop();
@@ -226,5 +253,22 @@ mod tests {
         assert!(markdown(Path::new("/synthetic/note.markdown")));
         assert!(!markdown(Path::new("/synthetic/note.txt")));
         assert!(!markdown(Path::new("/synthetic/unsaved")));
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn replaced_file_at_same_path_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.md");
+        fs::write(&path, "original").unwrap();
+        let token = identity(&path).unwrap();
+        let store = Recent::load(dir.path().join("recent.json"));
+        add(&mut store.data.lock().unwrap().entries, path.to_string_lossy().into_owned(), Some(token));
+        assert_eq!(store.verified_path(path.to_str().unwrap()).unwrap().0, path);
+        fs::rename(&path, dir.path().join("moved.md")).unwrap();
+        fs::write(&path, "unrelated").unwrap();
+        assert!(store.verified_path(path.to_str().unwrap()).is_err());
+        let mut entries = store.list();
+        retain_valid(&mut entries);
+        assert!(entries.is_empty());
     }
 }
