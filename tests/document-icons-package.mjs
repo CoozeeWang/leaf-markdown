@@ -29,3 +29,13 @@ for(const [i,association] of config.bundle.fileAssociations.entries()) {
   assert.ok(chunks.length>=3,'icon includes multiple native sizes');
 }
 console.log('PASS macOS package: unchanged document associations, bundled Leaf icon and multiple icon sizes');
+
+assert.equal(plist.NSServices.length,1);
+const service=plist.NSServices[0];
+assert.equal(service.NSMessage,'leafNewMarkdown');
+assert.equal(service.NSPortName,'Leaf');
+assert.equal(service.NSMenuItem.default,'使用 Leaf 新建 Markdown 文档');
+assert.deepEqual(service.NSSendTypes,['public.file-url']);
+assert.deepEqual(service.NSSendFileTypes,['public.item']);
+assert.equal(service.NSRequiredContext.NSApplicationIdentifier,'com.apple.finder');
+console.log('PASS macOS package: Finder new Markdown service declaration');

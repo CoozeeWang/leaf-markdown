@@ -46,17 +46,19 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm test
+      - name: Native unit tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf
       - name: Build installer
         shell: bash
         run: npm run desktop:build -- --target "$LEAF_BUILD_TARGET" --config "$LEAF_BUILD_CONFIG"
-      - name: Verify Windows document icons
+      - name: Verify Windows file integration
         if: inputs.platform == 'windows'
         shell: pwsh
         run: |
           $installer = Get-ChildItem "src-tauri/target/$env:LEAF_BUILD_TARGET/release/bundle/nsis/*.exe" | Select-Object -First 1
           if (!$installer) { throw 'NSIS installer not found' }
           ./tests/document-icons-windows.ps1 -Installer $installer.FullName
-      - name: Verify macOS document icons
+      - name: Verify macOS file integration
         if: inputs.platform != 'windows'
         shell: bash
         run: node tests/document-icons-package.mjs "src-tauri/target/$LEAF_BUILD_TARGET/release/bundle/macos/Leaf.app"

@@ -257,3 +257,8 @@ macOS 窗口标题栏、工具栏文件名与页面文件名指向同一文件�
 - [主界面与命令](../src/main.js)、[属性界面](../src/properties-ui.js)
 - [恢复窗口](../src/recovery-dialog.js)、[恢复记录存储](../src-tauri/src/recovery.rs)
 - [平台快捷键](../src/platform-shortcuts.js)
+
+
+## 系统文件管理器新建
+
+系统入口统一命名「使用 Leaf 新建 Markdown 文档」。创建空白 `未命名.md`，重名加空格与递增数字，打开后沿用标题改名。Mac 使用 Finder 的「服务」（单选文件夹或文件）；Windows 使用文件夹和背景右键菜单。此操作没有编辑器窗口可承载状态时，失败使用带「Leaf · 新建文档」标题的原生提示，不覆盖已有文件。

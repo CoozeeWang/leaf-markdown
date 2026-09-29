@@ -85,3 +85,12 @@ These are internal builds without distribution signing. Installation on another 
 macOS 的 `src-tauri/Info.plist` 在打包时覆盖文档类型数组，为现有扩展名指定随包的 `icon.icns`；更改 `bundle.fileAssociations` 时同步该数组。Windows 沿用 Tauri NSIS 的 `DefaultIcon` 注册，使用可执行文件内的 Leaf 图标，不另写系统默认程序选择。
 
 macOS 构建后运行 `node tests/document-icons-package.mjs src-tauri/target/release/bundle/macos/Leaf.app`，检查真正打包的关联声明和图标资源。`Internal test packages` 自动执行对应平台检查；Windows 的 `tests/document-icons-windows.ps1` 仅允许在一次性 GitHub Actions runner 中静默安装／检查／卸载，验证图标注册、可提取图标、Windows UserChoice 与合成文档不变。它不替代用户在系统设置中切换默认应用、双击打开、Finder／Explorer 图标缓存刷新和不同主题尺寸的人工验收。
+
+
+## 文件管理器新建文档 / File manager creation
+
+macOS 在 Finder 选中单个文件夹或文件，右键「服务 → 使用 Leaf 新建 Markdown 文档」。选中文件夹时在其中创建，选中文件时在其所在目录创建；不读取 Finder 前台窗口，也不需要自动化权限。服务随 App 的 `NSServices` 声明安装，由 `native_services.rs` 注册；首次安装若尚未显示，可在系统设置的键盘快捷键「服务」中检查开关。Finder 空白区域的右键菜单不是此服务的入口。
+
+Windows 安装包通过 `windows-hooks.nsh` 注册当前用户的文件夹／文件夹背景右键菜单；Windows 11 可能需要展开「显示更多选项」。`--new-in` 参数在冷启动和已有实例中走同一路径，卸载时仅移除仍指向本安装位置的 Leaf 菜单。
+
+两平台均原子创建 `未命名.md`，重名依次使用 `未命名 2.md` 等，随后打开 Leaf。可用现有标题改名；失败显示原生错误提示，已创建但打开失败的文件保留并告知位置。Rust 测试覆盖并发、重名、无效目录和 Finder 专用粘贴板输入；Mac 原生粘贴板测试需要可访问系统粘贴板服务的会话。安装包检查还覆盖服务声明、Windows 实际安装／冷启动／已有实例创建和卸载，不代替 Finder／Explorer 菜单的安装版人工操作。
