@@ -1,26 +1,37 @@
 // One visible message, one lifetime. Dismissing UI never changes file state.
-export function setupStatusNotices({ container, text, recovery, dismiss, announcement, format = value => value }) {
+export function setupStatusNotices({ container, text, recovery, actions, dismiss, announcement, format = value => value }) {
   let current = null, persistent = null, recoveryAvailable = false, recoveryDismissed = false;
   let timer, announcementTimer;
-  const resolvedSave = /^(已保存|已自动保存|已下载保存副本|已载入外部修改|已恢复读取原文件|已开启自动保存)/;
+  const resolvedSave = /^(已保存|已自动保存|已下载保存副本|已载入外部修改|已恢复读取原文件|已开启自动保存|已重新定位原文件)/;
   const quietSave = /^(已自动保存|已开启自动保存|已载入外部修改|已恢复读取原文件)/;
   const render = () => {
     const visible = current || persistent;
     text.textContent = visible ? format(visible.text) : '';
     text.hidden = !visible;
     recovery.hidden = !!visible || !recoveryAvailable || recoveryDismissed;
+    if (actions) {
+      actions.replaceChildren();
+      for (const action of visible?.actions || []) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = action.label;
+        button.addEventListener('click', () => { void action.run(); });
+        actions.append(button);
+      }
+      actions.hidden = !visible?.actions?.length;
+    }
     container.hidden = !visible && recovery.hidden;
     if (visible) container.dataset.kind = text.dataset.kind = visible.kind;
     else { delete container.dataset.kind; delete text.dataset.kind; }
   };
-  function show(message, kind = '', { announce = true } = {}) {
+  function show(message, kind = '', { announce = true, actions: choices } = {}) {
     // A rename or formatting success must not conceal an unresolved save error.
     if (persistent?.kind === 'error' && kind !== 'error' && !(kind === 'saved' && resolvedSave.test(message))) return;
     clearTimeout(timer);
     clearTimeout(announcementTimer);
     announcement.textContent = '';
     if (kind === 'saved' && resolvedSave.test(message)) persistent = null;
-    const next = message ? { text: message, kind } : null;
+    const next = message ? { text: message, kind, actions: choices } : null;
     if (kind === 'error' || kind === 'manual') { persistent = next; current = null; }
     else current = next;
     render();

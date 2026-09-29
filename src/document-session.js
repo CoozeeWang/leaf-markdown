@@ -4,6 +4,7 @@ import {rewriteResourcePaths} from './resource-paths.js';
 export function createDocumentSession(io) {
   let path = null, disk = null, ready = false, revision = 0, paused = false;
   let pollFailure = null;
+  const unavailable = error => /\b(?:ENOENT|os error 2)\b|no such file or directory|the system cannot find the file specified|无法确认当前文件的位置|原文件在原位置找不到/i.test(String(error));
   let queue = Promise.resolve();
   const serialize = action => {
     const result = queue.then(action);
@@ -61,7 +62,31 @@ export function createDocumentSession(io) {
           io.saved(content, target);
           status(cleanupWarning || (io.content() === content ? '已保存' : '等待自动保存…'), cleanupWarning ? 'error' : io.content() === content ? 'saved' : 'pending', { announce: manual });
           return true;
-        } catch (error) { status(`修改尚未保存。请重试或另存为。详情：${error}`); return false; }
+        } catch (error) {
+          status(unavailable(error)
+            ? '原文件不可用，修改尚未保存。请重新定位原文件，或另存为。'
+            : `修改尚未保存。请重试或另存为。详情：${error}`,
+          'error', unavailable(error) ? { actions: io.unavailableActions?.() } : undefined);
+          return false;
+        }
+      });
+    },
+    relocate() {
+      return serialize(async () => {
+        if (!ready || !path || !io.selectExisting || !io.relocate) return false;
+        try {
+          await io.checkpoint(io.content());
+          const selected = await io.selectExisting();
+          if (!selected) return false;
+          const observation = await io.relocate(selected, disk);
+          follow(observation);
+          pollFailure = null;
+          status(io.content() === disk ? '已重新定位原文件' : '已重新定位原文件 · 修改尚未保存', 'saved');
+          return true;
+        } catch (error) {
+          status(`无法重新定位原文件。当前编辑内容仍在 Leaf 中；请选择原文件，或另存为。详情：${error}`, 'error', { actions: io.unavailableActions?.() });
+          return false;
+        }
       });
     },
     rename(name) {
@@ -106,10 +131,11 @@ export function createDocumentSession(io) {
           const detail = String(error);
           if (detail === pollFailure) return;
           pollFailure = detail;
-          const missing = error?.code === 'ENOENT' || /\b(?:ENOENT|os error 2)\b|no such file or directory|the system cannot find the file specified/i.test(detail);
+          const missing = error?.code === 'ENOENT' || unavailable(detail);
           status(missing
-            ? '原文件在原位置找不到。当前编辑内容仍在 Leaf 中；请先另存为，或从新位置重新打开文件。'
-            : `无法读取文件：${detail}`);
+            ? '原文件在原位置找不到。当前编辑内容仍在 Leaf 中；请重新定位原文件，或另存为。'
+            : `无法读取文件：${detail}。当前编辑内容仍在 Leaf 中；请重新定位原文件，或另存为。`,
+          'error', { actions: io.unavailableActions?.() });
         }
       });
     },

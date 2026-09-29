@@ -377,6 +377,50 @@ fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: t
     Ok(DocumentObservation { path: target.to_string_lossy().into_owned(), content: located.content })
 }
 
+// This path is supplied by an explicit user choice. An unchanged disk baseline
+// is still required before the editor can treat it as the original document.
+struct RelocationCandidate { path: PathBuf, content: String, anchor: Option<document_location::Anchor> }
+
+fn verify_relocation(path: &str, expected: &str) -> Result<RelocationCandidate, String> {
+    let target = fs::canonicalize(path).map_err(|e| e.to_string())?;
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let anchor = Some(document_location::Anchor::open(&target).map_err(|e| e.to_string())?);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let anchor: Option<document_location::Anchor> = None;
+    let content = if let Some(ref anchor) = anchor {
+        anchor.locate().map_err(|e| e.to_string())?.content
+    } else { fs::read_to_string(&target).map_err(|e| e.to_string())? };
+    if content != expected { return Err("所选文件的内容与原文件不同。请检查文件，或另存为。".into()); }
+    if anchor.as_ref().is_some_and(|anchor| !anchor.matches_path(&target)) {
+        return Err("所选文件的位置已变化，请重新选择。".into());
+    }
+    Ok(RelocationCandidate { path: target, content, anchor })
+}
+
+#[tauri::command(async)]
+fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, expected: String) -> Result<DocumentObservation, String> {
+    let _guard = recovery.gate.lock().unwrap();
+    let mut documents = docs.0.lock().unwrap();
+    let source = documents.get(window.label()).cloned().flatten().ok_or("请先保存文档")?;
+    let candidate = verify_relocation(&path, &expected)?;
+    let target = &candidate.path;
+    if documents.iter().any(|(label, open)| label != window.label() && open.as_ref() == Some(target)) {
+        return Err("该文件已在另一窗口打开，请选择其他文件。".into());
+    }
+    if candidate.anchor.as_ref().is_some_and(|anchor| !anchor.matches_path(target)) {
+        return Err("所选文件的位置已变化，请重新选择。".into());
+    }
+    if target != &source {
+        recovery_store(&app)?.copy_for_rename(&recovery::file_key(&source), &recovery::file_key(&target), &target.to_string_lossy())?;
+        documents.insert(window.label().into(), Some(target.clone()));
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if let Some(anchor) = candidate.anchor { anchors.0.lock().unwrap().insert(window.label().into(), anchor); }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = anchors;
+    Ok(DocumentObservation { path: target.to_string_lossy().into_owned(), content: candidate.content })
+}
+
 fn recovery_store(app: &tauri::AppHandle) -> Result<recovery::Store, String> {
     Ok(recovery::Store::new(app.path().app_data_dir().map_err(|e| e.to_string())?.join("recovery-v1")))
 }
@@ -617,6 +661,10 @@ fn atomic_save(path: &str, content: &str, expected: Option<String>) -> Result<fs
         Err(e) => return Err(e.to_string()),
     };
     if current != expected { return Err("文件已被其他程序修改，请另存为以保留当前编辑内容。".into()); }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let original_identity = if current.is_some() {
+        Some(document_location::Anchor::open(&target).map_err(|e| e.to_string())?.token())
+    } else { None };
     let parent = target.parent().ok_or("无法确定保存目录")?;
     let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
     if let Ok(meta) = fs::metadata(&target) {
@@ -628,7 +676,19 @@ fn atomic_save(path: &str, content: &str, expected: Option<String>) -> Result<fs
     // Recheck after preparing the temporary file, reducing the external-write race.
     let latest = match fs::read_to_string(&target) { Ok(text) => Some(text), Err(e) if e.kind() == std::io::ErrorKind::NotFound => None, Err(e) => return Err(e.to_string()) };
     if latest != current { return Err("保存期间文件被其他程序修改，请另存为。".into()); }
-    temp.persist(&target).map_err(|e| e.to_string())
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if let Some(token) = original_identity {
+        if document_location::Anchor::open(&target).map_err(|e| e.to_string())?.token() != token {
+            return Err("保存期间文件位置已变化，请重新定位原文件或另存为。".into());
+        }
+    }
+    if expected.is_none() {
+        temp.persist_noclobber(&target).map_err(|e| if e.error.kind() == std::io::ErrorKind::AlreadyExists {
+            "保存位置已有同名文件，请选择其他位置。".into()
+        } else { e.to_string() })
+    } else {
+        temp.persist(&target).map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -707,6 +767,27 @@ mod tests {
         assert_eq!(fs::read_to_string(file).unwrap(), "external");
     }
     #[test]
+    fn explicit_relocation_requires_the_original_disk_baseline() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("chosen.md");
+        fs::write(&path, "different document").unwrap();
+        let selected = path.to_str().unwrap();
+        assert!(verify_relocation(selected, "original baseline").is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "different document");
+        fs::write(&path, "original baseline").unwrap();
+        let verified = verify_relocation(selected, "original baseline").unwrap();
+        assert_eq!(verified.path, fs::canonicalize(&path).unwrap());
+        assert_eq!(verified.content, "original baseline");
+    }
+    #[test]
+    fn creating_a_new_save_never_replaces_a_same_name_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("existing.md");
+        fs::write(&path, "someone else's file").unwrap();
+        assert!(atomic_save(path.to_str().unwrap(), "my edits", None).is_err());
+        assert_eq!(fs::read_to_string(path).unwrap(), "someone else's file");
+    }
+    #[test]
     fn round_trips_markdown_and_creates_new_files() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("中文.md");
@@ -732,7 +813,7 @@ fn main() {
     }));
     builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open])
+        .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             native_shortcuts::install(app.handle().clone());

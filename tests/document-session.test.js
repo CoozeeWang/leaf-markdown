@@ -74,6 +74,49 @@ test('an uncertain location never changes the path or overwrites edits', async (
   assert.equal(await session.save(), false);
   assert.equal(state.writes.length, 0);
 });
+test('explicit relocation keeps dirty edits and redirects the next save', async () => {
+  const followed = [];
+  const { session, state, io } = await setup({
+    observe: async () => { throw new Error('No such file or directory'); },
+    selectExisting: async () => '/moved/original.md',
+    relocate: async (target, expected) => {
+      assert.equal(target, '/moved/original.md');
+      assert.equal(expected, 'disk');
+      return { path: target, content: 'disk' };
+    },
+    followed: (...args) => followed.push(args),
+  });
+  state.content = 'unsaved edits'; session.edited();
+  await session.poll();
+  assert.equal(await session.relocate(), true);
+  assert.equal(state.content, 'unsaved edits');
+  assert.deepEqual(followed, [['disk', '/moved/original.md', '/file.md']]);
+  assert.ok(state.checkpoints.some(item => item.content === 'unsaved edits'));
+  assert.equal(await session.save(), false, 'an unverified later observation must still block saving');
+  assert.equal(state.writes.length, 0);
+  io.observe = async () => ({ path: '/moved/original.md', content: 'disk' });
+  assert.equal(await session.save(), true);
+  assert.equal(state.writes[0].path, '/moved/original.md');
+});
+test('cancelled or rejected relocation does not change the document or its save baseline', async () => {
+  let chosen = null;
+  const { session, state, io } = await setup({
+    selectExisting: async () => chosen,
+    relocate: async () => { throw new Error('所选文件的内容与原文件不同'); },
+  });
+  state.content = 'unsaved edits'; session.edited();
+  assert.equal(await session.relocate(), false);
+  chosen = '/other.md';
+  assert.equal(await session.relocate(), false);
+  assert.equal(session.path, '/file.md');
+  assert.equal(state.content, 'unsaved edits');
+  assert.equal(state.saved, 'disk');
+  assert.equal(state.writes.length, 0);
+  assert.match(state.statuses.at(-1), /无法重新定位原文件/);
+  io.relocate = async () => ({ path: '/other.md', content: 'disk' });
+  assert.equal(await session.relocate(), true);
+  assert.equal(session.path, '/other.md');
+});
 test('a missing source reports once until it recovers or the document is saved elsewhere', async () => {
   const { session, state, io } = await setup();
   const read = io.read;

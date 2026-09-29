@@ -73,8 +73,10 @@ impl Store {
         Ok(())
     }
     pub fn copy_for_rename(&self, old: &str, new: &str, source: &str) -> Result<(), String> {
+        if old == new { return Ok(()); }
         let mut record=self.read(old)?;
         let existing=self.read(new)?;
+        if let Some(draft)=existing.draft { record.versions.push(draft); }
         record.versions.extend(existing.versions);
         record.versions.sort_by(|a,b|b.timestamp.cmp(&a.timestamp));
         record.versions.dedup_by(|a,b|a.id==b.id);
@@ -186,6 +188,17 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn relocation_keeps_both_the_active_draft_and_a_previous_target_draft() {
+        let dir = tempfile::tempdir().unwrap(); let store = Store::new(dir.path().into());
+        store.checkpoint("old", Some("original.md".into()), "current edits", "active", false).unwrap();
+        store.checkpoint("new", Some("chosen.md".into()), "older target draft", "previous", false).unwrap();
+        store.copy_for_rename("old", "new", "chosen.md").unwrap();
+        let record = store.read("new").unwrap();
+        assert_eq!(record.draft.unwrap().content, "current edits");
+        assert!(record.versions.iter().any(|version| version.content == "older target draft"));
+        assert_eq!(store.read("old").unwrap().draft.unwrap().content, "current edits");
+    }
     #[test]
     fn same_names_are_isolated_and_old_draft_survives_a_new_edit() {
         let dir = tempfile::tempdir().unwrap(); let store = Store::new(dir.path().into());

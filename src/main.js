@@ -135,6 +135,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
     <div id="statusNotice" class="status-notice" hidden>
       <span id="saveStatus" class="save-status" hidden></span>
       <button id="recoveryNotice" class="recovery-notice" hidden>发现恢复记录 · 查看</button>
+      <span id="statusActions" class="status-actions" hidden></span>
       <button id="dismissStatus" class="dismiss-status" aria-label="关闭提示" data-tooltip="关闭提示">${icon('close', 14)}</button>
     </div>
     <span id="statusAnnouncement" class="status-announcement" role="status" aria-live="polite" aria-atomic="true"></span>
@@ -300,6 +301,7 @@ const statusNotices = setupStatusNotices({
   container: document.querySelector('#statusNotice'),
   text: document.querySelector('#saveStatus'),
   recovery: document.querySelector('#recoveryNotice'),
+  actions: document.querySelector('#statusActions'),
   dismiss: document.querySelector('#dismissStatus'),
   announcement: document.querySelector('#statusAnnouncement'),
   format: shortcutText,

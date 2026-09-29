@@ -1092,6 +1092,9 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .status-notice .save-status { flex: 1; min-width: 0; max-height: 25vh; overflow: auto; overflow-wrap: anywhere; white-space: normal; }
 .status-notice[data-kind="error"] { color: var(--danger); }
 .status-notice .recovery-notice { flex: 1; min-width: 0; padding: 2px 0; text-align: left; font: inherit; color: inherit; }
+.status-notice .status-actions { display: inline-flex; flex: none; flex-wrap: wrap; gap: 6px; }
+.status-notice .status-actions[hidden] { display: none; }
+.status-notice .status-actions button { padding: 4px 8px; border: 1px solid currentColor; border-radius: 6px; font: inherit; color: inherit; }
 .status-notice .dismiss-status { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; color: var(--muted); }
 .status-notice button:hover { background: var(--accent-soft); }
 .statusbar > #cursorStatus, .statusbar > #stats { padding-block: 5px; }
