@@ -1,4 +1,3 @@
-import { shortcutText } from './platform-shortcuts.js';
 import { uiIcon } from './ui-icons.js';
 import { positionMenu } from './menu-position.js';
 let readLocal = null;
@@ -192,7 +191,7 @@ export function imageNode(alt, path) {
   img.referrerPolicy = 'no-referrer';
   const actions = document.createElement('button');
   actions.type = 'button'; actions.className = 'leaf-image-actions';
-  actions.innerHTML = uiIcon('open', 16);
+  actions.innerHTML = uiIcon('folder', 14);
   actions.dataset.tooltip = revealLabel();
   actions.setAttribute('aria-label', revealLabel());
   actions.addEventListener('mousedown', event => { event.preventDefault(); event.stopPropagation(); });
@@ -206,10 +205,7 @@ export function imageNode(alt, path) {
     openImageMenu(img, actions, {left:event.clientX,right:event.clientX,top:event.clientY,bottom:event.clientY});
   });
   const status = document.createElement('span'); status.className = 'leaf-image-status';
-  const hint = document.createElement('span');
-  hint.className = 'leaf-image-drag-hint';
-  hint.textContent = `按住 ${shortcutText('⌘').replace(/\+$/, '')} 拖动图片`;
-  holder.append(img, actions, hint, status); updateImageActions(holder); loadImage(img); return holder;
+  holder.append(img, actions, status); updateImageActions(holder); loadImage(img); return holder;
 }
 export async function loadImage(img) {
   const token = {}; img._resourceToken = token;
