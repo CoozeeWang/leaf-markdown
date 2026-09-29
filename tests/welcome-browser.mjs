@@ -11,6 +11,7 @@ try {
  assert.equal(buttons.length,3);assert.ok(buttons.every(b=>b.height===44&&b.top===buttons[0].top));
  assert.equal(await page.locator('.welcome-title').textContent(),'Leaf轻量 Markdown 编辑器');
  assert.ok(await page.locator('.welcome-name').evaluate(el=>getComputedStyle(el).fontFamily.startsWith('Palatino')));
+ assert.ok(await page.locator('.welcome-card').evaluate(el=>Math.abs((el.getBoundingClientRect().top+el.getBoundingClientRect().bottom)/2-innerHeight/2)<60),'welcome content stays near the window center');
  assert.ok(await page.locator('.welcome-drop-hint').evaluate(el=>el.getBoundingClientRect().bottom>innerHeight-60));
  await page.hover('#welcomeRecentButton');await page.waitForTimeout(500);
  assert.ok(await page.locator('#tooltip').isVisible());
