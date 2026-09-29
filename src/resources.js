@@ -1,9 +1,14 @@
 import { uiIcon } from './ui-icons.js';
+import { positionMenu } from './menu-position.js';
 let readLocal = null;
 let revealLocal = null;
 let movedMissing = new Set();
 export function setResourceReader(reader) { readLocal = reader; refreshImages(); }
-export function setResourceRevealer(revealer) { revealLocal = revealer; }
+export function setResourceRevealer(revealer) {
+  revealLocal = revealer;
+  if (!revealer) closeImageMenu();
+  document.querySelectorAll('.leaf-image').forEach(updateImageActions);
+}
 export function loadedLocalImagePaths(root = document) {
   return [...new Set([...root.querySelectorAll('img[data-resource][data-loaded="yes"]')]
     .map(img => safeTarget(img.dataset.resource, true))
@@ -50,6 +55,76 @@ function fileNameOf(target) {
   const decoded = decodedPath(target);
   return decoded.split(/[\\/]/).pop() || decoded;
 }
+function localImagePath(img) {
+  const target = safeTarget(img.dataset.resource, true);
+  return target && !/^https?:\/\//i.test(target) ? decodeURIComponent(target) : null;
+}
+function revealImage(img) {
+  if (!img.isConnected) return;
+  const relative = localImagePath(img);
+  if (!relative || !revealLocal) return;
+  void revealLocal(relative).catch(error => {
+    (img.isConnected ? img : document).dispatchEvent(new CustomEvent('leaf-image-reveal-failed', {
+      bubbles: true,
+      detail: `${fileNameOf(img.dataset.resource)}：${String(error?.message ?? error)}`,
+    }));
+  });
+}
+let imageMenu = null;
+let imageMenuTrigger = null;
+let imageMenuImage = null;
+function closeImageMenu(restoreFocus = false) {
+  if (!imageMenu || imageMenu.hidden) return;
+  imageMenu.hidden = true;
+  imageMenuTrigger?.setAttribute('aria-expanded', 'false');
+  if (restoreFocus && imageMenuTrigger?.isConnected) imageMenuTrigger.focus();
+  imageMenuTrigger = null;
+  imageMenuImage = null;
+}
+function ensureImageMenu() {
+  if (imageMenu) return imageMenu;
+  imageMenu = document.createElement('section');
+  imageMenu.className = 'leaf-image-menu';
+  imageMenu.setAttribute('role', 'menu');
+  imageMenu.setAttribute('aria-label', '图片操作');
+  imageMenu.hidden = true;
+  const reveal = document.createElement('button');
+  reveal.type = 'button';
+  reveal.setAttribute('role', 'menuitem');
+  reveal.textContent = '在文件管理器中显示';
+  reveal.addEventListener('click', () => {
+    const img = imageMenuImage;
+    closeImageMenu(true);
+    if (img) revealImage(img);
+  });
+  imageMenu.append(reveal);
+  document.body.append(imageMenu);
+  document.addEventListener('pointerdown', event => {
+    if (!imageMenu.hidden && !imageMenu.contains(event.target) && !imageMenuTrigger?.contains(event.target)) closeImageMenu();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !imageMenu.hidden) {
+      event.preventDefault(); event.stopPropagation(); closeImageMenu(true);
+    }
+  }, true);
+  return imageMenu;
+}
+function openImageMenu(img, trigger, anchor) {
+  if (!revealLocal || !localImagePath(img)) return;
+  closeImageMenu();
+  const menu = ensureImageMenu();
+  imageMenuImage = img;
+  imageMenuTrigger = trigger;
+  trigger?.setAttribute('aria-expanded', 'true');
+  menu.hidden = false;
+  positionMenu(menu, anchor);
+  menu.querySelector('button').focus();
+}
+function updateImageActions(holder) {
+  const img = holder.querySelector('img[data-resource]');
+  const button = holder.querySelector('.leaf-image-actions');
+  if (img && button) button.hidden = !revealLocal || !localImagePath(img);
+}
 function platformName() {
   const ua = navigator.userAgent || '';
   if (/Windows/i.test(ua)) return 'Windows';
@@ -92,19 +167,14 @@ function renderFailure(status, img, kind) {
   const lines = document.createElement('span');
   lines.append(title, detail);
   card.append(icon, lines);
-  const relative = decodedPath(img.dataset.resource);
-  if (!revealLocal || /^https?:/i.test(relative)) return;
+  if (!revealLocal || !localImagePath(img)) return;
   const name = fileNameOf(img.dataset.resource);
   card.dataset.clickable = 'yes';
   card.title = '在文件管理器中显示';
   card.tabIndex = 0;
   card.setAttribute('role', 'button');
   card.setAttribute('aria-label', `在文件管理器中显示 ${name}`);
-  const open = () => {
-    void revealLocal(relative).catch(() => {
-      img.dispatchEvent(new CustomEvent('leaf-image-reveal-failed', { bubbles: true, detail: name }));
-    });
-  };
+  const open = () => revealImage(img);
   // The preview widget turns every press inside it into a caret move and then
   // swaps itself for source text, which would destroy the card before its click
   // ever fires. Catching the press on the way down keeps the card alive.
@@ -120,8 +190,24 @@ export function imageNode(alt, path) {
   const holder = document.createElement('span'); holder.className = 'leaf-image';
   const img = document.createElement('img'); img.alt = alt; img.dataset.resource = path;
   img.referrerPolicy = 'no-referrer';
+  const actions = document.createElement('button');
+  actions.type = 'button'; actions.className = 'leaf-image-actions';
+  actions.textContent = '图片操作';
+  actions.title = '图片操作';
+  actions.setAttribute('aria-haspopup', 'menu');
+  actions.setAttribute('aria-expanded', 'false');
+  actions.addEventListener('mousedown', event => { event.preventDefault(); event.stopPropagation(); });
+  actions.addEventListener('click', event => {
+    event.stopPropagation();
+    openImageMenu(img, actions, actions.getBoundingClientRect());
+  });
+  img.addEventListener('contextmenu', event => {
+    if (!revealLocal || !localImagePath(img)) return;
+    event.preventDefault(); event.stopPropagation();
+    openImageMenu(img, actions, {left:event.clientX,right:event.clientX,top:event.clientY,bottom:event.clientY});
+  });
   const status = document.createElement('span'); status.className = 'leaf-image-status';
-  holder.append(img, status); loadImage(img); return holder;
+  holder.append(img, actions, status); updateImageActions(holder); loadImage(img); return holder;
 }
 export async function loadImage(img) {
   const token = {}; img._resourceToken = token;
