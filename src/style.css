@@ -123,6 +123,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .topbar .primary { border-color: var(--line); background: var(--surface-strong); color: var(--accent-strong); }
 .topbar .primary:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: var(--accent-soft); }
 .document-controls .icon-control, .topbar-actions > .icon-control { border-color: var(--line); background: var(--surface-strong); }
+.document-controls .icon-control:hover, .topbar-actions > .icon-control:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: var(--accent-soft); }
 .icon-control { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
 .ui-icon { display: block; flex: 0 0 auto; }
 .filename { max-width: min(30vw, 390px); height: var(--ui-control); display: flex; align-items: center; margin-left: 3px; padding: 0 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border: 1px solid var(--line); border-radius: var(--ui-radius); background: var(--surface-strong); font-size: var(--ui-size); font-weight: 500; }
@@ -199,7 +200,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .document-loading :is(.welcome-settings, .welcome-mark, .welcome-actions, .welcome-drop-hint) { display: none; }
 .welcome-state .recent-popover { top: calc(50% + 96px); left: 50%; transform: translate(-50%, 0); max-height: min(260px, calc(50vh - 112px)); overflow-y: auto; }
 
-.document-area { isolation: isolate; min-width: 0; min-height: 0; display: flex; position: relative; background: var(--canvas); }
+.document-area { grid-row: 4; isolation: isolate; min-width: 0; min-height: 0; display: flex; position: relative; background: var(--canvas); }
 .editor-host { min-width: 0; flex: 1; height: 100%; }
 
 .cm-editor { background: var(--canvas); color: var(--text); }
@@ -657,7 +658,7 @@ button.leaf-list-marker { cursor:pointer; }
 .note-body::placeholder { color: var(--faint); }
 .note-card.active .note-body { color: var(--text); }
 
-.statusbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 14px; min-height: 28px; padding: 0 16px; border-top: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: var(--ui-metadata); }
+.statusbar { grid-row: 5; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 14px; min-height: 28px; padding: 0 16px; border-top: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: var(--ui-metadata); }
 .statusbar #stats { margin-left: auto; }
 .status-button { color: var(--muted); padding: 2px 6px; }
 

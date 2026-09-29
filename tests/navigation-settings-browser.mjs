@@ -14,6 +14,15 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await page.evaluate(()=>document.activeElement.id),'welcomeSettings');
   await page.click('#welcomeNewButton');
+  for (const id of ['#saveButton','#exportMenuButton','#appearanceButton']) {
+    await page.mouse.move(0,0);
+    await page.waitForTimeout(180);
+    const normal=await page.locator(id).evaluate(el=>getComputedStyle(el).backgroundColor);
+    await page.locator(id).hover();
+    await page.waitForTimeout(180);
+    const hovered=await page.locator(id).evaluate(el=>getComputedStyle(el).backgroundColor);
+    assert.notEqual(hovered,normal,`${id} needs a visible hover fill`);
+  }
   const source = '第一行\n同一段的第二行\n\n第二段\n\n```js\nconst a = 1;\n\n```\n\n|甲|乙|\n|-|-|\n|一|二|\n\n末段';
   await page.locator('.cm-content').fill(source);
   for (const id of ['imageInsert','attachmentInsert','calloutButton']) assert.ok(await page.locator(`.format-toolbar #${id}`).isVisible());
