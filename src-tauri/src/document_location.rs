@@ -34,6 +34,9 @@ impl Anchor {
 
     pub fn locate(&self) -> io::Result<Located> {
         let candidate = path_from_handle(&self.file)?;
+        // Finder and Explorer implement deletion by moving a file into the
+        // system trash. That is not a user-requested document relocation.
+        if is_trash_path(&candidate) { return Err(unavailable()); }
         // Read through the verified handle, then recheck the name. A concurrent
         // replacement can otherwise make the next save target another file.
         let mut file = open_shared(&candidate)?;
@@ -60,6 +63,18 @@ fn open_shared(path: &Path) -> io::Result<File> {
 fn open_shared(path: &Path) -> io::Result<File> { File::open(path) }
 
 fn unavailable() -> io::Error { io::Error::new(io::ErrorKind::NotFound, "No such file or directory (tracked document unavailable)") }
+
+fn is_trash_path(path: &Path) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if std::env::var_os("HOME").is_some_and(|home| path.starts_with(Path::new(&home).join(".Trash"))) { return true; }
+        return path.components().any(|part| part.as_os_str() == ".Trashes");
+    }
+    #[cfg(target_os = "windows")]
+    { return path.components().any(|part| part.as_os_str().to_string_lossy().eq_ignore_ascii_case("$Recycle.Bin")); }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    { let _ = path; false }
+}
 
 #[cfg(target_os = "macos")]
 fn identity(file: &File) -> io::Result<Identity> {
@@ -167,5 +182,19 @@ mod tests {
         #[cfg(not(target_os = "windows"))]
         assert!(!anchor.matches_path(&path));
         assert_ne!(Anchor::open(&path).unwrap().token(), original);
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_trash_is_unavailable_instead_of_a_followed_document() {
+        let home = std::env::var_os("HOME").unwrap();
+        assert!(is_trash_path(&Path::new(&home).join(".Trash/example.md")));
+        assert!(is_trash_path(Path::new("/Volumes/External/.Trashes/501/example.md")));
+        assert!(!is_trash_path(Path::new("/Volumes/External/Notes/example.md")));
+    }
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_recycle_bin_is_unavailable_instead_of_a_followed_document() {
+        assert!(is_trash_path(Path::new(r"C:\$Recycle.Bin\S-1\file.md")));
+        assert!(!is_trash_path(Path::new(r"C:\Notes\file.md")));
     }
 }
