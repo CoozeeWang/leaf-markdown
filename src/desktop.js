@@ -15,13 +15,6 @@ let draftTimer;
 let closing = false;
 let hooks;
 
-function rememberDesktopFile(file) {
-  try {
-    const previous=JSON.parse(localStorage.getItem('leaf-desktop-recent')||'[]');
-    localStorage.setItem('leaf-desktop-recent',JSON.stringify([{path:file,name:fileNameFromPath(file)},...previous.filter(item=>item.path!==file)].slice(0,8)));
-  } catch { /* Recent history must not block opening or saving. */ }
-}
-
 export async function desktopOpen() {
   const selected = await open({ multiple: true, filters });
   for (const file of selected ? (Array.isArray(selected) ? selected : [selected]) : []) {
@@ -90,6 +83,12 @@ async function closeDocument() {
 
 export async function initDesktop(callbacks) {
   hooks = callbacks;
+  // Import the former per-WebView list once. Keep the old copy as a migration
+  // fallback because development and installed WebViews can share storage.
+  try {
+    const items = JSON.parse(localStorage.getItem('leaf-desktop-recent') || '[]');
+    await invoke('recent_import', { items: Array.isArray(items) ? items.filter(item => typeof item.path === 'string' && typeof item.name === 'string') : [] });
+  } catch (error) { console.warn('Recent-file migration failed', error); }
   session = createDocumentSession({
     content: hooks.content, status: hooks.status,
     load: (content, source) => hooks.load(content, source ? fileNameFromPath(source) : '未命名.md', source),
@@ -106,16 +105,14 @@ export async function initDesktop(callbacks) {
     async readTarget(path) { try { return await invoke('read_document', { path }); } catch { return null; } },
     rename: (path,name,expected,content) => invoke('rename_document',{path,name,expected,content}),
     renamed(content,path,previous) {
-      try { const items=JSON.parse(localStorage.getItem('leaf-desktop-recent')||'[]');localStorage.setItem('leaf-desktop-recent',JSON.stringify(items.filter(x=>x.path!==previous))); } catch {}
-      rememberDesktopFile(path);hooks.saved(content,fileNameFromPath(path),path);
+      hooks.saved(content,fileNameFromPath(path),path);
     },
     followed(content,path,previous,movedImages) {
-      try { const items=JSON.parse(localStorage.getItem('leaf-desktop-recent')||'[]');localStorage.setItem('leaf-desktop-recent',JSON.stringify(items.filter(x=>x.path!==previous))); } catch {}
-      rememberDesktopFile(path);hooks.followed?.(content,fileNameFromPath(path),path,movedImages);
+      hooks.followed?.(content,fileNameFromPath(path),path,movedImages);
     },
     write: (path, content, expected) => invoke('write_document', { path, content, expected, resources: localResourcePaths(content) }),
     checkpoint: (content, preserve = false) => invoke('recovery_checkpoint', { content, preserve }),
-    saved(content, path) { rememberDesktopFile(path); hooks.saved(content, fileNameFromPath(path), path); },
+    saved(content, path) { hooks.saved(content, fileNameFromPath(path), path); },
   });
   const window = getCurrentWindow();
   await window.onCloseRequested(event => { event.preventDefault(); void closeDocument(); });
@@ -157,7 +154,6 @@ export async function initDesktop(callbacks) {
     try {
       const observed = await invoke('observe_document', { loadedImages: [] });
       await session.initialize(observed.path, observed.content);
-      rememberDesktopFile(observed.path);
     } catch (error) {
       // A failed load never binds an empty/welcome buffer to the failed path.
       await session.initialize(null, '');
