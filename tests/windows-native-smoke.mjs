@@ -1,7 +1,7 @@
 // Exercise the shipped WebView2 runtime, including the IPC that creates windows.
 import { chromium } from 'playwright';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtemp, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, mkdir, rename, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import net from 'node:net';
@@ -121,6 +121,24 @@ try {
   await until(async () => dirty.isClosed(), 'discard and close');
   assert.equal(child.exitCode, null, 'closing one of several documents must keep Leaf running');
   assert.equal(existing.isClosed(), false);
+  // An open document follows only the same file. A replacement at the old
+  // name must not receive later saves.
+  const renamed = join(scratch, 'renamed.md');
+  await rename(fixture, renamed);
+  await until(async () => (await existing.title()).includes('renamed.md'), 'external rename followed');
+  const movedDir = join(scratch, 'moved');
+  await mkdir(movedDir);
+  const moved = join(movedDir, 'moved.md');
+  await rename(renamed, moved);
+  await writeFile(renamed, 'substitute');
+  await until(async () => (await existing.title()).includes('moved.md'), 'external move followed');
+  await existing.locator('.cm-content').fill('# Saved at moved path');
+  await until(async () => (await readFile(moved, 'utf8')) === '# Saved at moved path', 'save after external move');
+  assert.equal(await readFile(renamed, 'utf8'), 'substitute');
+  const recent = await existing.evaluate(() => JSON.parse(localStorage.getItem('leaf-desktop-recent') || '[]'));
+  const samePath = (a, b) => a.replace(/^\\\\\?\\/, '').toLowerCase() === b.replace(/^\\\\\?\\/, '').toLowerCase();
+  assert(samePath(recent[0].path, moved));
+  assert(!recent.some(item => samePath(item.path, fixture) || samePath(item.path, renamed)));
   const documents = pages().filter(p => p.url().includes('document=1'));
   for (const page of documents) {
     await closeNative(page);
@@ -138,7 +156,7 @@ try {
   assert.equal(child.exitCode, 0);
   assert.equal(launcher.isClosed(), true);
   assert.equal(preview.isClosed(), true);
-  console.log('PASS: native Windows new, open, linked document, export, unsaved close/cancel/discard and exit directly after the last document closes.');
+  console.log('PASS: native Windows new, open, linked document, export, external rename/move with safe save, unsaved close/cancel/discard and exit.');
 } catch (error) {
   console.error('Last CDP connection error:', lastConnectionError);
   try { console.error(execFileSync('powershell.exe', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'leaf|msedgewebview2' } | Select-Object ProcessId,Name,CommandLine | Format-List | Out-String"], { timeout: 10000, encoding: 'utf8' })); } catch {}
