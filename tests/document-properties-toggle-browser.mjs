@@ -72,14 +72,15 @@ try {
  assert.equal(await propertiesSwitch.isDisabled(),true,'source mode has no rows to fold');
  assert.equal(await switchboard.locator('#markerModeHint').innerText(),'源码模式仅显示换行标记 ↵。');
  await close();
+ // Source mode can replace the whole file, including its YAML block. In edit
+ // mode Select All is intentionally confined to the body.
+ await page.locator('.cm-content').fill('# 没有属性的文档\n');
  await page.locator('#readingToggle').click();
  await page.locator('.mode-popover [data-mode="edit"]').click();
  await page.waitForTimeout(250);
 
  // A document without properties has nothing to fold, so checking the switch
  // builds the region instead -- what the palette command has always done.
- await page.locator('.cm-content').fill('# 没有属性的文档\n');
- await page.waitForTimeout(250);
  await open();
  await propertiesSwitch.check();
  // Building the region focuses its first field, so wait for it rather than
