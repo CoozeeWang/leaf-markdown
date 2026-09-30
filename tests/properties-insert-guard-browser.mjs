@@ -5,6 +5,7 @@ const floor='---\nversion: v1\n---\n'.length;
 const browser=await chromium.launch(launchOptions);
 try{
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.context().grantPermissions(['clipboard-read','clipboard-write']);
  await page.route('**/properties-guard-fixture',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><body><nav class="format-toolbar"><span class="toolbar-spacer"></span></nav><section id="insertPopover"></section><div id="clipboardMenu"></div><div id="editor"></div></body>'}));
  await page.goto('http://127.0.0.1:41732/properties-guard-fixture');
  await page.evaluate(async doc=>{
@@ -22,6 +23,46 @@ try{
  await page.evaluate(()=>ed.view.focus());
  await page.keyboard.type('I');
  assert.equal(await page.evaluate(()=>ed.getValue()),'---\nversion: v1\n---\nI\nBody','the very first edit cannot precede the properties');
+ await page.evaluate(text=>ed.setValue(text),source);
+ // The editing surface selects only body text, even though CodeMirror stores
+ // the property block in the same document. Use actual shortcuts so copy, cut,
+ // and replacement exercise the user's path rather than a synthetic change.
+ const selected=()=>page.evaluate(()=>{
+   const range=ed.view.state.selection.main;
+   return {anchor:range.anchor,head:range.head,text:ed.view.state.sliceDoc(range.from,range.to)};
+ });
+ await page.evaluate(()=>ed.view.focus());
+ await page.keyboard.press('Meta+A');
+ assert.deepEqual(await selected(),{anchor:floor,head:source.length,text:source.slice(floor)});
+ await page.keyboard.press('Meta+C');
+ assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),source.slice(floor),'copy excludes properties');
+ await page.keyboard.press('Meta+X');
+ assert.equal(await page.evaluate(()=>ed.getValue()),source.slice(0,floor),'cut keeps properties');
+ await page.evaluate(text=>ed.setValue(text),source);
+ await page.evaluate(()=>ed.view.focus());
+ await page.keyboard.press('Meta+A');
+ await page.keyboard.type('Replaced');
+ assert.equal(await page.evaluate(()=>ed.getValue()),source.slice(0,floor)+'Replaced','typing replaces only the body');
+ await page.evaluate(text=>ed.setValue(text),source);
+ await page.evaluate(()=>ed.setPropertiesVisible(false));
+ await page.evaluate(()=>ed.view.focus());
+ await page.keyboard.press('Meta+A');
+ assert.equal((await selected()).text,source.slice(floor),'folding properties does not change selection');
+ await page.evaluate(()=>ed.setPropertiesVisible(true));
+ await page.evaluate(()=>ed.view.dispatch({selection:{anchor:ed.view.state.doc.length,head:0}}));
+ assert.deepEqual(await selected(),{anchor:source.length,head:floor,text:source.slice(floor)},'reverse selection stops at body start');
+ await page.evaluate(()=>ed.setSource(true));
+ await page.evaluate(()=>ed.view.focus());
+ await page.keyboard.press('Meta+A');
+ assert.equal((await selected()).text,source,'source view still selects all Markdown');
+ await page.evaluate(()=>ed.setSource(false));
+ const only='---\nversion: v1\n---';
+ await page.evaluate(text=>ed.setValue(text),only);
+ await page.evaluate(()=>ed.view.focus());
+ await page.keyboard.press('Meta+A');
+ assert.deepEqual(await selected(),{anchor:only.length,head:only.length,text:''},'a property-only document has no editable body selection');
+ await page.keyboard.press('Meta+X');
+ assert.equal(await page.evaluate(()=>ed.getValue()),only,'cut cannot delete a property-only document in edit view');
  await page.evaluate(text=>ed.setValue(text),source);
  // The caret is never parked inside the property block: it is where the next
  // keystroke, paste or drop would write.
@@ -54,10 +95,10 @@ try{
  assert.equal(await over(body),false,'a drag over the body still shows one');
  await page.evaluate(()=>ed.view.contentDOM.dispatchEvent(new DragEvent('dragleave',{bubbles:true})));
  assert.equal(await page.evaluate(()=>ed.view.scrollDOM.classList.contains('cm-leaf-no-drop')),false,'leaving the editor clears it');
- // Selecting across the whole document and retyping still rewrites the block:
- // only a caret is moved, never a selection.
+ // A selection crossing the widget is confined to the body. Explicit
+ // whole-document programmatic replacement still supports opening a new file.
  await page.evaluate(()=>ed.view.dispatch({selection:{anchor:0,head:ed.view.state.doc.length}}));
- assert.equal(await page.evaluate(()=>ed.view.state.selection.main.from),0,'selecting into the block stays possible');
+ assert.equal(await page.evaluate(()=>ed.view.state.selection.main.from),floor,'editing selections exclude the property block');
  await page.evaluate(()=>ed.view.dispatch({changes:{from:0,to:ed.view.state.doc.length,insert:'# 重写\n'},selection:{anchor:5}}));
  assert.equal(await page.evaluate(()=>ed.getValue()),'# 重写\n','rewriting from the top removes the block as before');
  await page.evaluate(text=>ed.setValue(text),source);
@@ -82,6 +123,10 @@ try{
  await page.evaluate(text=>ed.setValue(text),crlf);
  assert.equal(await page.evaluate(()=>ed.getValue()),crlf,'loading CRLF does not rewrite the source');
  assert.equal(await page.evaluate(()=>ed.view.state.selection.main.head),floor,'CRLF carets use normalized editor offsets');
+ await page.evaluate(()=>ed.view.focus());
+ await page.keyboard.press('Meta+A');
+ await page.keyboard.press('Meta+X');
+ assert.equal(await page.evaluate(()=>ed.getValue()),crlf.slice(0,crlf.indexOf('\r\n\r\n')+2),'cut preserves CRLF properties');
  await page.evaluate(text=>ed.restoreValue(text),propertiesOnly.replace(/\n/g,'\r\n'));
  await page.keyboard.type('Body');
  assert.equal(await page.evaluate(()=>ed.getValue()),propertiesOnly.replace(/\n/g,'\r\n')+'\r\nBody','restoration and typing preserve CRLF endings');
@@ -114,6 +159,7 @@ try{
     if(command==='read_document')return doc;
     if(command==='recovery_list')return [];
     if(command==='recovery_retention')return 30;
+    if(command==='recent_list')return [];
     if(command==='import_attachment'){imports.push(args);return 'assets/'+args.name;}
     if(command==='write_document'){writes.push(args.content);return null;}
     return null;

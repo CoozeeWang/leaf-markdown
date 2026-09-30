@@ -1157,8 +1157,8 @@ export function createLeafEditor(options) {
         return true;
       } }),
       appKeymap,
-      // Keep preview carets in the body. Selections can still replace or delete
-      // the entire block; explicit YAML/source editing remains free.
+      // In the edit view, the property widget is outside the selectable body.
+      // Property controls and source mode still edit the YAML directly.
       EditorState.transactionFilter.of(tr => {
         if (suppressChanges || tr.startState.field(sourceMode) || tr.startState.field(structuredPreview).yamlSource) return tr;
         const protectedSpec = protectPropertyInsertions(tr);
@@ -1166,8 +1166,8 @@ export function createLeafEditor(options) {
         const floor = guardedTop(tr.newDoc);
         if (!floor) return tr;
         const selection = tr.selection ?? tr.startState.selection.map(tr.changes);
-        const ranges = selection.ranges.map(range => range.empty && range.from < floor
-          ? EditorSelection.cursor(floor) : range);
+        const ranges = selection.ranges.map(range => range.from < floor
+          ? EditorSelection.range(Math.max(range.anchor, floor), Math.max(range.head, floor)) : range);
         if (ranges.every((range, index) => range === selection.ranges[index])) return tr;
         return { changes: tr.changes, selection: EditorSelection.create(ranges, selection.mainIndex),
           effects: tr.effects, annotations: tr.annotations, scrollIntoView: tr.scrollIntoView };
