@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{collections::HashMap, fs, io::Write, path::{Path, PathBuf}, sync::{Mutex, atomic::{AtomicUsize, Ordering}}};
+#[cfg(target_os = "macos")]
+use std::collections::VecDeque;
 use tauri::{Emitter, Manager};
 #[cfg(target_os = "macos")]
 mod native_print;
@@ -31,6 +33,76 @@ struct OpenBuffers(Mutex<HashMap<String,String>>);
 struct ExportSnapshot { source: String, name: String, numbered: bool, #[serde(default, skip_deserializing)] base_path: Option<PathBuf> }
 #[derive(Default)]
 struct Exports(Mutex<HashMap<String, ExportSnapshot>>);
+// Finder may send Opened before setup registers Recent. Keep the paths until
+// Ready, then open them off the AppKit callback so state and windows are ready.
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+struct OpenRequests(Mutex<OpenRequestsState>);
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+struct OpenRequestsState { ready: bool, draining: bool, pending: VecDeque<PathBuf> }
+
+#[cfg(target_os = "macos")]
+impl OpenRequests {
+    fn enqueue(&self, paths: impl IntoIterator<Item = PathBuf>) -> bool {
+        let mut state = self.0.lock().unwrap();
+        state.pending.extend(paths);
+        Self::begin_drain(&mut state)
+    }
+
+    fn mark_ready(&self) -> bool {
+        let mut state = self.0.lock().unwrap();
+        state.ready = true;
+        Self::begin_drain(&mut state)
+    }
+
+    fn begin_drain(state: &mut OpenRequestsState) -> bool {
+        if !state.ready || state.draining || state.pending.is_empty() { return false; }
+        state.draining = true;
+        true
+    }
+
+    fn next(&self) -> Option<PathBuf> {
+        let mut state = self.0.lock().unwrap();
+        if let Some(path) = state.pending.pop_front() { Some(path) }
+        else { state.draining = false; None }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn drain_open_requests(app: tauri::AppHandle) {
+    use tauri_plugin_dialog::DialogExt;
+    tauri::async_runtime::spawn_blocking(move || {
+        while let Some(path) = app.state::<OpenRequests>().next() {
+            if let Err(error) = open_document(app.clone(), Some(path.to_string_lossy().into_owned())) {
+                app.dialog().message(format!("无法打开文档：{error}"))
+                    .title("Leaf").show(|_| {});
+            }
+        }
+    });
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod open_requests_tests {
+    use super::OpenRequests;
+    use std::path::PathBuf;
+
+    #[test]
+    fn early_open_requests_wait_for_ready_and_keep_their_order() {
+        let requests = OpenRequests::default();
+        assert!(!requests.enqueue([PathBuf::from("first.md"), PathBuf::from("second.md")]));
+        assert!(requests.mark_ready());
+        assert!(!requests.mark_ready());
+        assert_eq!(requests.next(), Some(PathBuf::from("first.md")));
+        assert!(!requests.enqueue([PathBuf::from("third.md")]));
+        assert_eq!(requests.next(), Some(PathBuf::from("second.md")));
+        assert_eq!(requests.next(), Some(PathBuf::from("third.md")));
+        assert_eq!(requests.next(), None);
+        assert!(requests.enqueue([PathBuf::from("fourth.md")]));
+        assert_eq!(requests.next(), Some(PathBuf::from("fourth.md")));
+        assert_eq!(requests.next(), None);
+    }
+}
 static NEXT_WINDOW: AtomicUsize = AtomicUsize::new(1);
 /// The launcher window declared in `tauri.conf.json`. It carries no document of
 /// its own: hide it when a document opens, then remove it when the last
@@ -908,6 +980,8 @@ fn main() {
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
         open_windows_arguments(app, args, &cwd);
     }));
+    #[cfg(target_os = "macos")]
+    let builder = builder.manage(OpenRequests::default());
     builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open])
@@ -1020,6 +1094,8 @@ fn main() {
         .build(context).expect("Leaf could not start")
         .run(|app, event| match event {
             tauri::RunEvent::Ready => {
+                #[cfg(target_os = "macos")]
+                if app.state::<OpenRequests>().mark_ready() { drain_open_requests(app.clone()); }
                 #[cfg(target_os = "windows")]
                 open_windows_arguments(app, std::env::args().collect(), &std::env::current_dir().unwrap_or_default().to_string_lossy());
                 // macOS can deliver a document before Tauri creates its configured
@@ -1032,7 +1108,10 @@ fn main() {
                 }
             }
             #[cfg(target_os = "macos")]
-            tauri::RunEvent::Opened { urls } => { for url in urls { if let Ok(path) = url.to_file_path() { if let Err(error) = open_document(app.clone(), Some(path.to_string_lossy().into_owned())) { eprintln!("{error}"); } } } }
+            tauri::RunEvent::Opened { urls } => {
+                let paths = urls.into_iter().filter_map(|url| url.to_file_path().ok());
+                if app.state::<OpenRequests>().enqueue(paths) { drain_open_requests(app.clone()); }
+            }
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => {
                 if let Some(document) = document_window(app) {
