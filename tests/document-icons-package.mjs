@@ -15,12 +15,16 @@ for(const [i,association] of config.bundle.fileAssociations.entries()) {
   assert.equal(type.CFBundleTypeRole,association.role);
   assert.equal(type.CFBundleTypeName,association.name);
   assert.equal(type.LSHandlerRank,association.rank??'Default','icon registration must not promote Leaf to owner');
-  assert.equal(type.CFBundleTypeIconFile,plist.CFBundleIconFile,'document icon reuses the shipped Leaf brand');
+  assert.equal(type.CFBundleTypeIconFile,'document-icon.icns');
+  assert.notEqual(type.CFBundleTypeIconFile,plist.CFBundleIconFile,'document and application icons must differ');
   assert.equal(path.basename(type.CFBundleTypeIconFile),type.CFBundleTypeIconFile);
   const bytes=await readFile(path.join(app,'Contents/Resources',type.CFBundleTypeIconFile));
   assert.equal(bytes.toString('ascii',0,4),'icns');
   assert.equal(bytes.readUInt32BE(4),bytes.length);
-  assert.deepEqual(bytes,await readFile(new URL('../src-tauri/icons/icon.icns',import.meta.url)));
+  assert.deepEqual(bytes,await readFile(new URL('../src-tauri/icons/document-icon.icns',import.meta.url)));
+  const appIcon=await readFile(path.join(app,'Contents/Resources',plist.CFBundleIconFile));
+  assert.deepEqual(appIcon,await readFile(new URL('../src-tauri/icons/icon.icns',import.meta.url)));
+  assert.notDeepEqual(bytes,appIcon);
   const chunks=[];
   for(let offset=8;offset<bytes.length;) {
     const size=bytes.readUInt32BE(offset+4);assert.ok(size>=8&&offset+size<=bytes.length);
@@ -28,7 +32,7 @@ for(const [i,association] of config.bundle.fileAssociations.entries()) {
   }
   assert.ok(chunks.length>=3,'icon includes multiple native sizes');
 }
-console.log('PASS macOS package: unchanged document associations, bundled Leaf icon and multiple icon sizes');
+console.log('PASS macOS package: unchanged document associations, distinct bundled multi-size document icon, unchanged application icon');
 
 assert.equal(plist.NSServices.length,1);
 const service=plist.NSServices[0];

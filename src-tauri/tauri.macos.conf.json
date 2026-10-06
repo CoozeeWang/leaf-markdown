@@ -1,3 +1,6 @@
 {
-  "bundle": { "targets": ["app", "dmg"] }
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "resources": { "icons/document-icon.icns": "document-icon.icns" }
+  }
 }
