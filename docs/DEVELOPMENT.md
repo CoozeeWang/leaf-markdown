@@ -82,9 +82,9 @@ These are internal builds without distribution signing. Installation on another 
 
 ## 文档图标 / Document icons
 
-macOS 的 `src-tauri/Info.plist` 在打包时覆盖文档类型数组，为现有扩展名指定随包的 `icon.icns`；更改 `bundle.fileAssociations` 时同步该数组。Windows 沿用 Tauri NSIS 的 `DefaultIcon` 注册，使用可执行文件内的 Leaf 图标，不另写系统默认程序选择。
+`src-tauri/icons/document-icon.png` 是 Markdown 文档图标的规范原图；项目锁定的 Tauri 图标工具从它生成 `document-icon.icns` 和 `document-icon.ico`。这三份资源与应用图标分开维护。macOS 的 `src-tauri/Info.plist` 在打包时覆盖文档类型数组，为现有三个扩展名指定随包的 `document-icon.icns`；更改 `bundle.fileAssociations` 时同步该数组。Windows 安装包把 `document-icon.ico` 放在安装目录，安装后只改 Leaf 文档类的 `DefaultIcon`；应用可执行文件与两个文件夹右键菜单继续使用应用图标，不改写系统的 UserChoice 默认程序选择。
 
-macOS 构建后运行 `node tests/document-icons-package.mjs src-tauri/target/release/bundle/macos/Leaf.app`，检查真正打包的关联声明和图标资源。`Internal test packages` 自动执行对应平台检查；Windows 的 `tests/document-icons-windows.ps1` 仅允许在一次性 GitHub Actions runner 中静默安装／检查／卸载，验证图标注册、可提取图标、Windows UserChoice 与合成文档不变。它不替代用户在系统设置中切换默认应用、双击打开、Finder／Explorer 图标缓存刷新和不同主题尺寸的人工验收。
+macOS 构建后运行 `node tests/document-icons-package.mjs src-tauri/target/release/bundle/macos/Leaf.app`，检查真正打包的文档和应用图标资源、关联声明与 Finder 服务，并用 `codesign --verify --deep --strict` 核对实际 `.app`。`Internal test packages` 自动执行对应平台检查；Windows 的 `tests/document-icons-windows.ps1` 仅允许在一次性 GitHub Actions runner 中静默安装／检查／卸载，验证安装资源、多尺寸图标、三个扩展名注册、两个右键菜单图标、Windows UserChoice 与合成文档不变，并核对卸载清理。源码检查、Mac 打包检查和 Windows CI 安装检查是不同层证据；它们不替代当前已安装应用的检查或用户在系统设置中切换默认应用、双击打开、Finder／Explorer 图标缓存刷新和不同主题尺寸的人工验收。
 
 
 ## 文件管理器新建文档 / File manager creation
