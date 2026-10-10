@@ -1020,8 +1020,6 @@ fn main() {
             app.manage(recent::Recent::load(recent_path));
             #[cfg(target_os = "macos")]
             native_shortcuts::install(app.handle().clone());
-            #[cfg(target_os = "macos")]
-            if app.config().identifier != "studio.leaf.editor.dev" { native_services::install(app.handle().clone()); }
             use tauri::menu::{Menu, Submenu, MenuItem, PredefinedMenuItem};
             let handle = app.handle();
             let new = MenuItem::with_id(handle, "new", "新建", true, Some("CmdOrCtrl+N"))?;
@@ -1053,6 +1051,8 @@ fn main() {
             let menu = Menu::with_items(handle, &[&app_menu, &file, &edit])?;
             app.state::<i18n::Language>().attach_menu(&menu)?;
             app.set_menu(menu)?;
+            #[cfg(target_os = "macos")]
+            if app.config().identifier != "studio.leaf.editor.dev" { native_services::install(app.handle().clone()); }
             app.state::<recent::Recent>().set_menu(handle, recent_menu).map_err(std::io::Error::other)?;
             #[cfg(target_os = "macos")]
             if app.config().identifier == "studio.leaf.editor.dev" {

@@ -52,6 +52,10 @@ pub fn install(app: tauri::AppHandle) {
     unsafe {
         let provider: Retained<AnyObject> = msg_send![provider_class(), new];
         let application: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+        // Leaf builds its menu programmatically. Initialize AppKit's Services
+        // menu machinery before publishing the provider (after set_menu).
+        let menu: Retained<AnyObject> = msg_send![class!(NSMenu), new];
+        let _: () = msg_send![application, setServicesMenu: &*menu];
         // AppKit may deliver a request inside setServicesProvider. Keep the
         // handler ready before registration, without holding a RefCell borrow.
         PROVIDER.with(|slot| *slot.borrow_mut() = Some((provider.clone(), app)));
