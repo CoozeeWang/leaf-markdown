@@ -1,3 +1,4 @@
+import { t, h } from './i18n.js';
 import { parser } from '@lezer/markdown';
 import { leafMarkdownExtensions } from './markdown-extensions.js';
 import { parseDocument, isMap, isScalar, isSeq } from 'yaml';
@@ -29,7 +30,7 @@ export function frontmatter(source) {
       fields.push({ key: String(item.key?.value ?? ''), editable: !!editable,
         keyFrom: item.key?.range ? offset + item.key.range[0] : null,
         keyTo: item.key?.range ? offset + item.key.range[1] : null,
-        value: editable ? (list ? item.value.items.map(v => v.value) : item.value.value) : '复杂属性，请使用源码编辑',
+        value: editable ? (list ? item.value.items.map(v => v.value) : item.value.value) : t("markdown_model.complex_property_edit_it_in_source_mode"),
         from: scalar || list ? offset + item.value.range[0] : 0,
         to: scalar || list ? offset + item.value.range[1] : 0 });
     }

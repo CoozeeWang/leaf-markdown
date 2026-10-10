@@ -1,3 +1,4 @@
+import { t, setAttr, message as translatedMessage } from './i18n.js';
 import { StateEffect } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
@@ -68,21 +69,21 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
       view.focus();return;
     }
     const range=view.state.selection.main, selected=view.state.doc.sliceString(range.from,range.to);
-    const text=markdownLink(selected||'链接文字','链接地址',false);
-    const address=text.lastIndexOf('链接地址');
+    const text=markdownLink(selected||t("writing_tools.link_text"),t("writing_tools.link_address"),false);
+    const address=text.lastIndexOf(t("writing_tools.link_address"));
     const from=selected?range.from+address:range.from+1;
-    const to=selected?from+4:from+'链接文字'.length;
+    const to=selected?from+4:from+t("writing_tools.link_text").length;
     view.dispatch({changes:{from:range.from,to:range.to,insert:text},selection:{anchor:from,head:to},scrollIntoView:true,userEvent:'input',annotations:isolateHistory.of('full')});
     view.focus();
   }
   async function attachments(files, image=true, point=null) {
     if (!editable()) return;
-    if (!desktop) {status('本地附件导入请使用 Leaf 桌面版','error');return;}
+    if (!desktop) {status(translatedMessage("writing_tools.use_the_leaf_desktop_app_to_import"),'error');return;}
     // File imports also protect YAML/source mode and pending bookmarks: neither
     // a source caret nor a selection of the properties may replace the block.
     const target=point?fileDropTarget(view,point):null;
-    if(point&&!target){status('请将附件拖到正文编辑区','info');return;}
-    if(target?.protected)status('文档属性不能插入内容，已放到正文开头','saved');
+    if(point&&!target){status(translatedMessage("writing_tools.drop_attachments_in_the_body_editor"),'info');return;}
+    if(target?.protected)status(translatedMessage("writing_tools.this_content_cannot_be_inserted_into_document"),'saved');
     const b=remember(target?{from:target.pos,to:target.pos}:null);
     try {
       if(!files){const paths=await choose(image);if(!paths)return;files=Array.isArray(paths)?paths:[paths];}
@@ -107,17 +108,17 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
         const {text,anchor}=attachmentInsertion(view.state.doc.toString(),b,links);
         insert(text,b,anchor,true); followImageLoad(anchor,images); refreshImages();
       });
-    } catch(error){status(`附件导入失败：${error.message||error}`,'error');}
+    } catch(error){status(translatedMessage("writing_tools.could_not_import_attachments", {"error": error.message||error}),'error');}
     finally{bookmarks.delete(b);}
   }
   const toolbar=document.querySelector('.format-toolbar');
-  for(const [id,label,glyph,action] of [['imageInsert','插入图片','image',()=>attachments(null,true)],['attachmentInsert','插入附件','attach',()=>attachments(null,false)],['linkInsert','插入或编辑链接','link',()=>editLink()],['richCopy','复制为富文本','copy',()=>copyRich()],['plainPaste','粘贴为纯文本','paste',()=>pastePlain()]]){
-    const button=document.createElement('button');button.id=id;button.type='button';button.setAttribute('aria-label',label);button.dataset.tooltip=label;button.innerHTML=icon(glyph);button.onclick=action;button.onmousedown=e=>e.preventDefault();
+  for(const [id,label,glyph,action] of [['imageInsert',"writing_tools.insert_image",'image',()=>attachments(null,true)],['attachmentInsert',"writing_tools.insert_attachment",'attach',()=>attachments(null,false)],['linkInsert',"writing_tools.insert_or_edit_link",'link',()=>editLink()],['richCopy',"writing_tools.copy_as_rich_text",'copy',()=>copyRich()],['plainPaste',"writing_tools.paste_as_plain_text",'paste',()=>pastePlain()]]){
+    const button=document.createElement('button');button.id=id;button.type='button';setAttr(button,'aria-label',()=>t(label));setAttr(button,'data-tooltip',()=>t(label));button.innerHTML=icon(glyph);button.onclick=action;button.onmousedown=e=>e.preventDefault();
     // Clipboard commands remain in command search and the native Edit menu.
     if (id === 'plainPaste') continue;
     toolbar.insertBefore(button, toolbar.querySelector(id === 'richCopy' ? '.toolbar-spacer' : '#calloutButton'));
   }
-  document.querySelector('#richCopy').dataset.tooltip = shortcutText('复制为富文本  ⇧⌘C');
+  setAttr(document.querySelector('#richCopy'), 'data-tooltip', () => shortcutText(t("writing_tools.copy_as_rich_text_c")));
   document.addEventListener('keydown',event=>{
     if(event.isComposing||!(event.metaKey||event.ctrlKey)||document.querySelector('.leaf-writing-backdrop,.recovery-dialog'))return;
     if(event.target.closest?.('input,textarea'))return;
@@ -154,7 +155,7 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
               b.from=Math.max(b.from,floor);b.to=Math.max(b.to,b.from);
               insert(text,b);refreshImages();
             });
-          } catch(error) { status(`粘贴图片失败：${error.message||error}`,'error'); }
+          } catch(error) { status(translatedMessage("writing_tools.could_not_paste_the_image", {"error": error.message||error}),'error'); }
           finally { bookmarks.delete(b); }
         })();
         return;
@@ -168,12 +169,12 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
   async function pastePlain(){
     if(!editable())return;
     const b=remember();
-    try{insert(await navigator.clipboard.readText(),b);}catch(error){status(`粘贴失败：${error.message||error}`,'error');}finally{bookmarks.delete(b);}
+    try{insert(await navigator.clipboard.readText(),b);}catch(error){status(translatedMessage("writing_tools.could_not_paste", {"error": error.message||error}),'error');}finally{bookmarks.delete(b);}
   }
   async function copyRich(){
     try{const range=view.state.selection.main;const source=range.empty?editor.getValue():view.state.doc.sliceString(range.from,range.to);const root=document.createElement('div');renderPrintDocument(root,source,{fallbackTitle:false});root.querySelectorAll('.leaf-image').forEach(n=>n.replaceWith(document.createTextNode(n.querySelector('img')?.alt||'')));
-      await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([root.innerHTML],{type:'text/html'}),'text/plain':new Blob([source],{type:'text/plain'})})]);status('已复制为富文本','saved');
-    }catch(error){status(`复制失败：${error.message||error}`,'error');}
+      await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([root.innerHTML],{type:'text/html'}),'text/plain':new Blob([source],{type:'text/plain'})})]);status(translatedMessage("writing_tools.copied_as_rich_text"),'saved');
+    }catch(error){status(translatedMessage("writing_tools.could_not_copy", {"error": error.message||error}),'error');}
   }
   document.addEventListener('mousedown',event=>{
     const link=event.target.closest?.('[data-leaf-link]');if(!link||!(event.metaKey||event.ctrlKey))return;
@@ -188,10 +189,10 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     if(link.closest('.reading-document'))void openTarget(link.dataset.leafLink);
   });
   async function openTarget(raw){
-    try{const target=safeTarget(raw);if(!target)throw new Error('不支持此链接');
-      if(target.startsWith('#')){const name=decodeURIComponent(target.slice(1));const headings=editor.view.state.doc.toString().split('\n');const slug=s=>s.toLowerCase().replace(/[^\p{L}\p{N}_ -]/gu,'').trim().replace(/ +/g,'-');const line=headings.findIndex(l=>/^#{1,6}\s/.test(l)&&(slug(l.replace(/^#+\s*/,''))===name||l.replace(/^#+\s*/,'')===name));if(line>=0){document.dispatchEvent(new CustomEvent('leaf-heading-link',{detail:line+1}));}else throw new Error('未找到文内标题');return;}
-      if(desktop)await invoke('open_link',{target:/^https?:|^mailto:/i.test(target)?target:decodeURIComponent(target)});else if(/^https?:|^mailto:/i.test(target))window.open(target,'_blank','noopener,noreferrer');else throw new Error('相对文件链接请使用桌面版');
-    }catch(error){status(`链接打开失败：${error.message||error}`,'error');}
+    try{const target=safeTarget(raw);if(!target)throw new Error(t("writing_tools.this_link_is_not_supported"));
+      if(target.startsWith('#')){const name=decodeURIComponent(target.slice(1));const headings=editor.view.state.doc.toString().split('\n');const slug=s=>s.toLowerCase().replace(/[^\p{L}\p{N}_ -]/gu,'').trim().replace(/ +/g,'-');const line=headings.findIndex(l=>/^#{1,6}\s/.test(l)&&(slug(l.replace(/^#+\s*/,''))===name||l.replace(/^#+\s*/,'')===name));if(line>=0){document.dispatchEvent(new CustomEvent('leaf-heading-link',{detail:line+1}));}else throw new Error(t("writing_tools.heading_not_found_in_this_document"));return;}
+      if(desktop)await invoke('open_link',{target:/^https?:|^mailto:/i.test(target)?target:decodeURIComponent(target)});else if(/^https?:|^mailto:/i.test(target))window.open(target,'_blank','noopener,noreferrer');else throw new Error(t("writing_tools.open_relative_file_links_in_the_desktop"));
+    }catch(error){status(translatedMessage("writing_tools.could_not_open_the_link", {"error": error.message||error}),'error');}
   }
   return {attachments,editLink,copyRich,pastePlain};
 }

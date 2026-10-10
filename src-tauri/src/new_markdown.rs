@@ -1,23 +1,27 @@
 use std::{fs::OpenOptions, io::ErrorKind, path::{Path, PathBuf}};
 
 /// Never replace an existing entry, including a directory or dangling symlink.
-pub fn create(folder: &Path) -> Result<PathBuf, String> {
-    if !folder.is_dir() { return Err("无法新建文档：目标文件夹不存在或无法访问。".into()); }
+#[cfg(test)]
+pub fn create(folder: &Path) -> Result<PathBuf, String> { create_localized(folder, "未命名.md") }
+
+pub fn create_localized(folder: &Path, filename: &str) -> Result<PathBuf, String> {
+    let stem = filename.strip_suffix(".md").unwrap_or(filename);
+    if !folder.is_dir() { return Err(crate::i18n::error("new_markdown.could_not_create_a_document_the_destination", serde_json::json!({})).into()); }
     for number in 1..=10_000 {
-        let name = if number == 1 { "未命名.md".into() } else { format!("未命名 {number}.md") };
+        let name = if number == 1 { filename.into() } else { format!("{stem} {number}.md") };
         let path = folder.join(name);
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(file) => {
-                file.sync_all().map_err(|e| format!("文档已创建，但未能确认写入：{}\n{e}", path.display()))?;
+                file.sync_all().map_err(|e| crate::i18n::error("new_markdown.the_document_was_created_but_leaf_could", serde_json::json!({"path": (path.display()).to_string(), "error": (e).to_string()})))?;
                 return Ok(path);
             }
             // Windows reports AccessDenied when a directory occupies the name.
             // Inspect the entry only after atomic creation failed, without following links.
             Err(e) if e.kind() == ErrorKind::AlreadyExists || path.symlink_metadata().is_ok() => continue,
-            Err(e) => return Err(format!("无法在此文件夹新建文档：{}\n请检查文件夹是否可写。\n{e}", folder.display())),
+            Err(e) => return Err(crate::i18n::error("new_markdown.could_not_create_a_document_in_this", serde_json::json!({"path": (folder.display()).to_string(), "error": (e).to_string()}))),
         }
     }
-    Err("同名文档过多，请先整理文件夹或选择其他位置。".into())
+    Err(crate::i18n::error("new_markdown.could_not_find_an_available_default_file", serde_json::json!({})).into())
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -26,7 +30,7 @@ pub fn argument(args: &[String], cwd: &Path) -> Option<Result<PathBuf, String>> 
     Some(if args.len() == 3 && !args[2].is_empty() {
         let path = PathBuf::from(&args[2]);
         Ok(if path.is_absolute() { path } else { cwd.join(path) })
-    } else { Err("无法新建文档：缺少目标文件夹。".into()) })
+    } else { Err(crate::i18n::error("new_markdown.could_not_create_a_document_no_destination", serde_json::json!({})).into()) })
 }
 
 #[cfg(test)]

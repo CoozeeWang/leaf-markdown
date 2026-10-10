@@ -1,12 +1,13 @@
+import { resolveMessage, t, setText, setAttr, localizedElement, message as translatedMessage } from './i18n.js';
 import {propertyTypes,today,inferType,convertProperty,propertySource,preferences,savePreference} from './property-types.js';
 import {uiIcon} from './ui-icons.js';
 const el=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls||'';if(text!==undefined)n.textContent=text;return n;};
-const input=(label)=>{const n=el('input');n.setAttribute('aria-label',label);return n;};
-const button=(label,action)=>{const n=el('button','leaf-block-button',label);n.type='button';n.setAttribute('aria-label',label);n.onclick=action;return n;};
+const input=(label)=>{const n=el('input');setAttr(n,'aria-label',()=>resolveMessage(label));return n;};
+const button=(label,action)=>{const n=el('button','leaf-block-button');n.type='button';setText(n,()=>resolveMessage(label));setAttr(n,'aria-label',()=>resolveMessage(label));n.onclick=action;return n;};
 function typeSelect(label,value) {
-  const n=el('select','leaf-property-type');n.setAttribute('aria-label',label);n.title='属性类型';
-  for(const [key,name] of Object.entries(propertyTypes)){const o=el('option','',name);o.value=key;n.append(o);}n.value=value;
-  const describe=()=>{n.title=`属性类型：${propertyTypes[n.value]}（点击更改）`;};describe();n.addEventListener('change',describe);return n;
+  const n=el('select','leaf-property-type');setAttr(n,'aria-label',()=>resolveMessage(label));setAttr(n, 'title', () => t("properties_ui.property_type"));
+  for(const [key,name] of Object.entries(propertyTypes)){const o=localizedElement('option','',()=>propertyTypes[key]);o.value=key;n.append(o);}n.value=value;
+  const describe=()=>{setAttr(n, 'title', () => t("properties_ui.property_type_click_to_change", {"type": propertyTypes[n.value]}));};describe();n.addEventListener('change',describe);return n;
 }
 function propertyNameControl(name,type) {
   const paths={
@@ -22,7 +23,7 @@ function propertyNameControl(name,type) {
   const update=()=>{
     glyph.innerHTML=`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[type.value]}</svg>`;
     trigger.dataset.type=type.value;
-    type.title=`属性类型：${propertyTypes[type.value]}（点击更改）`;
+    setAttr(type, 'title', () => t("properties_ui.property_type_click_to_change", {"type": propertyTypes[type.value]}));
   };
   update();type.addEventListener('change',()=>queueMicrotask(update));
   trigger.append(glyph,type);wrap.append(trigger,name);return wrap;
@@ -30,14 +31,14 @@ function propertyNameControl(name,type) {
 function valueControl(type,value,label,save,choices=[]) {
   if(type==='list') {
     const wrap=el('div','leaf-property-list');
-    value.forEach((text,index)=>{const chip=el('span','leaf-property-chip',text);chip.append(button(`删除 ${text}`,()=>save(value.filter((_,i)=>i!==index))));chip.lastChild.innerHTML=uiIcon('close', 12);wrap.append(chip);});
-    const add=input(label);add.placeholder='输入一项后按回车';
+    value.forEach((text,index)=>{const chip=el('span','leaf-property-chip',text);chip.append(button(translatedMessage("properties_ui.remove", {"text": text}),()=>save(value.filter((_,i)=>i!==index))));chip.lastChild.innerHTML=uiIcon('close', 12);wrap.append(chip);});
+    const add=input(label);setAttr(add,'placeholder',()=>t("properties_ui.enter_an_item_then_press_enter"));
     add.onkeydown=e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();e.stopPropagation();if(add.value.trim())save([...value,add.value.trim()]);}};
     wrap.append(add);return wrap;
   }
   if(type==='enum') {
-    const wrap=el('div','leaf-property-enum'),select=el('select');select.setAttribute('aria-label',label);
-    for(const v of [...new Set([String(value),...choices])]){const o=el('option','',v||'请选择');o.value=v;select.append(o);}select.value=value;
+    const wrap=el('div','leaf-property-enum'),select=el('select');setAttr(select,'aria-label',()=>resolveMessage(label));
+    for(const v of [...new Set([String(value),...choices])]){const o=v?el('option','',v):localizedElement('option','',()=>t("properties_ui.choose_an_option"));o.value=v;select.append(o);}select.value=value;
     select.onchange=()=>save(select.value);wrap.append(select);return wrap;
   }
   const n=input(label);n.type=type==='checkbox'?'checkbox':type==='date'?'date':type==='number'?'number':'text';
@@ -51,7 +52,7 @@ function valueControl(type,value,label,save,choices=[]) {
 }
 export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=()=>{},removeField=()=>{}) {
   body.replaceChildren();const block=getBlock();
-  if(!block.valid){body.append(el('p','leaf-property-unsupported','此 YAML 结构需要使用源码编辑，原文保持不变。'));return;}
+  if(!block.valid){body.append(localizedElement('p', 'leaf-property-unsupported', () => t("properties_ui.edit_this_yaml_structure_in_source_mode")));return;}
   const error=el('div','leaf-property-error');error.setAttribute('role','status');
   const refresh=()=>renderProperties(body,getBlock,commit,focusEditor,discardEmpty,removeField);
   block.fields.forEach((field,index)=>{
@@ -59,7 +60,7 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
     if(!field.editable){row.append(name,el('span','leaf-property-unsupported',field.value));body.append(row);return;}
     const pref=preferences(field.key),inferred=inferType(field.value);
     const type=(pref.type==='enum'&&typeof field.value==='string')?'enum':pref.type==='text'&&typeof field.value==='string'?'text':inferred;
-    const keyInput=input(`属性名：${field.key}`);keyInput.className='leaf-property-key';keyInput.value=field.key;keyInput.title='修改属性名';
+    const keyInput=input(translatedMessage("properties_ui.property_name", {"key": field.key}));keyInput.className='leaf-property-key';keyInput.value=field.key;setAttr(keyInput, 'title', () => t("properties_ui.rename_property"));
     let renaming=false,composing=false;
     const removeIfEmpty=()=>{
       if(renaming||composing||keyInput.value.trim())return false;
@@ -74,9 +75,9 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
       if(renaming)return;
       const key=keyInput.value.trim(),current=getBlock().fields[index];
       if(key===current.key)return;
-      if(!key){if(removeIfEmpty())return;if(explicit)error.textContent='属性值仍有内容，请填写属性名；如需删除，请同时清空属性值。';return;}
+      if(!key){if(removeIfEmpty())return;if(explicit)setText(error, () => t("properties_ui.this_property_still_has_a_value_enter"));return;}
       if(getBlock().fields.some((f,i)=>i!==index&&f.key===key)){
-        error.textContent=key?'属性名已存在，请更换名称。':'属性名不能为空。';keyInput.value=current.key;return;
+        setText(error, () => key?t("properties_ui.this_property_name_already_exists_choose_another"):t("properties_ui.the_property_name_cannot_be_empty"));keyInput.value=current.key;return;
       }
       renaming=true;error.textContent='';savePreference(key,preferences(current.key));
       focusEditor();commit({from:current.keyFrom,to:current.keyTo},JSON.stringify(key));
@@ -91,12 +92,12 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
       if(!row.isConnected||row.contains(document.activeElement)||renaming)return;
       if(removeIfEmpty())return;
       if(!keyInput.value.trim()){
-        error.textContent='属性值仍有内容，请填写属性名；如需删除，请同时清空属性值。';
+        setText(error, () => t("properties_ui.this_property_still_has_a_value_enter"));
         keyInput.value=getBlock().fields[index].key;
       }
     },0));
     keyInput.onkeydown=e=>{if(e.isComposing)return;if(e.key==='Enter'){e.preventDefault();e.stopPropagation();renameKey(true);}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();keyInput.value=getBlock().fields[index].key;focusEditor();}};
-    const select=typeSelect(`${field.key} 类型`,type);
+    const select=typeSelect(translatedMessage("properties_ui.type_of", {"key": field.key}),type);
     const setValue=(value,structural=false)=>{
       const current=getBlock().fields[index];
       if(structural)focusEditor();
@@ -122,32 +123,32 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
     }
     if(type==='enum'){
       control.querySelector('select').dataset.field=index;
-      control.append(button('设置枚举选项',()=>{
+      control.append(button(translatedMessage("properties_ui.edit_choices"),()=>{
         if(control.querySelector('form'))return;
-        const form=el('form','leaf-enum-options'),options=input(`${field.key} 候选项`);
-        options.placeholder='选项用分号分隔';options.value=(pref.options||[]).join('；');
-        form.append(options,button('保存选项',()=>form.requestSubmit()));
+        const form=el('form','leaf-enum-options'),options=input(translatedMessage("properties_ui.options_for", {"key": field.key}));
+        setAttr(options,'placeholder',()=>t("properties_ui.separate_options_with_semicolons"));options.value=(pref.options||[]).join('；');
+        form.append(options,button(translatedMessage("properties_ui.save_options"),()=>form.requestSubmit()));
         form.onsubmit=e=>{e.preventDefault();savePreference(field.key,{type:'enum',options:[...new Set(options.value.split(/[;；\n]/).map(x=>x.trim()).filter(Boolean))]});refresh();};
         control.append(form);options.focus();
       }));
     }
     row.append(propertyNameControl(keyInput,select),control);body.append(row);
   });
-  body.append(error,button('添加文档属性',()=>{
+  body.append(error,button(translatedMessage("properties_ui.add_document_property"),()=>{
     if(body.querySelector('.leaf-property-add'))return;
-    const form=el('form','leaf-property-add'),key=input('新属性名'),holder=el('div','leaf-property-new-value');
-    const type=typeSelect('新属性类型','text');let value='';
-    key.placeholder='属性名';key.required=true;
+    const form=el('form','leaf-property-add'),key=input(translatedMessage("properties_ui.new_property_name")),holder=el('div','leaf-property-new-value');
+    const type=typeSelect(translatedMessage("properties_ui.new_property_type"),'text');let value='';
+    setAttr(key,'placeholder',()=>t("properties_ui.property_name_mo0101"));key.required=true;
     const draw=()=>{
       const editing=holder.contains(document.activeElement);
-      holder.replaceChildren(valueControl(type.value,value,'新属性值',v=>{value=v;if(type.value==='list')draw();},[]));
+      holder.replaceChildren(valueControl(type.value,value,translatedMessage("properties_ui.new_property_value"),v=>{value=v;if(type.value==='list')draw();},[]));
       const valueInput = holder.querySelector('input');
-      if (valueInput && type.value === 'text') valueInput.placeholder = '属性值';
+      if (valueInput && type.value === 'text') setAttr(valueInput,'placeholder',()=>t("properties_ui.property_value"));
       if(editing)valueInput?.focus();
     };draw();
     type.onchange=()=>{value=type.value==='date'?today():type.value==='checkbox'?false:type.value==='number'?0:type.value==='list'?[]:'';draw();};
     // Enum options can be configured on the created row. Initial value stays editable here.
-    type.addEventListener('change',()=>{if(type.value==='enum'){const v=input('新属性值');v.placeholder='初始值';v.oninput=()=>value=v.value;holder.replaceChildren(v);}});
+    type.addEventListener('change',()=>{if(type.value==='enum'){const v=input(translatedMessage("properties_ui.new_property_value"));setAttr(v,'placeholder',()=>t("properties_ui.initial_value"));v.oninput=()=>value=v.value;holder.replaceChildren(v);}});
     form.append(propertyNameControl(key,type),holder);
     let submitted=false,composing=false;
     const finish=(explicit=false)=>{
@@ -160,7 +161,7 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
         }
         return;
       }
-      if(getBlock().fields.some(f=>f.key===name)){key.setCustomValidity('请输入不重复的属性名');error.textContent='属性名已存在，请更换名称。';if(explicit)key.reportValidity();return;}
+      if(getBlock().fields.some(f=>f.key===name)){key.setCustomValidity(t("properties_ui.enter_a_unique_property_name"));setText(error, () => t("properties_ui.this_property_name_already_exists_choose_another"));if(explicit)key.reportValidity();return;}
       if(!form.checkValidity())return;
       if(type.value==='list'){
         const pending=holder.querySelector('input')?.value.trim();
@@ -187,7 +188,7 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
     key.oninput=()=>{key.setCustomValidity('');error.textContent='';};body.insertBefore(form,addButton);key.focus();
   }));
   const addButton=body.lastChild;
-  addButton.classList.add('leaf-property-add-button');
+  addButton.classList.add('leaf-property-add-button');addButton.dataset.action='add-property';
   const addGlyph=el('span','leaf-property-add-glyph','+');addGlyph.setAttribute('aria-hidden','true');
-  addButton.replaceChildren(addGlyph,el('span','','添加属性'));
+  addButton.replaceChildren(addGlyph,localizedElement('span', '', () => t("properties_ui.add_property")));
 }

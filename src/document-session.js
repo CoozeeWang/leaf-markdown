@@ -1,17 +1,18 @@
+import { errorCode, copyKeys, message as translatedMessage } from './i18n.js';
 import {rewriteResourcePaths} from './resource-paths.js';
 // Native I/O is injected so delayed writes, conflicts and recovery can be
 // exercised without a WebView or a user's files.
 export function createDocumentSession(io) {
   let path = null, disk = null, ready = false, revision = 0, paused = false;
   let pollFailure = null;
-  const unavailable = error => /\b(?:ENOENT|os error 2)\b|no such file or directory|the system cannot find the file specified|无法确认当前文件的位置|原文件在原位置找不到/i.test(String(error));
+  const unavailable = error => ['NA0024','NA0025','NA0038'].some(id => errorCode(error)?.code === copyKeys[id]) || /\b(?:ENOENT|os error 2)\b|no such file or directory|the system cannot find the file specified|无法确认当前文件的位置|原文件在原位置找不到/i.test(String(error));
   let queue = Promise.resolve();
   const serialize = action => {
     const result = queue.then(action);
     queue = result.catch(() => {});
     return result;
   };
-  const status = (text, kind = 'error', options) => io.status(text, kind, options);
+  const status = (text, kind = 'error', options) => io.status(io.localizedMessages ? text : String(text), kind, options);
   const follow = observation => {
     if (observation.path === path) return;
     const previous = path;
@@ -54,7 +55,7 @@ export function createDocumentSession(io) {
           }
           let content = io.content();
           await io.checkpoint(content);
-          status('正在保存…', 'pending');
+          status(translatedMessage("document_session.saving"), 'pending');
           const result = await io.write(target, content, expected);
           const cleanupWarning = result && typeof result === 'object' ? result.warning : result;
           if (result && typeof result === 'object') {
@@ -64,12 +65,12 @@ export function createDocumentSession(io) {
           }
           path = target; disk = content; paused = false; pollFailure = null;
           io.saved(content, target);
-          status(cleanupWarning || (io.content() === content ? '已保存' : '等待自动保存…'), cleanupWarning ? 'error' : io.content() === content ? 'saved' : 'pending', { announce: manual });
+          status(cleanupWarning || (io.content() === content ? translatedMessage("document_session.saved") : translatedMessage("document_session.waiting_to_autosave")), cleanupWarning ? 'error' : io.content() === content ? 'saved' : 'pending', { announce: manual });
           return true;
         } catch (error) {
           status(locationCheckFailed || unavailable(error)
-            ? '原文件不可用，修改尚未保存。请重新定位原文件，或另存为。'
-            : `修改尚未保存。请重试或另存为。详情：${error}`,
+            ? translatedMessage("document_session.the_original_file_is_unavailable_your_changes")
+            : translatedMessage("document_session.your_changes_have_not_been_saved_try", {"error": error}),
           'error', locationCheckFailed || unavailable(error) ? { actions: io.unavailableActions?.() } : undefined);
           return false;
         }
@@ -85,17 +86,17 @@ export function createDocumentSession(io) {
           const observation = await io.relocate(selected, disk);
           follow(observation);
           pollFailure = null;
-          status(io.content() === disk ? '已重新定位原文件' : '已重新定位原文件 · 修改尚未保存', 'saved');
+          status(io.content() === disk ? translatedMessage("document_session.original_file_located") : translatedMessage("document_session.original_file_located_changes_not_saved"), 'saved');
           return true;
         } catch (error) {
-          status(`无法重新定位原文件。当前编辑内容仍在 Leaf 中；请选择原文件，或另存为。详情：${error}`, 'error', { actions: io.unavailableActions?.() });
+          status(translatedMessage("document_session.could_not_locate_the_original_file_your", {"error": error}), 'error', { actions: io.unavailableActions?.() });
           return false;
         }
       });
     },
     rename(name) {
       return serialize(async () => {
-        if(!ready || !path) throw new Error('请先保存文档，再修改文件名');
+        if(!ready || !path) throw new Error(translatedMessage("document_session.save_the_document_before_renaming_it"));
         if (io.observe) follow(await io.observe());
         await io.checkpoint(io.content());
         const result=await io.rename(path,name,disk,io.content());
@@ -107,7 +108,7 @@ export function createDocumentSession(io) {
         }
         const previous=path;path=target;pollFailure=null;
         io.renamed(disk,target,previous);
-        status(io.content()===disk?'已重命名':'已重命名 · 等待保存',io.content()===disk?'saved':'pending');
+        status(io.content()===disk?translatedMessage("document_session.renamed"):translatedMessage("document_session.renamed_waiting_to_save"),io.content()===disk?'saved':'pending');
         return target;
       });
     },
@@ -122,30 +123,30 @@ export function createDocumentSession(io) {
           const recovered = pollFailure !== null;
           pollFailure = null;
           if (current === disk) {
-            if (recovered) status('已恢复读取原文件', 'saved', { announce: false });
+            if (recovered) status(translatedMessage("document_session.reading_the_original_file_resumed"), 'saved', { announce: false });
             return;
           }
           if (revision !== at || io.content() !== disk) {
-            status('文件已被其他程序修改。请另存为以保留当前编辑内容。'); return;
+            status(translatedMessage("document_session.another_app_has_changed_this_file_use")); return;
           }
           await io.load(current, path);
           disk = current;
-          status('已载入外部修改', 'saved');
+          status(translatedMessage("document_session.external_changes_loaded"), 'saved');
         } catch (error) {
           const detail = String(error);
           if (detail === pollFailure) return;
           pollFailure = detail;
           const missing = error?.code === 'ENOENT' || unavailable(detail);
           status(missing
-            ? '原文件在原位置找不到。当前编辑内容仍在 Leaf 中；请重新定位原文件，或另存为。'
-            : `无法读取文件：${detail}。当前编辑内容仍在 Leaf 中；请重新定位原文件，或另存为。`,
+            ? translatedMessage("document_session.the_original_file_was_not_found_at")
+            : translatedMessage("document_session.could_not_read_the_file_your_edits", {"detail": detail}),
           'error', { actions: io.unavailableActions?.() });
         }
       });
     },
     restore(content) {
       return serialize(async () => {
-        if (!ready) throw new Error('请先打开或新建文档');
+        if (!ready) throw new Error(translatedMessage("document_session.open_or_create_a_document_first"));
         // Protect the current buffer before replacing it; keep the disk
         // baseline intact. Autosave must not turn a preview choice into a write.
         await io.checkpoint(io.content(), true);
@@ -153,7 +154,7 @@ export function createDocumentSession(io) {
         await io.restore(content);
         revision++;
         await io.checkpoint(content);
-        status('已恢复到编辑区 · 自动保存暂停，请检查后保存', 'manual');
+        status(translatedMessage("document_session.restored_to_the_editor_autosave_paused_review"), 'manual');
       });
     },
   };

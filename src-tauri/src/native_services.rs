@@ -11,21 +11,21 @@ thread_local! {
 unsafe fn selected_path(pasteboard: &AnyObject) -> Result<PathBuf, String> {
     let classes: Retained<AnyObject> = msg_send![class!(NSArray), arrayWithObject: class!(NSURL)];
     let objects: Option<Retained<AnyObject>> = msg_send![pasteboard, readObjectsForClasses: &*classes, options: std::ptr::null::<AnyObject>()];
-    let objects = objects.ok_or("请选择一个文件夹或文件，再使用 Leaf 新建文档。")?;
+    let objects = objects.ok_or(crate::i18n::error("native_services.select_a_folder_or_file_then_use", serde_json::json!({})))?;
     let count: usize = msg_send![&*objects, count];
-    if count != 1 { return Err("请只选择一个文件夹或文件，再使用 Leaf 新建文档。".into()); }
+    if count != 1 { return Err(crate::i18n::error("native_services.select_only_one_folder_or_file_then", serde_json::json!({})).into()); }
     let url: *mut AnyObject = msg_send![&*objects, objectAtIndex: 0usize];
     let local: bool = msg_send![url, isFileURL];
-    if !local { return Err("只能在本机文件夹中新建文档。".into()); }
+    if !local { return Err(crate::i18n::error("native_services.select_a_file_or_folder_then_use", serde_json::json!({})).into()); }
     let path: Option<Retained<NSString>> = msg_send![url, path];
-    let path = PathBuf::from(path.ok_or("无法读取所选文件的位置。")?.to_string());
+    let path = PathBuf::from(path.ok_or(crate::i18n::error("native_services.could_not_read_the_selected_item_location", serde_json::json!({})))?.to_string());
     Ok(path)
 }
 
 fn selection_folder(path: PathBuf) -> Result<PathBuf, String> {
     if path.is_dir() { Ok(path) }
-    else if path.is_file() { path.parent().map(PathBuf::from).ok_or("无法确定目标文件夹。".into()) }
-    else { Err("所选文件或文件夹已不存在，或无法访问。".into()) }
+    else if path.is_file() { path.parent().map(PathBuf::from).ok_or(crate::i18n::error("native_services.could_not_determine_the_destination_folder", serde_json::json!({})).into()) }
+    else { Err(crate::i18n::error("native_services.the_selected_file_or_folder_no_longer", serde_json::json!({})).into()) }
 }
 
 extern "C-unwind" fn new_markdown(_this: &AnyObject, _cmd: Sel, pasteboard: &AnyObject, _data: *mut AnyObject, _error: *mut *mut AnyObject) {

@@ -97,8 +97,8 @@ impl Recent {
     pub fn list(&self) -> Vec<Entry> { self.data.lock().unwrap().entries.clone() }
 
     fn persist(&self, data: &Data) -> Result<(), String> {
-        if self.blocked { return Err("最近记录尚不能写入，原记录已保留".into()); }
-        let parent = self.path.parent().ok_or("最近记录位置无效")?;
+        if self.blocked { return Err(crate::i18n::error("recent.could_not_update_the_recent_files_list", serde_json::json!({})).into()); }
+        let parent = self.path.parent().ok_or(crate::i18n::error("recent.could_not_determine_where_to_store_the", serde_json::json!({})))?;
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         #[cfg(unix)] {
             use std::os::unix::fs::PermissionsExt;
@@ -137,7 +137,7 @@ impl Recent {
 
     pub fn remember(&self, app: &AppHandle, path: &Path) -> Result<(), String> {
         if !markdown(path) || !path.is_file() { return Ok(()); }
-        let token = identity(path).ok_or("无法确认最近文件身份")?;
+        let token = identity(path).ok_or(crate::i18n::error("recent.could_not_verify_the_identity_of_the", serde_json::json!({})))?;
         let path = path.to_string_lossy().into_owned();
         self.change(app, |data| add(&mut data.entries, path, Some(token)))
     }
@@ -168,10 +168,10 @@ impl Recent {
 
     pub fn verified_path(&self, path: &str) -> Result<(PathBuf, (u64, u128)), String> {
         let data = self.data.lock().unwrap();
-        let entry = data.entries.iter().find(|entry| entry.path == path).ok_or("最近文件记录已变化")?;
-        let expected = entry.identity.ok_or("无法确认原文件身份；请手动打开文件")?;
+        let entry = data.entries.iter().find(|entry| entry.path == path).ok_or(crate::i18n::error("recent.the_recent_file_entry_has_changed", serde_json::json!({})))?;
+        let expected = entry.identity.ok_or(crate::i18n::error("recent.could_not_verify_that_this_is_the", serde_json::json!({})))?;
         let path = PathBuf::from(path);
-        if identity(&path) != Some(expected) { return Err("原文件已移动、删除或被其他文件替换".into()); }
+        if identity(&path) != Some(expected) { return Err(crate::i18n::error("main.the_original_file_has_been_moved_deleted", serde_json::json!({})).into()); }
         Ok((path, expected))
     }
 
@@ -180,16 +180,22 @@ impl Recent {
         Self::refresh_menu(app, &menu, &self.list())
     }
 
+    pub fn refresh_language(&self, app: &AppHandle) -> Result<(), String> {
+        let menu = self.menu.lock().unwrap().clone();
+        if let Some(menu) = menu { Self::refresh_menu(app, &menu, &self.list())?; }
+        Ok(())
+    }
+
     fn refresh_menu(app: &AppHandle, menu: &Submenu<tauri::Wry>, entries: &[Entry]) -> Result<(), String> {
         for item in menu.items().map_err(|e| e.to_string())? { menu.remove(&item).map_err(|e| e.to_string())?; }
         if entries.is_empty() {
-            menu.append(&MenuItem::with_id(app, "recent-empty", "暂无最近打开的文件", false, None::<&str>).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+            menu.append(&MenuItem::with_id(app, "recent-empty", crate::i18n::app_text(app, "NA0094"), false, None::<&str>).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         }
         for (entry, label) in entries.iter().zip(menu_labels(entries)) {
             let id = format!("recent-{}", crate::recovery::file_key(Path::new(&entry.path)));
             menu.append(&MenuItem::with_id(app, id, label, true, None::<&str>).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         }
-        menu.append(&MenuItem::with_id(app, "recent-clear-missing", "清理失效记录", !entries.is_empty(), None::<&str>).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        menu.append(&MenuItem::with_id(app, "recent-clear-missing", crate::i18n::app_text(app, "NA0095"), !entries.is_empty(), None::<&str>).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         Ok(())
     }
 }

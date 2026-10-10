@@ -7,6 +7,7 @@ try{
   window.isTauri=true;window.callbacks={};window.handlers={};window.calls=[];let id=0;
   window.saveMode='fail';
   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},transformCallback:fn=>{callbacks[++id]=fn;return id;},invoke:async(command,args)=>{
+      if (command === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
    calls.push({command,args});
    if(command==='plugin:event|listen'){handlers[args.event]=callbacks[args.handler];return 1;}
    if(command==='initial_path')return '/审核样本/文件提示审核.md';
@@ -54,6 +55,7 @@ try{
  await blank.addInitScript(()=>{
   window.isTauri=true;window.callbacks={};window.handlers={};window.calls=[];let id=0;
   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},transformCallback:fn=>{callbacks[++id]=fn;return id;},invoke:async(command,args)=>{
+      if (command === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
    calls.push({command,args});
    if(command==='plugin:event|listen'){handlers[args.event]=callbacks[args.handler];return 1;}
    if(command==='initial_path'||command==='recovery_initial'||command==='plugin:dialog|save')return null;

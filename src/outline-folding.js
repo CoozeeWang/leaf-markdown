@@ -1,3 +1,4 @@
+import { t, setAttr } from './i18n.js';
 import { sourceMode } from './view-mode.js';
 import {Decoration,ViewPlugin,WidgetType,keymap} from '@codemirror/view';
 import {syntaxTree,codeFolding,foldedRanges,foldEffect,unfoldEffect,foldService,foldKeymap} from '@codemirror/language';
@@ -29,7 +30,7 @@ class Toggle extends WidgetType {
   // Shape carries the hierarchy; small glyphs must retain full contrast.
   if(this.level&&!this.label)b.style.fontSize='12px';
   if(!this.level)b.innerHTML=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="${this.closed?'m9 6 6 6-6 6':'m6 9 6 6 6-6'}"/></svg>`;
-  if(this.range){b.type='button';b.setAttribute('aria-label',`${this.closed?'展开':'收起'}${this.level?'列表':'标题'}`);b.setAttribute('aria-expanded',String(!this.closed));
+  if(this.range){b.type='button';setAttr(b, 'aria-label', () => t(this.level ? (this.closed ? 'MO0236' : 'MO0237') : (this.closed ? 'MO0235' : 'MO0070')));b.setAttribute('aria-expanded',String(!this.closed));
    b.onmousedown=e=>e.preventDefault();b.onclick=e=>{e.preventDefault();view.dispatch({effects:(this.closed?unfoldEffect:foldEffect).of(this.range)});};}
   return b;
  }
@@ -56,9 +57,9 @@ export const outlineFolding=[codeFolding(),foldService.of((state,start)=>structu
  ViewPlugin.fromClass(class {constructor(view){this.decorations=decorations(view);}update(u){this.decorations=decorations(u.view);}}, {decorations:v=>v.decorations})];
 
 export function readingFolding(root){
- const make=(label,action)=>{const b=document.createElement('button');b.className='leaf-reading-fold';b.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';b.setAttribute('aria-label',`收起${label}`);b.setAttribute('aria-expanded','true');b.onclick=()=>{const open=b.getAttribute('aria-expanded')==='true';b.setAttribute('aria-expanded',String(!open));b.setAttribute('aria-label',`${open?'展开':'收起'}${label}`);action(open);};return b;};
- for(const li of root.querySelectorAll('li')){const children=[...li.children].filter(e=>e.matches('ul,ol'));if(children.length)li.prepend(make('列表',closed=>children.forEach(e=>e.hidden=closed)));}
+ const make=(label,action)=>{const b=document.createElement('button');b.className='leaf-reading-fold';b.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';setAttr(b, 'aria-label', () => t(label==='list' ? 'MO0237' : 'MO0070'));b.setAttribute('aria-expanded','true');b.onclick=()=>{const open=b.getAttribute('aria-expanded')==='true';b.setAttribute('aria-expanded',String(!open));setAttr(b, 'aria-label', () => t(label==='list' ? (b.getAttribute('aria-expanded')==='true' ? 'MO0237' : 'MO0236') : (b.getAttribute('aria-expanded')==='true' ? 'MO0070' : 'MO0235')));action(open);};return b;};
+ for(const li of root.querySelectorAll('li')){const children=[...li.children].filter(e=>e.matches('ul,ol'));if(children.length)li.prepend(make('list',closed=>children.forEach(e=>e.hidden=closed)));}
  const headings=[...root.children].filter(e=>/^H[1-6]$/.test(e.tagName)&&!e.classList.contains('leaf-file-name-title'));
  for(const h of headings){const children=[];for(let e=h.nextElementSibling;e&&(!/^H[1-6]$/.test(e.tagName)||e.tagName>h.tagName);e=e.nextElementSibling)children.push(e);
-  if(children.length)h.prepend(make('标题',closed=>{for(const e of children){const count=Number(e.dataset.foldCount||0)+(closed?1:-1);e.dataset.foldCount=count;e.hidden=count>0;}}));}
+  if(children.length)h.prepend(make('heading',closed=>{for(const e of children){const count=Number(e.dataset.foldCount||0)+(closed?1:-1);e.dataset.foldCount=count;e.hidden=count>0;}}));}
 }

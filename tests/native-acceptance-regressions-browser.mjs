@@ -48,7 +48,8 @@ const browser=await chromium.launch(launchOptions);
 try {
  const page=await browser.newPage();await page.addInitScript(()=>{
   window.isTauri=true;window.calls=[];window.chosenPath=null;
-  window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},transformCallback:()=>1,invoke:async(cmd,args)=>{calls.push({cmd,args});if(cmd==='plugin:dialog|save')return chosenPath;if(cmd==='recovery_list')return [];if(cmd==='recovery_retention')return 30;return null;}};
+  window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},transformCallback:()=>1,invoke:async(cmd,args)=>{
+      if (cmd === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};calls.push({cmd,args});if(cmd==='plugin:dialog|save')return chosenPath;if(cmd==='recovery_list')return [];if(cmd==='recovery_retention')return 30;return null;}};
  });
  await page.goto('http://127.0.0.1:41732');await page.click('#welcomeNewButton');await page.waitForFunction(()=>calls.some(c=>c.cmd==='plugin:dialog|save'));
  assert.deepEqual(await page.evaluate(()=>calls.find(c=>c.cmd==='plugin:event|listen'&&c.args.event==='leaf-menu').args.target),{kind:'Window',label:'main'});

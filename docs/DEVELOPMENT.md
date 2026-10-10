@@ -107,3 +107,15 @@ Windows 安装包通过 `windows-hooks.nsh` 注册当前用户的文件夹／文
 图片定位图标与悬浮说明的交互回归使用 `image-reveal-browser.mjs`；通过 `LEAF_IMAGE_PLATFORM=MacIntel`／`Win32` 核对平台文案，`LEAF_IMAGE_REVEAL_ENGINE=webkit` 核对 WebKit。原生最近文件菜单标签由 Rust 回归验证，同名文档只补最短可区分目录。Finder 启用“显示图标预览”时可用内容缩略图代替应用图标；诊断应分别核对默认应用、系统返回的文件图标与 Finder 预览状态，不替用户关闭显示偏好。
 
 图片说明与定位按钮的统一提示由 `image-tooltips-browser.mjs` 在完整应用中验证，覆盖浅色／深色、窄窗、键盘与单一提示；默认 Chromium，设置 `LEAF_IMAGE_TOOLTIP_ENGINE=webkit` 可单独检查 WebKit。浏览器引擎进程异常退出应记为环境阻塞，不能当作应用已通过或已失败。
+
+## 三语资源与维护 / Localization
+
+应用使用 i18next 的普通 JavaScript 接口，资源位于 `src/locales/`：`zh-Hans.json`、`zh-Hant-TW.json`、`en.json`。`copy-keys.json` 将固定文案编号映射到语义键；新增文案分配新编号，不复用旧编号。个人审阅稿和基线快照放在公开仓库外，产品只保留语言资源、编号映射和正式检查。
+
+`src/i18n.js` 在导入界面之前初始化；桌面配置 `language-v1.json` 保存到各自应用的数据目录，Leaf Dev 与日用 Leaf 隔离。Rust 复用同一份 JSON，菜单只改标签，错误传递稳定码与参数。浏览器偏好使用本地存储，桌面通过命令与事件同步；启动、新窗口与重新获得焦点重新读取语言。不要用译文判断命令、状态或操作身份。
+
+界面文字使用显式绑定，动态句使用命名参数；`h` 用于经过转义的 HTML，`setText` 和 `setAttr` 用于文字与属性。不要扫描或替换用户内容。英文数量资源提供 `_one`、`_other`；机器语法、Markdown、路径、用户输入和系统诊断保持原文。添加或修改三语资源时，对照现行审阅基线，记录新增、变更、删除及变量/场景变化；未变条目沿用已审阅结果。
+
+`npm run check` 检查资源、插值、系统匹配、数量、稳定错误以及已有源码回归。`npm run test:browser -- i18n-browser.mjs` 检查切换、历史/选区、组合输入、持久保存失败、跨窗口同步与导出选项；相关编辑、附件、恢复用例仍需运行。浏览器检查不代替原生菜单、系统文件窗口或安装版验收。
+
+Finder 服务、Windows 安装器与右键入口另行完成打包集成和平台验收；资源中已有这些文案不表示安装器已启用三语。系统对话框和系统注入菜单由操作系统决定语言。

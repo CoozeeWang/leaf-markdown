@@ -1,14 +1,15 @@
+import { t, h, currentLanguage, setText, setAttr, localizedElement } from './i18n.js';
 import './recovery.css';
 
 export function setupWelcomeRecovery({ invoke, welcome }) {
   const hint = document.createElement('p');
   hint.className = 'welcome-recovery-hint';
   hint.hidden = true;
-  hint.append('有可恢复的草稿 · ');
+  hint.append(localizedElement('span', '', () => t('MO0116') + ' '));
   const button = document.createElement('button');
   button.type = 'button';
-  button.textContent = '查看';
-  button.setAttribute('aria-label', '查看可恢复的草稿');
+  setText(button, () => t("recovery_dialog.view"));
+  setAttr(button, 'aria-label', () => t("recovery_dialog.view_recoverable_drafts"));
   button.onclick = () => showRecovery({ invoke, drafts: true });
   hint.append(button);
   welcome.querySelector('.welcome-card').append(hint);
@@ -43,19 +44,19 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
   dialog.setAttribute('aria-modal', 'true');
   dialog.tabIndex = -1;
   dialog.className = 'recovery-dialog';
-  dialog.innerHTML = `<header><h2 id="recovery-title">${drafts ? '恢复草稿' : '历史版本与草稿'}</h2><button type="button" data-close aria-label="关闭恢复窗口">关闭</button></header>
-    <p class="recovery-intro">${drafts ? '预览后作为新文档打开，检查后请手动保存。' : '恢复只修改编辑区，可撤销；检查后请手动保存。'}</p>
-    <div class="recovery-layout"><div class="recovery-list" role="grid" tabindex="0" aria-label="可恢复版本"></div><textarea readonly aria-label="版本源码预览" spellcheck="false"></textarea></div>
+  dialog.innerHTML = `<header><h2 id="recovery-title">${drafts ? t("recovery_dialog.recover_drafts") : t("recovery_dialog.versions_drafts")}</h2><button type="button" data-close aria-label="${t("recovery_dialog.close_recovery_dialog")}" data-i18n-aria-label="recovery_dialog.close_recovery_dialog">${h("editor.close")}</button></header>
+    <p class="recovery-intro">${drafts ? t("recovery_dialog.preview_and_open_as_a_new_document") : t("recovery_dialog.restoring_replaces_the_content_in_the_editor")}</p>
+    <div class="recovery-layout"><div class="recovery-list" role="grid" tabindex="0" aria-label="${t("recovery_dialog.recoverable_versions")}" data-i18n-aria-label="recovery_dialog.recoverable_versions"></div><textarea readonly aria-label="${t("recovery_dialog.version_source_preview")}" data-i18n-aria-label="recovery_dialog.version_source_preview" spellcheck="false"></textarea></div>
     <p class="recovery-status" role="status"></p>
-    <footer><button type="button" data-apply disabled>${drafts ? '作为新文档打开' : '恢复到编辑区'}</button></footer>
-    <p class="recovery-help">仅保存在本机，最多保留 20 个历史版本。</p>`;
+    <footer><button type="button" data-apply disabled>${drafts ? t("recovery_dialog.open_as_new_document") : t("recovery_dialog.restore_to_editor")}</button></footer>
+    <p class="recovery-help">${h("recovery_dialog.stored_only_on_this_device_up_to")}</p>`;
   dialog.setAttribute('aria-labelledby', 'recovery-title');
   const confirmation = document.createElement('div');
   confirmation.className = 'recovery-confirm'; confirmation.hidden = true;
   confirmation.innerHTML = `<section class="close-document-dialog recovery-clear-dialog" role="alertdialog" aria-modal="true" aria-labelledby="recovery-clear-title" aria-describedby="recovery-clear-description">
-    <h2 id="recovery-clear-title">删除该草稿？</h2>
-    <p id="recovery-clear-description"><strong></strong><br>只删除选中的记录，无法撤销。原文件和其他记录不受影响。</p>
-    <footer><button type="button" data-cancel-clear>取消</button><button type="button" data-confirm-clear>删除该草稿</button></footer>
+    <h2 id="recovery-clear-title">${h("recovery_dialog.delete_this_draft")}</h2>
+    <p id="recovery-clear-description"><strong></strong><br>${h("recovery_dialog.only_the_selected_record_will_be_deleted")}</p>
+    <footer><button type="button" data-cancel-clear>${h("recovery_dialog.cancel")}</button><button type="button" data-confirm-clear>${h("recovery_dialog.delete_this_draft_mo0132")}</button></footer>
   </section>`;
   backdrop.append(dialog, confirmation);
   document.body.append(backdrop);
@@ -68,30 +69,30 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
   let entries = [], selected = -1, content = null, generation = 0, clearing = false, busy = false, clearEntry = null;
   const resetClear = () => {
     clearing = false; clearEntry = null; confirmation.hidden = true; dialog.inert = false;
-    clear.setAttribute('aria-label', entries[selected]?.kind === 'saved' ? '删除该版本' : '删除该草稿'); clear.title = clear.getAttribute('aria-label'); apply.disabled = busy || content === null;
+    setAttr(clear, 'aria-label', () => entries[selected]?.kind === 'saved' ? t("recovery_dialog.delete_this_version") : t("recovery_dialog.delete_this_draft_mo0132")); clear.title = clear.getAttribute('aria-label'); apply.disabled = busy || content === null;
   };
   async function select() {
     const token = ++generation;
     content = null; preview.value = ''; apply.disabled = true; clear.disabled = true; resetClear();
     const entry = entries[selected];
-    if (!entry) { layout.hidden = true; status.textContent = '暂无可恢复记录。'; return; }
+    if (!entry) { layout.hidden = true; setText(status, () => t("recovery_dialog.no_recovery_records_available")); return; }
     for (const option of list.children) option.setAttribute('aria-selected', String(Number(option.dataset.index) === selected));
     list.setAttribute('aria-activedescendant', `recovery-option-${selected}`);
     list.children[selected]?.querySelector('.recovery-delete-cell').append(clear);
     list.children[selected]?.scrollIntoView({ block: 'nearest' });
-    status.textContent = '正在读取版本…';
+    setText(status, () => t("recovery_dialog.loading_version"));
     try {
       const value = await invoke('recovery_read', { key: entry.key, id: entry.id });
       if (token !== generation || !dialog.isConnected) return;
-      clear.setAttribute('aria-label', entry.kind === 'saved' ? '删除该版本' : '删除该草稿'); clear.title = clear.getAttribute('aria-label');
+      setAttr(clear, 'aria-label', () => entry.kind === 'saved' ? t("recovery_dialog.delete_this_version") : t("recovery_dialog.delete_this_draft_mo0132")); clear.title = clear.getAttribute('aria-label');
       content = value; preview.value = value; apply.disabled = false; clear.disabled = false;
-      status.textContent = entry.source || '未命名文档';
-    } catch (error) { if (token === generation) status.textContent = `读取失败：${error}`; }
+      setText(status, () => entry.source || t("desktop.untitled_document"));
+    } catch (error) { if (token === generation) setText(status, () => t("recovery_dialog.failed_to_load", {"error": error})); }
   }
   async function refresh() {
     generation++; content = null; list.removeAttribute('aria-activedescendant');
     list.replaceChildren(); preview.value = ''; apply.disabled = true; clear.disabled = true;
-    status.textContent = '正在读取恢复记录…';
+    setText(status, () => t("recovery_dialog.loading_recovery_records"));
     try {
       entries = await invoke('recovery_list', { drafts });
       if (!dialog.isConnected) return;
@@ -100,18 +101,18 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
         const option = document.createElement('div');
         option.id = `recovery-option-${index}`; option.dataset.index = String(index);
         option.setAttribute('role', 'row'); option.setAttribute('aria-selected', 'false');
-        const name = entry.source?.split(/[\\/]/).pop() || '未命名文档';
+        const name = entry.source?.split(/[\\/]/).pop() || t("desktop.untitled_document");
         const title = document.createElement('span'), detail = document.createElement('span');
         title.className = 'recovery-version-title'; detail.className = 'recovery-version-detail';
-        const kind = entry.kind === 'draft' ? '草稿' : '保存前版本';
-        title.textContent = drafts ? name : kind;
-        detail.textContent = `${drafts ? kind + ' · ' : ''}${new Date(entry.timestamp).toLocaleString()} · ${Math.ceil(entry.bytes / 1024)} KB`;
+        const kind = entry.kind === 'draft' ? t("recovery_dialog.draft") : t("recovery_dialog.pre_save_version");
+        setText(title, () => drafts ? name : (entry.kind === 'draft' ? t('recovery_dialog.draft') : t('recovery_dialog.pre_save_version')));
+        setText(detail, () => t(drafts ? 'MO0244' : 'MO0243', {kind: entry.kind === 'draft' ? t('recovery_dialog.draft') : t('recovery_dialog.pre_save_version'), date: new Date(entry.timestamp).toLocaleString(currentLanguage()), size: Math.ceil(entry.bytes / 1024)}));
         option.title = `${entry.source || name}\n${detail.textContent}`;
         const textCell = document.createElement('div'), deleteCell = document.createElement('div');
         textCell.setAttribute('role', 'gridcell'); deleteCell.setAttribute('role', 'gridcell');
         deleteCell.className = 'recovery-delete-cell';
         const remove = clear.cloneNode(true); remove.removeAttribute('data-clear'); remove.dataset.deleteRecord = ''; remove.disabled = false;
-        remove.setAttribute('aria-label', `${entry.kind === 'saved' ? '删除该版本' : '删除该草稿'}：${name}`); remove.title = remove.getAttribute('aria-label');
+        setAttr(remove, 'aria-label', () => t(entry.kind === 'saved' ? 'MO0240' : 'MO0241', {name})); remove.title = remove.getAttribute('aria-label');
         remove.onclick = event => { event.stopPropagation(); requestDelete(entry); }; deleteCell.append(remove);
         textCell.append(title, detail); option.append(textCell, deleteCell);
         option.onclick = () => { if (!busy) { selected = index; list.focus(); void select(); } };
@@ -119,7 +120,7 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
       });
       selected = entries.length ? 0 : -1;
       await select();
-    } catch (error) { status.textContent = `读取失败：${error}`; }
+    } catch (error) { setText(status, () => t("recovery_dialog.failed_to_load", {"error": error})); }
   }
   function close() {
     if (busy) return;
@@ -172,7 +173,7 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
       else await restore(content);
       setBusy(false); close();
     } catch (error) {
-      status.textContent = `恢复失败：${error}`;
+      setText(status, () => t("recovery_dialog.could_not_restore", {"error": error}));
       setBusy(false); apply.disabled = false; clear.disabled = false;
     }
   };
@@ -183,11 +184,11 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
   function requestDelete(entry) {
     if (busy || clearing || !entry) return;
     clearEntry = entry; clearing = true;
-    const action = clearEntry.kind === 'saved' ? '删除该版本' : '删除该草稿';
-    confirmation.querySelector('h2').textContent = action + '？';
-    confirmClear.textContent = action;
-    confirmation.querySelector('strong').textContent = clearEntry.source?.split(/[\\/]/).pop() || '未命名文档';
-    confirmation.querySelector('strong').title = clearEntry.source || '未命名文档';
+    const action = clearEntry.kind === 'saved' ? t("recovery_dialog.delete_this_version") : t("recovery_dialog.delete_this_draft_mo0132");
+    setText(confirmation.querySelector('h2'), () => t(clearEntry.kind === 'saved' ? 'MO0242' : 'recovery_dialog.delete_this_draft'));
+    setText(confirmClear, () => t(clearEntry.kind === 'saved' ? 'recovery_dialog.delete_this_version' : 'recovery_dialog.delete_this_draft_mo0132'));
+    setText(confirmation.querySelector('strong'), () => clearEntry.source?.split(/[\\/]/).pop() || t("desktop.untitled_document"));
+    setAttr(confirmation.querySelector('strong'), 'title', () => clearEntry.source || t("desktop.untitled_document"));
     confirmation.hidden = false; dialog.inert = true; apply.disabled = true;
     cancelClear.focus();
   };
@@ -199,7 +200,7 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
       await invoke('recovery_delete', { key, id });
       document.dispatchEvent(new Event('leaf-recovery-changed'));
       await refresh();
-    } catch (error) { status.textContent = `删除失败：${error}`; clear.disabled = false; apply.disabled = content === null; }
+    } catch (error) { setText(status, () => t("recovery_dialog.could_not_delete", {"error": error})); clear.disabled = false; apply.disabled = content === null; }
     finally { setBusy(false); resetClear(); (clear.disabled ? list : clear).focus(); }
   };
   list.focus();

@@ -16,7 +16,7 @@ pub unsafe fn begin(window:&tauri::WebviewWindow) {
     let rect=NSRect::new(NSPoint::new((bounds.size.width-width)/2.0,(bounds.size.height-22.0)/2.0),NSSize::new(width,22.0));
     let field:objc2::rc::Allocated<AnyObject>=msg_send![class!(NSTextField),alloc];
     let field:Retained<AnyObject>=msg_send![field,initWithFrame:rect];
-    let name=window.app_handle().state::<crate::Documents>().0.lock().unwrap().get(window.label()).cloned().flatten().and_then(|p|p.file_stem().map(|n|n.to_string_lossy().into_owned())).unwrap_or_else(||"未命名".into());
+    let name=window.app_handle().state::<crate::Documents>().0.lock().unwrap().get(window.label()).cloned().flatten().and_then(|p|p.file_stem().map(|n|n.to_string_lossy().into_owned())).unwrap_or_else(||crate::i18n::app_text(window.app_handle(), "NA0080"));
     let _:()=msg_send![&*field,setStringValue:&*NSString::from_str(&name)];
     let _:()=msg_send![&*field,setBezeled:false];let _:()=msg_send![&*field,setBordered:false];
     let _:()=msg_send![&*field,setDrawsBackground:true];
@@ -26,7 +26,7 @@ pub unsafe fn begin(window:&tauri::WebviewWindow) {
     let _:()=msg_send![&*field,setAlignment:1usize];
     let font:*mut AnyObject=msg_send![class!(NSFont),systemFontOfSize:13.0f64];let _:()=msg_send![&*field,setFont:font];
     let _:()=msg_send![&*field,setAutoresizingMask:5usize];
-    let _:()=msg_send![&*field,setToolTip:&*NSString::from_str("回车确认，Esc 取消")];
+    let _:()=msg_send![&*field,setToolTip:&*NSString::from_str(&crate::i18n::app_text(window.app_handle(), "NA0081"))];
     let _:()=msg_send![native,setTitleVisibility:1isize];
     let _:()=msg_send![parent,addSubview:&*field];
     let _:bool=msg_send![native,makeFirstResponder:&*field];let _:()=msg_send![&*field,selectText:std::ptr::null::<AnyObject>()];

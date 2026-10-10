@@ -1,3 +1,4 @@
+import { t, message as translatedMessage } from './i18n.js';
 import { createDocumentSession } from './document-session.js';
 import {localResourcePaths} from './resource-paths.js';
 import { fileNameFromPath } from './file-path.js';
@@ -27,7 +28,7 @@ export async function desktopNew() {
   if (creatingDocument) return;
   creatingDocument = true;
   try {
-    const path = await save({defaultPath: '未命名.md', filters});
+    const path = await save({defaultPath: t("desktop.untitled_md"), filters});
     if (path) {
       await invoke('new_document', {path});
       await invoke('open_document', {path});
@@ -41,10 +42,10 @@ export function desktopSave(as = false, manual = true) {
 export function desktopRename(name) { return session.rename(name); }
 export function desktopRelocate() { return session?.relocate() ?? Promise.resolve(false); }
 export function desktopRun(action) { return session.run(action); }
-export async function chooseAttachments(image) { return open({ multiple: true, ...(image ? { filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "svg"] }] } : {}) }); }
+export async function chooseAttachments(image) { return open({ multiple: true, ...(image ? { filters: [{ name: t("desktop.images"), extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "svg"] }] } : {}) }); }
 export async function desktopExportBundle() {
   if (!session?.path && !await session.save()) return null;
-  const directory = await open({directory:true,multiple:false,title:'选择导出文件夹'});
+  const directory = await open({directory:true,multiple:false,title:t("desktop.choose_export_folder")});
   if (!directory) return null;
   return session.run(() => {
     const content=hooks.content();
@@ -56,7 +57,7 @@ export function desktopRecoveryPaused() { return !!session?.paused; }
 export function desktopEdited() {
   session?.edited();
   clearTimeout(draftTimer);
-  draftTimer = setTimeout(() => session?.checkpoint().catch(error => hooks.status(`草稿保护失败：${error}`, 'error')), 250);
+  draftTimer = setTimeout(() => session?.checkpoint().catch(error => hooks.status(translatedMessage("desktop.could_not_protect_the_draft", {"error": error}), 'error')), 250);
 }
 export function desktopRestore(content) { return session.restore(content); }
 
@@ -68,10 +69,10 @@ async function closeDocument() {
     await session?.idle();
     if (session?.ready) {
       try { await session.checkpoint(); }
-      catch (error) { hooks.status(`草稿保护失败：${error}`, 'error'); }
+      catch (error) { hooks.status(translatedMessage("desktop.could_not_protect_the_draft", {"error": error}), 'error'); }
     }
     if (hooks.dirty()) {
-      const choice = await confirmDocumentClose(session?.path ? fileNameFromPath(session.path) : '未命名文档');
+      const choice = await confirmDocumentClose(session?.path ? fileNameFromPath(session.path) : t("desktop.untitled_document"));
       if (choice === 'cancel') return;
       if (choice === 'save') {
         if (!await desktopSave() || hooks.dirty()) return;
@@ -90,15 +91,16 @@ export async function initDesktop(callbacks) {
     await invoke('recent_import', { items: Array.isArray(items) ? items.filter(item => typeof item.path === 'string' && typeof item.name === 'string') : [] });
   } catch (error) { console.warn('Recent-file migration failed', error); }
   session = createDocumentSession({
+    localizedMessages: true,
     content: hooks.content, status: hooks.status,
-    load: (content, source) => hooks.load(content, source ? fileNameFromPath(source) : '未命名.md', source),
+    load: (content, source) => hooks.load(content, source ? fileNameFromPath(source) : t("desktop.untitled_md"), source),
     restore: hooks.restore,
-    select: path => save({ defaultPath: path || '未命名.md', filters }),
-    selectExisting: () => open({ multiple: false, filters, title: '重新定位原文件' }),
+    select: path => save({ defaultPath: path || t("desktop.untitled_md"), filters }),
+    selectExisting: () => open({ multiple: false, filters, title: t("desktop.locate_original_file") }),
     relocate: (path, expected) => invoke('relocate_document', { path, expected, loadedImages: hooks.loadedImages?.() ?? [] }),
     unavailableActions: () => [
-      { label: '重新定位原文件', run: desktopRelocate },
-      { label: '另存为', run: () => desktopSave(true) },
+      { get label() { return t("desktop.locate_original_file"); }, run: desktopRelocate },
+      { get label() { return t("desktop.save_as"); }, run: () => desktopSave(true) },
     ],
     read: path => invoke('read_document', { path }),
     observe: () => invoke('observe_document', { loadedImages: hooks.loadedImages?.() ?? [] }),
@@ -120,7 +122,7 @@ export async function initDesktop(callbacks) {
   await window.listen('leaf-native-rename',({payload})=>hooks.renameNative?.(payload));
   await window.listen('leaf-menu', async ({ payload }) => {
     if (payload === 'new') {
-      try { await desktopNew(); } catch (error) { hooks.status(`新建失败：${error}`, 'error'); }
+      try { await desktopNew(); } catch (error) { hooks.status(translatedMessage("desktop.could_not_create_the_document", {"error": error}), 'error'); }
     }
     if (payload === 'open') await desktopOpen();
     if (payload === 'save') await desktopSave();
@@ -157,7 +159,7 @@ export async function initDesktop(callbacks) {
     } catch (error) {
       // A failed load never binds an empty/welcome buffer to the failed path.
       await session.initialize(null, '');
-      hooks.status(`打开失败：${error}`, 'error');
+      hooks.status(translatedMessage("desktop.could_not_open_the_document", {"error": error}), 'error');
     }
   } else if (location.search.includes('document=1')) {
     await session.initialize(null, '');
@@ -171,7 +173,7 @@ export async function initDesktop(callbacks) {
     try {
       const versions = await invoke('recovery_list', { drafts: false });
       if (token === recoveryRequest) hooks.recoveryAvailable?.(versions.some(v => v.kind === 'draft'));
-    } catch (error) { hooks.status(`恢复记录读取失败：${error}`, 'error'); }
+    } catch (error) { hooks.status(translatedMessage("desktop.could_not_read_recovery_records", {"error": error}), 'error'); }
   }
   document.addEventListener('leaf-recovery-changed', refreshRecoveryNotice);
   globalThis.addEventListener('focus', refreshRecoveryNotice);
@@ -179,8 +181,8 @@ export async function initDesktop(callbacks) {
   await refreshRecoveryNotice();
   await listen('leaf-retention-days',({payload})=>document.dispatchEvent(new CustomEvent('leaf-retention-days',{detail:payload})));
   try { document.dispatchEvent(new CustomEvent('leaf-retention-days',{detail:await invoke('recovery_retention')})); }
-  catch(error){hooks.status(`恢复时限设置读取失败：${error}`,'error');}
-  const expire=()=>invoke('recovery_expire').catch(error=>hooks.status(`恢复记录自动清理失败：${error}`,'error'));
+  catch(error){hooks.status(translatedMessage("desktop.could_not_read_the_recovery_retention_setting", {"error": error}),'error');}
+  const expire=()=>invoke('recovery_expire').catch(error=>hooks.status(translatedMessage("desktop.could_not_automatically_clean_up_recovery_records", {"error": error}),'error'));
   await expire();
   setInterval(expire,60*60*1000);
   setInterval(() => { void session.poll(); }, 3000);

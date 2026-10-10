@@ -187,7 +187,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .welcome-description { margin-left: 10px; color: var(--muted); font: 400 14px/1.5 var(--ui-font); letter-spacing: 0; }
 .welcome-actions { display: flex; align-items: center; gap: 10px; }
 .welcome-primary, .welcome-icon { height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-strong); color: var(--accent-strong); transition: background .15s, border-color .15s; }
-.welcome-primary { gap: 9px; width: 138px; padding: 0 16px; font: 400 14px/20px var(--ui-font); }
+.welcome-primary { gap: 9px; min-width: 166px; white-space: nowrap; padding: 0 16px; font: 400 14px/20px var(--ui-font); }
 .welcome-icon { width: 44px; padding: 0; color: var(--muted); }
 .welcome-actions .ui-icon { flex: none; width: 18px; height: 18px; }
 .welcome-primary:hover, .welcome-icon:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: var(--accent-soft); }
@@ -544,10 +544,10 @@ button.leaf-list-marker { cursor:pointer; }
 }
 .cm-search button[name="prev"]::before { content: "↑"; }
 .cm-search button[name="next"]::before { content: "↓"; }
-.cm-search button[name="select"]::before { content: "全"; font-size: 11px; }
+.cm-search button[name="select"]::before { content: none; }
 .cm-search button[name="replace"] { grid-area: replace-one; }
-.cm-search button[name="replace"] { grid-area: replace-one; width: 48px; min-width: 48px !important; padding: 0 5px !important; }
-.cm-search button[name="replaceAll"] { grid-area: replace-all; width: 58px; min-width: 58px !important; padding: 0 5px !important; }
+.cm-search button[name="replace"] { grid-area: replace-one; width: auto; min-width: 64px !important; padding: 0 5px !important; }
+.cm-search button[name="replaceAll"] { grid-area: replace-all; width: auto; min-width: 90px !important; padding: 0 5px !important; }
 .cm-search button[name="close"] {
   grid-area: close;
   width: 28px;

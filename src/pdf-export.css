@@ -1,7 +1,7 @@
 :root { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color: #353b38; background: #eeefeb; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-.export-toolbar { position: sticky; top: 0; display: flex; align-items: center; gap: 24px; padding: 16px 28px; background: #fcfbf8; border-bottom: 1px solid #dce1da; font-size: 13px; }
+.export-toolbar { position: sticky; top: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 16px 28px; background: #fcfbf8; border-bottom: 1px solid #dce1da; font-size: 13px; }
 .export-toolbar > div { margin-right: auto; }
 .export-toolbar small { display: block; color: #737c73; margin-top: 4px; }
 .export-toolbar label { white-space: nowrap; }

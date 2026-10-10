@@ -6,6 +6,7 @@ try {
  await page.addInitScript(()=>{
   window.isTauri=true;window.nativeCalls=[];window.intervals=[];const interval=window.setInterval.bind(window);window.setInterval=(fn,ms)=>{intervals.push({fn,ms});return interval(fn,ms);};
   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},transformCallback:()=>1,invoke:async(command,args)=>{
+      if (command === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
    nativeCalls.push({command,args});
    if(command==='initial_path')return '/tmp/test.md';if(command==='read_document')return '# 原文\n\n正文';if(command==='recovery_list')return [];
    if(command==='plugin:event|listen')return 1;

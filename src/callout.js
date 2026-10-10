@@ -1,5 +1,6 @@
+import { t } from './i18n.js';
 const aliases = {summary:'abstract',tldr:'abstract',hint:'tip',important:'tip',check:'success',done:'success',help:'question',faq:'question',caution:'warning',attention:'warning',fail:'failure',missing:'failure',error:'danger',cite:'quote'};
-export const labels = {note:'笔记',abstract:'摘要',info:'信息',todo:'待办',tip:'提示',success:'完成',question:'问题',warning:'注意',failure:'失败',danger:'警告',bug:'问题排查',example:'示例',quote:'引用'};
+export const labels = {get note() { return t("callout.note"); },get abstract() { return t("callout.summary"); },get info() { return t("callout.info"); },get todo() { return t("callout.to_do"); },get tip() { return t("callout.tip"); },get success() { return t("callout.success"); },get question() { return t("callout.troubleshooting"); },get warning() { return t("callout.caution"); },get failure() { return t("callout.failure"); },get danger() { return t("callout.warning"); },get bug() { return t("callout.troubleshooting_mo0011"); },get example() { return t("callout.example"); },get quote() { return t("callout.quote"); }};
 export function parseCallout(raw) {
   const unquoted = raw.replace(/^ {0,3}>[ \t]?/gm, '');
   const match = /^\[!([\w-]+)\]([+-])?(?:[ \t]+([^\r\n]*))?(?:\r?\n|$)/.exec(unquoted);

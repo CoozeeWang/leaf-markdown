@@ -12,6 +12,7 @@ export async function desktopImageFixture(page, source, {platform}={}) {
       metadata:{currentWindow:{label:'document-image-test'},currentWebview:{label:'document-image-test'}},
       transformCallback:fn=>{callbacks.set(++id,fn);return id;},
       invoke:async(command,args)=>{
+        if(command==='language_get')return {preference:'system',language:'zh-Hans',revision:0};
         if(command==='plugin:event|listen'){listeners.set(args.event,args.handler);return args.handler;}
         if(command==='initial_path')return '/fixture/images.md';
         if(command==='observe_document')return {path:'/fixture/images.md',content:disk};

@@ -2,18 +2,18 @@ use std::{fs, io::{Read, Write}, path::{Path, PathBuf, Component}};
 const LIMIT: u64 = 32 * 1024 * 1024;
 
 pub fn resolve(document: &Path, relative: &str) -> Result<PathBuf, String> {
-    if relative.is_empty() || relative.contains(['\\', ':', '\0']) { return Err("资源路径无效".into()); }
+    if relative.is_empty() || relative.contains(['\\', ':', '\0']) { return Err(crate::i18n::error("resources.invalid_resource_path", serde_json::json!({})).into()); }
     let path = Path::new(relative);
-    if path.components().any(|c| !matches!(c, Component::Normal(_) | Component::CurDir)) { return Err("资源必须位于文档目录内".into()); }
-    let root = fs::canonicalize(document.parent().ok_or("文档没有目录")?).map_err(|e| e.to_string())?;
+    if path.components().any(|c| !matches!(c, Component::Normal(_) | Component::CurDir)) { return Err(crate::i18n::error("resources.resources_must_be_inside_the_document_folder", serde_json::json!({})).into()); }
+    let root = fs::canonicalize(document.parent().ok_or(crate::i18n::error("resources.could_not_determine_the_document_s_parent", serde_json::json!({})))?).map_err(|e| e.to_string())?;
     let target = fs::canonicalize(root.join(path)).map_err(|e| e.to_string())?;
-    if !target.starts_with(&root) || !target.is_file() { return Err("资源超出文档目录或不是文件".into()); }
+    if !target.starts_with(&root) || !target.is_file() { return Err(crate::i18n::error("resources.the_resource_is_outside_the_document_folder", serde_json::json!({})).into()); }
     Ok(target)
 }
 pub fn bytes(path: &Path) -> Result<Vec<u8>, String> {
     let file = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut data = Vec::new(); file.take(LIMIT + 1).read_to_end(&mut data).map_err(|e| e.to_string())?;
-    if data.len() as u64 > LIMIT { return Err("附件超过 32 MB 上限".into()); }
+    if data.len() as u64 > LIMIT { return Err(crate::i18n::error("resources.the_attachment_exceeds_the_32_mb_limit", serde_json::json!({})).into()); }
     Ok(data)
 }
 pub fn import(document: &Path, name: &str, data: &[u8]) -> Result<String, String> {
@@ -23,13 +23,13 @@ pub fn asset_folder(document: &Path) -> String {
     format!("{}.assets", document.file_stem().unwrap_or_default().to_string_lossy())
 }
 pub fn import_managed(document: &Path, name: &str, data: &[u8], archive: Option<&Path>) -> Result<String, String> {
-    if data.len() as u64 > LIMIT || data.is_empty() { return Err("附件为空或超过 32 MB 上限".into()); }
-    let root = fs::canonicalize(document.parent().ok_or("请先保存文档")?).map_err(|e| e.to_string())?;
+    if data.len() as u64 > LIMIT || data.is_empty() { return Err(crate::i18n::error("resources.the_attachment_is_empty_or_exceeds_the", serde_json::json!({})).into()); }
+    let root = fs::canonicalize(document.parent().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})))?).map_err(|e| e.to_string())?;
     let folder = asset_folder(document);
     let directory = root.join(&folder);
     fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
     let directory = fs::canonicalize(directory).map_err(|e| e.to_string())?;
-    if directory.parent() != Some(root.as_path()) { return Err("assets 目录不能指向文档目录外".into()); }
+    if directory.parent() != Some(root.as_path()) { return Err(crate::i18n::error("resources.the_assets_folder_cannot_point_outside_the", serde_json::json!({})).into()); }
     let safe: String = name.chars().take(120).map(|c| if c.is_alphanumeric() || "-_.".contains(c) { c } else { '_' }).collect();
     let safe = safe.trim_matches('.'); let safe = if safe.is_empty() { "attachment" } else { safe };
     let path = Path::new(safe); let stem = path.file_stem().and_then(|v| v.to_str()).unwrap_or("attachment");
@@ -52,7 +52,7 @@ pub fn import_managed(document: &Path, name: &str, data: &[u8], archive: Option<
             Err(e) => return Err(e.error.to_string()),
         }
     }
-    Err("同名附件过多，请更换名称".into())
+    Err(crate::i18n::error("resources.there_are_too_many_attachments_with_this", serde_json::json!({})).into())
 }
 #[cfg(test)] mod tests {
  use super::*;
@@ -114,17 +114,17 @@ pub fn restore(store: &Path, document: &Path, relative: &str) -> Result<(), Stri
     if parts.len() != 2 { return Ok(()); }
     let folder = match parts[0] { Component::Normal(n) => n.to_str().unwrap_or(""), _ => return Ok(()) };
     if folder != "assets" && !folder.ends_with(".assets") { return Ok(()); }
-    let name = match parts[1] { Component::Normal(n) => n.to_str().ok_or("图片名称无效")?, _ => return Ok(()) };
+    let name = match parts[1] { Component::Normal(n) => n.to_str().ok_or(crate::i18n::error("resources.invalid_image_name", serde_json::json!({})))?, _ => return Ok(()) };
     if name.contains(['\\', ':']) { return Ok(()); }
-    let target = document.parent().ok_or("文档没有目录")?.join(folder).join(name);
+    let target = document.parent().ok_or(crate::i18n::error("resources.could_not_determine_the_document_s_parent", serde_json::json!({})))?.join(folder).join(name);
     if target.exists() { return Ok(()); }
     let backup = archive_path(store, document, relative);
     if !backup.is_file() { return Ok(()); }
     let data = bytes(&backup)?;
-    let root = fs::canonicalize(document.parent().ok_or("文档没有目录")?).map_err(|e| e.to_string())?;
+    let root = fs::canonicalize(document.parent().ok_or(crate::i18n::error("resources.could_not_determine_the_document_s_parent", serde_json::json!({})))?).map_err(|e| e.to_string())?;
     let directory = root.join(folder); fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
     let directory = fs::canonicalize(directory).map_err(|e| e.to_string())?;
-    if directory.parent() != Some(root.as_path()) { return Err("assets 目录不能指向文档目录外".into()); }
+    if directory.parent() != Some(root.as_path()) { return Err(crate::i18n::error("resources.the_assets_folder_cannot_point_outside_the", serde_json::json!({})).into()); }
     let mut temp = tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
     temp.write_all(&data).map_err(|e| e.to_string())?; temp.as_file().sync_all().map_err(|e| e.to_string())?;
     temp.persist_noclobber(directory.join(name)).map_err(|e| e.to_string())?;
@@ -209,7 +209,7 @@ pub fn collect_removed_protected(store: &Path, document: &Path, before: &str, af
     Ok(())
 }
 fn collect_folder(store: &Path, document: &Path, before: &str, after: &str, buffers: &[String], folder: &str) -> Result<(), String> {
-    let root = document.parent().ok_or("文档没有目录")?;
+    let root = document.parent().ok_or(crate::i18n::error("resources.could_not_determine_the_document_s_parent", serde_json::json!({})))?;
     let assets = root.join(folder);
     use sha2::{Digest, Sha256};
     let ledger = store.join(format!("pending-{:x}.json", Sha256::digest(format!("{}:{folder}",document.display()).as_bytes())));
@@ -242,7 +242,7 @@ fn collect_folder(store: &Path, document: &Path, before: &str, after: &str, buff
         let mut temp = tempfile::NamedTempFile::new_in(directory).map_err(|e| e.to_string())?;
         temp.write_all(&data).map_err(|e| e.to_string())?; temp.as_file().sync_all().map_err(|e| e.to_string())?;
         temp.persist(&backup).map_err(|e| e.to_string())?;
-        if bytes(&backup)? != data || bytes(&path)? != data { return Err("图片已变化，保留原文件".into()); }
+        if bytes(&backup)? != data || bytes(&path)? != data { return Err(crate::i18n::error("resources.the_image_has_changed_the_original_file", serde_json::json!({})).into()); }
         fs::remove_file(path).map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -299,13 +299,13 @@ fn collect_folder(store: &Path, document: &Path, before: &str, after: &str, buff
 // Copy before switching the document path. Originals stay available to other
 // documents, undo and recovery; an existing different attachment is never replaced.
 pub fn rehome(source: &Path, target: &Path, content: &str) -> Result<(String, Vec<(String,String)>), String> {
-    let root=target.parent().ok_or("文档没有目录")?;
+    let root=target.parent().ok_or(crate::i18n::error("resources.could_not_determine_the_document_s_parent", serde_json::json!({})))?;
     let old_folder=asset_folder(source);
     let new_folder=asset_folder(target);
     let mut mappings=Vec::new();
     for folder in managed_folders(source, &[content])? {
         if !mentions(content, &format!("{folder}/")) { continue; }
-        let directory=source.parent().ok_or("文档没有目录")?.join(&folder);
+        let directory=source.parent().ok_or(crate::i18n::error("resources.could_not_determine_the_document_s_parent", serde_json::json!({})))?.join(&folder);
         if !directory.exists() { continue; }
         for entry in fs::read_dir(&directory).map_err(|e|e.to_string())? {
             let entry=entry.map_err(|e|e.to_string())?;
@@ -318,11 +318,11 @@ pub fn rehome(source: &Path, target: &Path, content: &str) -> Result<(String, Ve
             let dest=root.join(destination);
             fs::create_dir_all(&dest).map_err(|e|e.to_string())?;
             let dest=fs::canonicalize(dest).map_err(|e|e.to_string())?;
-            if dest.parent()!=Some(fs::canonicalize(root).map_err(|e|e.to_string())?.as_path()) { return Err("附件目录超出文档目录".into()); }
+            if dest.parent()!=Some(fs::canonicalize(root).map_err(|e|e.to_string())?.as_path()) { return Err(crate::i18n::error("resources.the_attachment_folder_is_outside_the_document", serde_json::json!({})).into()); }
             let path=dest.join(&name);
-            if fs::symlink_metadata(&path).map(|m|m.file_type().is_symlink()).unwrap_or(false) { return Err("目标附件不能是符号链接".into()); }
+            if fs::symlink_metadata(&path).map(|m|m.file_type().is_symlink()).unwrap_or(false) { return Err(crate::i18n::error("resources.the_destination_attachment_cannot_be_a_symbolic", serde_json::json!({})).into()); }
             if path.exists() {
-                if bytes(&path)?!=data { return Err(format!("目标附件已存在且内容不同：{name}")); }
+                if bytes(&path)?!=data { return Err(crate::i18n::error("resources.the_destination_attachment_already_exists_with_different", serde_json::json!({"name": (name).to_string()}))); }
             } else {
                 let mut temp=tempfile::NamedTempFile::new_in(&dest).map_err(|e|e.to_string())?;
                 temp.write_all(&data).map_err(|e|e.to_string())?; temp.as_file().sync_all().map_err(|e|e.to_string())?;
@@ -429,51 +429,54 @@ fn link_path(path: &str) -> String { path.replace(' ',"%20").replace('(',"%28").
  }
 }
 
-pub fn export_bundle(source: &Path, parent: &Path, content: &str, references: &[String]) -> Result<PathBuf,String> {
+#[cfg(test)]
+pub fn export_bundle(source: &Path, parent: &Path, content: &str, references: &[String]) -> Result<PathBuf,String> { export_bundle_localized(source, parent, content, references, "zh-Hans") }
+
+pub fn export_bundle_localized(source: &Path, parent: &Path, content: &str, references: &[String], language: &str) -> Result<PathBuf,String> {
     let parent=fs::canonicalize(parent).map_err(|e|e.to_string())?;
     // Read and validate every source before creating the export folder.
     let files:Vec<_>=references.iter().map(|relative| Ok((relative,bytes(&resolve(source,relative)?)?))).collect::<Result<_,String>>()?;
-    let stem=source.file_stem().ok_or("文件名无效")?.to_string_lossy();
+    let stem=source.file_stem().ok_or(crate::i18n::error("main.invalid_file_name", serde_json::json!({})))?.to_string_lossy();
     let mut target=None;
     for n in 0..10000 {
-        let path=parent.join(if n==0 {format!("{stem}-导出")} else {format!("{stem}-导出-{n}")});
+        let path=parent.join(if n==0 {crate::i18n::render(language,"NA0116",&serde_json::json!({"stem":stem}))} else {crate::i18n::render(language,"NA0117",&serde_json::json!({"stem":stem,"number":n}))});
         match fs::create_dir(&path) {
             Ok(())=>{target=Some(path);break;},
             Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>continue,
             Err(e)=>return Err(e.to_string()),
         }
     }
-    let target=target.ok_or("同名导出文件夹过多")?;
+    let target=target.ok_or(crate::i18n::error("resources.there_are_too_many_export_folders_with", serde_json::json!({})))?;
     let result: Result<(),String>=(|| {
         for (relative,data) in files {
             let path=target.join(relative);
-            fs::create_dir_all(path.parent().ok_or("附件路径无效")?).map_err(|e|e.to_string())?;
+            fs::create_dir_all(path.parent().ok_or(crate::i18n::error("resources.invalid_attachment_path", serde_json::json!({})))?).map_err(|e|e.to_string())?;
             let mut file=fs::OpenOptions::new().write(true).create_new(true).open(path).map_err(|e|e.to_string())?;
             file.write_all(&data).map_err(|e|e.to_string())?;file.sync_all().map_err(|e|e.to_string())?;
         }
-        let mut file=fs::OpenOptions::new().write(true).create_new(true).open(target.join(source.file_name().ok_or("文件名无效")?)).map_err(|e|e.to_string())?;
+        let mut file=fs::OpenOptions::new().write(true).create_new(true).open(target.join(source.file_name().ok_or(crate::i18n::error("main.invalid_file_name", serde_json::json!({})))?)).map_err(|e|e.to_string())?;
         file.write_all(content.as_bytes()).map_err(|e|e.to_string())?;file.sync_all().map_err(|e|e.to_string())?;
         Ok(())
     })();
-    if let Err(error)=result { return Err(format!("导出未完成，部分文件保留在 {}：{error}",target.display())); }
+    if let Err(error)=result { return Err(crate::i18n::error("resources.export_is_incomplete_some_files_have_been", serde_json::json!({"path": (target.display()).to_string(), "error": (error).to_string()}))); }
     Ok(target)
 }
 
 pub fn copy_references(source: &Path, target: &Path, references: &[String]) -> Result<(),String> {
-    let root=fs::canonicalize(target.parent().ok_or("文档没有目录")?).map_err(|e|e.to_string())?;
-    if fs::canonicalize(source.parent().ok_or("文档没有目录")?).map_err(|e|e.to_string())?==root { return Ok(()); }
+    let root=fs::canonicalize(target.parent().ok_or(crate::i18n::error("resources.could_not_determine_the_document_s_parent", serde_json::json!({})))?).map_err(|e|e.to_string())?;
+    if fs::canonicalize(source.parent().ok_or(crate::i18n::error("resources.could_not_determine_the_document_s_parent", serde_json::json!({})))?).map_err(|e|e.to_string())?==root { return Ok(()); }
     for relative in references {
         let data=bytes(&resolve(source,relative)?)?;
         let path=root.join(relative);
-        let parent=path.parent().ok_or("附件路径无效")?;
+        let parent=path.parent().ok_or(crate::i18n::error("resources.invalid_attachment_path", serde_json::json!({})))?;
         let mut ancestor=parent;
-        while !ancestor.exists() { ancestor=ancestor.parent().ok_or("附件路径无效")?; }
-        if !fs::canonicalize(ancestor).map_err(|e|e.to_string())?.starts_with(&root) { return Err("附件目录超出文档目录".into()); }
+        while !ancestor.exists() { ancestor=ancestor.parent().ok_or(crate::i18n::error("resources.invalid_attachment_path", serde_json::json!({})))?; }
+        if !fs::canonicalize(ancestor).map_err(|e|e.to_string())?.starts_with(&root) { return Err(crate::i18n::error("resources.the_attachment_folder_is_outside_the_document", serde_json::json!({})).into()); }
         fs::create_dir_all(parent).map_err(|e|e.to_string())?;
-        if !fs::canonicalize(parent).map_err(|e|e.to_string())?.starts_with(&root) { return Err("附件目录超出文档目录".into()); }
-        if fs::symlink_metadata(&path).map(|m|m.file_type().is_symlink()).unwrap_or(false) { return Err("目标附件不能是符号链接".into()); }
+        if !fs::canonicalize(parent).map_err(|e|e.to_string())?.starts_with(&root) { return Err(crate::i18n::error("resources.the_attachment_folder_is_outside_the_document", serde_json::json!({})).into()); }
+        if fs::symlink_metadata(&path).map(|m|m.file_type().is_symlink()).unwrap_or(false) { return Err(crate::i18n::error("resources.the_destination_attachment_cannot_be_a_symbolic", serde_json::json!({})).into()); }
         if path.exists() {
-            if bytes(&path)?!=data { return Err(format!("目标附件已存在且内容不同：{relative}")); }
+            if bytes(&path)?!=data { return Err(crate::i18n::error("resources.the_destination_attachment_already_exists_with_different_na0121", serde_json::json!({"relative": (relative).to_string()}))); }
         } else {
             let mut temp=tempfile::NamedTempFile::new_in(parent).map_err(|e|e.to_string())?;
             temp.write_all(&data).map_err(|e|e.to_string())?;temp.as_file().sync_all().map_err(|e|e.to_string())?;
@@ -490,7 +493,7 @@ pub fn copy_selected_images(source: &Path, target: &Path, references: &[String])
     let mut images = Vec::new();
     for relative in references {
         let path = resolve(source, relative)?;
-        let name = path.file_name().and_then(|name| name.to_str()).ok_or("图片名称无效")?.to_owned();
+        let name = path.file_name().and_then(|name| name.to_str()).ok_or(crate::i18n::error("resources.invalid_image_name", serde_json::json!({})))?.to_owned();
         images.push((relative.clone(), name, bytes(&path)?));
     }
     let mut mappings = Vec::new();

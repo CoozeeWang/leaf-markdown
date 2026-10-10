@@ -1,10 +1,11 @@
+import { t, h, setText, setAttr } from './i18n.js';
 import { calloutBadge } from './callout-icons.js';
 import { parser } from '@lezer/markdown';
 import { leafMarkdownExtensions } from './markdown-extensions.js';
 import { analyzeMarkdown } from './markdown-model.js';
 import { renderInline } from './inline-preview.js';
 import { applyTableWidths } from './table-layout.js';
-import { parseCallout } from './callout.js';
+import { parseCallout, labels as calloutLabels } from './callout.js';
 import { indexFootnotes, displayNotes } from './footnotes.js';
 
 const markdown = parser.configure(leafMarkdownExtensions);
@@ -17,7 +18,7 @@ const markdown = parser.configure(leafMarkdownExtensions);
 // the list; the callout recursion below reuses the same index so a citation keeps
 // its number inside a callout instead of starting a second, local numbering.
 export function renderPrintDocument(target, source, {
-  name = '未命名.md', numbered = false, properties = false,
+  name = t("desktop.untitled_md"), numbered = false, properties = false,
   fallbackTitle = true, fileNameTitle = false, expandCallouts = true, sourcePositions = false, footnotes: shared,
 } = {}) {
   const root = !shared;
@@ -32,7 +33,7 @@ export function renderPrintDocument(target, source, {
     if (fileNameTitle) title.className = 'leaf-file-name-title';
   }
   if (properties && model.yaml) {
-    const box = add('section'); box.className = 'print-properties'; add('h2', box, '文档属性');
+    const box = add('section'); box.className = 'print-properties'; setText(add('h2', box), () => t("pdf_export.document_properties"));
     if (sourcePositions) {
       box.dataset.sourceFrom = '0';
       box.dataset.sourceTo = String(model.yaml.to);
@@ -69,7 +70,9 @@ export function renderPrintDocument(target, source, {
       if (box.tagName === 'DETAILS') box.open = callout.fold !== '-';
       const title = add(box.tagName === 'DETAILS' ? 'summary' : 'div', box); title.className = 'leaf-callout-title';
       const badge = add('span', title); badge.className = 'leaf-callout-type-icon'; badge.innerHTML = calloutBadge(callout.type);
-      renderInline(add('span', title), callout.title, state);
+      const titleText = add('span', title);
+      if (callout.customTitle) renderInline(titleText, callout.title, state);
+      else setText(titleText, () => calloutLabels[callout.type]);
       const content = add('div', box); content.className = 'leaf-callout-body';
       renderPrintDocument(content, callout.body, { fallbackTitle:false, expandCallouts, footnotes: state });
       return;
@@ -131,7 +134,7 @@ export function renderPrintDocument(target, source, {
   }
   if (root && state.list.length) {
     const section = add('section'); section.className = 'print-footnotes';
-    const title = add('h2', section, '脚注'); title.className = 'print-footnotes-title';
+    const title = setText(add('h2', section), () => t("print_document.footnotes")); title.className = 'print-footnotes-title';
     const list = add('ol', section); list.className = 'print-footnotes-list';
     // Native printing clips outside markers at the content margin. Reserve
     // space for the widest number, including long documents with 100+ notes.
@@ -147,8 +150,8 @@ export function renderPrintDocument(target, source, {
       renderBlocks(entry, note.body);
       const back = document.createElement('a');
       back.className = 'footnote-backref'; back.textContent = '↩';
-      back.href = `#fnref-${note.number}`; back.title = '回到正文';
-      back.setAttribute('aria-label', '回到正文');
+      back.href = `#fnref-${note.number}`; setAttr(back, 'title', () => t("print_document.back_to_text"));
+      setAttr(back, 'aria-label', () => t("print_document.back_to_text"));
       // Drop the arrow inside the last block of the note: appending it to the
       // entry itself puts it after that block, so a note ending in a paragraph
       // or a list pushes the arrow onto a line of its own.

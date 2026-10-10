@@ -1,3 +1,4 @@
+import { t, setText, setAttr } from './i18n.js';
 import { uiIcon } from './ui-icons.js';
 import { positionMenu } from './menu-position.js';
 let readLocal = null;
@@ -44,7 +45,7 @@ export function mime(data) {
   // SVG is text, so it has no magic bytes: an XML declaration is optional and
   // the root tag is the only reliable mark.
   if (/^(?:<\?xml[^>]*\?>\s*)?<svg[\s>]/i.test(new TextDecoder().decode(data.slice(0, 1024)).trim())) return 'image/svg+xml';
-  throw new Error('不支持的图片格式');
+  throw new Error(t("resources.unsupported_image_format"));
 }
 function decodedPath(target) {
   // A malformed escape must not turn "cannot show this" into a crash: the raw
@@ -59,7 +60,7 @@ function localImagePath(img) {
   const target = safeTarget(img.dataset.resource, true);
   return target && !/^https?:\/\//i.test(target) ? decodeURIComponent(target) : null;
 }
-function revealLabel() { return /Mac|iPhone|iPad/i.test(navigator.userAgentData?.platform || navigator.platform) ? '在 Finder 中显示' : '在文件管理器中显示'; }
+function revealLabel() { return /Mac|iPhone|iPad/i.test(navigator.userAgentData?.platform || navigator.platform) ? t("resources.show_in_finder") : t("resources.show_in_file_manager"); }
 function revealImage(img) {
   if (!img.isConnected) return;
   const relative = localImagePath(img);
@@ -86,12 +87,12 @@ function ensureImageMenu() {
   imageMenu = document.createElement('section');
   imageMenu.className = 'leaf-image-menu';
   imageMenu.setAttribute('role', 'menu');
-  imageMenu.setAttribute('aria-label', '图片操作');
+  setAttr(imageMenu, 'aria-label', () => t("resources.image_actions"));
   imageMenu.hidden = true;
   const reveal = document.createElement('button');
   reveal.type = 'button';
   reveal.setAttribute('role', 'menuitem');
-  reveal.textContent = revealLabel();
+  setText(reveal, revealLabel);
   reveal.addEventListener('click', () => {
     const img = imageMenuImage;
     closeImageMenu(true);
@@ -129,7 +130,7 @@ function platformName() {
   if (/Windows/i.test(ua)) return 'Windows';
   if (/Macintosh|Mac OS X/i.test(ua)) return 'macOS';
   if (/Linux/i.test(ua)) return 'Linux';
-  return '当前平台';
+  return t("resources.this_platform");
 }
 // Each failure needs its own sentence: a format this platform cannot decode, a
 // format Leaf does not recognise, a file that is no longer there, one over the
@@ -138,14 +139,14 @@ function platformName() {
 function failureText(kind, target) {
   const file = fileNameOf(target);
   const ext = (file.match(/\.([^.]+)$/)?.[1] || '').toUpperCase();
-  if (kind === 'unsupported-here') return [`无法预览 ${ext} 图片：${file}`, `${platformName()} 版暂不支持这个格式，图片已存入文档旁的 assets 目录`];
-  if (kind === 'format') return [`无法预览：${file}`, '暂不支持这个图片格式，转换成 PNG 或 JPEG 后可显示'];
-  if (kind === 'missing') return [`找不到图片：${file}`, '文件可能已被移动、重命名或删除'];
-  if (kind === 'moved-missing') return [`找不到图片：${file}`, '文档已移动，图片仍在原文件夹。请将图片也移到新位置。'];
-  if (kind === 'large') return [`图片太大：${file}`, '超过 32 MB 上限，压缩或转换格式后再插入'];
-  if (kind === 'desktop') return [`无法预览：${file}`, '本地图片需在桌面版打开'];
-  if (kind === 'path') return [`无法预览：${file}`, '这个图片路径不受支持'];
-  return [`无法加载：${file}`, '图片内容可能已损坏，或读取超时'];
+  if (kind === 'unsupported-here') return [t("resources.cannot_preview_image", {"ext": ext, "file": file}), t('MO0148')];
+  if (kind === 'format') return [t("resources.cannot_preview", {"file": file}), t("resources.this_image_format_is_not_supported_yet")];
+  if (kind === 'missing') return [t("resources.image_not_found", {"file": file}), t("resources.the_image_file_may_have_been_moved")];
+  if (kind === 'moved-missing') return [t("resources.image_not_found", {"file": file}), t("resources.the_document_has_moved_but_the_image")];
+  if (kind === 'large') return [t("resources.image_too_large", {"file": file}), t("resources.the_image_exceeds_the_32_mb_limit")];
+  if (kind === 'desktop') return [t("resources.cannot_preview", {"file": file}), t("resources.open_local_images_in_the_desktop_app")];
+  if (kind === 'path') return [t("resources.cannot_preview", {"file": file}), t("resources.this_image_path_is_not_supported")];
+  return [t("resources.cannot_load", {"file": file}), t("resources.the_image_may_be_damaged_or_loading")];
 }
 function fail(kind) { const error = new Error(kind); error.leafFailure = kind; return error; }
 // Rebuilt from scratch every time: a reload must not stack a second click
@@ -160,19 +161,19 @@ function renderFailure(status, img, kind) {
   icon.className = 'leaf-image-status-icon';
   icon.innerHTML = uiIcon('image', 16);
   const title = document.createElement('span');
-  title.className = 'leaf-image-status-head'; title.textContent = head;
+  title.className = 'leaf-image-status-head'; setText(title, () => failureText(kind, img.dataset.resource)[0]);
   const detail = document.createElement('span');
-  detail.className = 'leaf-image-status-note'; detail.textContent = note;
+  detail.className = 'leaf-image-status-note'; setText(detail, () => failureText(kind, img.dataset.resource)[1]);
   const lines = document.createElement('span');
   lines.append(title, detail);
   card.append(icon, lines);
   if (!revealLocal || !localImagePath(img)) return;
   const name = fileNameOf(img.dataset.resource);
   card.dataset.clickable = 'yes';
-  card.title = revealLabel();
+  setAttr(card, 'title', revealLabel);
   card.tabIndex = 0;
   card.setAttribute('role', 'button');
-  card.setAttribute('aria-label', `${revealLabel()} ${name}`);
+  setAttr(card, 'aria-label', () => `${revealLabel()} ${name}`);
   const open = () => revealImage(img);
   // The preview widget turns every press inside it into a caret move and then
   // swaps itself for source text, which would destroy the card before its click
@@ -211,7 +212,7 @@ export function imageNode(alt, path) {
 export async function loadImage(img) {
   const token = {}; img._resourceToken = token;
   const status = img.parentElement.querySelector('.leaf-image-status');
-  status.textContent = '图片加载中…'; img.hidden = true; img.dataset.loaded = 'pending';
+  setText(status, () => t("resources.loading_image")); img.hidden = true; img.dataset.loaded = 'pending';
   delete img.dataset.failure;
   try {
     const target = safeTarget(img.dataset.resource, true); if (!target) throw fail('path');
@@ -236,7 +237,7 @@ export async function loadImage(img) {
     try {
       if (img._resourceToken !== token) return;
       img.src = url;
-      await Promise.race([img.decode(), new Promise((_, reject) => setTimeout(() => reject(new Error('图片加载超时')), 15000))]);
+      await Promise.race([img.decode(), new Promise((_, reject) => setTimeout(() => reject(new Error(t("resources.image_loading_timed_out"))), 15000))]);
       if (img._resourceToken !== token) return;
       img.hidden = false; status.textContent = ''; img.dataset.loaded = 'yes';
       movedMissing.delete(decodeURIComponent(target));
@@ -258,15 +259,15 @@ export function retryMissingImages(root = document) { root.querySelectorAll('img
 export async function waitForImages(root) {
   const until = Date.now() + 16000;
   while ([...root.querySelectorAll('img[data-resource]')].some(img => img.dataset.loaded === 'pending')) {
-    if (Date.now() > until) throw new Error('图片仍在加载，请稍后重试');
+    if (Date.now() > until) throw new Error(t("resources.the_image_is_still_loading_try_again"));
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   // A format this platform cannot decode is exported as its placeholder: the
   // file is intact and the reader can find it. A missing or damaged file would
   // export a document whose gap is invisible, so that still stops the export.
-  if (root.querySelector('img[data-failure="missing"], img[data-failure="broken"]')) throw new Error('有图片无法加载，请修正路径后导出');
+  if (root.querySelector('img[data-failure="missing"], img[data-failure="broken"]')) throw new Error(t("resources.some_images_could_not_be_loaded_check"));
 }
 export function markdownLink(label, path, image = false) {
-  const url = safeTarget(path, image); if (!url) throw new Error('请输入网页、邮件、标题锚点或文档目录内的相对路径');
+  const url = safeTarget(path, image); if (!url) throw new Error(t("resources.enter_a_web_address_email_address_heading"));
   return `${image ? '!' : ''}[${label.replace(/[\\\[\]]/g, '\\$&').replace(/\r?\n/g, ' ')}](${url.replace(/[()]/g, c => c === '(' ? '%28' : '%29')})`;
 }

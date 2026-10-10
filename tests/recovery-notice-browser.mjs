@@ -7,8 +7,9 @@ try {
  await page.addInitScript(()=>{
   window.isTauri=true;window.entries=[{key:'doc',id:'draft',kind:'draft',source:'/tmp/示例.md',timestamp:1,bytes:10}];window.calls=[];window.saveFails=false;window.locationMissing=false;window.currentPath='/tmp/示例.md';
   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},transformCallback:()=>1,invoke:async(cmd,args)=>{
+      if (cmd === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
    calls.push({cmd,args});if(cmd==='initial_path')return currentPath;if(cmd==='observe_document'){if(locationMissing)throw 'No such file or directory (os error 2)';return {path:currentPath,content:'# 示例'};}if(cmd==='read_document'||cmd==='recovery_read')return '# 示例';
-   if(cmd==='recovery_list')return entries;if(cmd==='recovery_retention')return 30;
+   if(cmd==='recent_list')return [];if(cmd==='recovery_list')return entries;if(cmd==='recovery_retention')return 30;
    if(cmd==='rename_document'){currentPath='/tmp/'+args.name;return currentPath;}
    if(cmd==='write_document'&&saveFails)throw '模拟保存失败';
    if(cmd==='recovery_delete'){entries=[];return;}return null;
@@ -59,7 +60,7 @@ try {
  await close.click();assert.ok(await notice.isHidden(),'closing the missing-file notice keeps the editor available');
  await page.evaluate(()=>{locationMissing=false;});await page.clock.runFor(3100);
  await page.evaluate(async()=>{const {desktopRestore}=await import('/src/desktop.js');await desktopRestore('# 恢复内容');});
- assert.match(await page.locator('#saveStatus').textContent(),/自动保存暂停/);
+ assert.match(await page.locator('#saveStatus').textContent(),/自动保存已暂停/);
  await close.click();assert.ok(await notice.isHidden());
  assert.equal(await page.evaluate(async()=>{const {desktopRecoveryPaused}=await import('/src/desktop.js');return desktopRecoveryPaused();}),true,'closing a notice must not resume autosave');
  assert.deepEqual(errors,[]);console.log('PASS direct scoped recovery entry, safe default cancel, immediate notice refresh, transient success and persistent errors');

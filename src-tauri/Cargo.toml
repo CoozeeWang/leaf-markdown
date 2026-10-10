@@ -21,6 +21,7 @@ tempfile = "3"
 # Moves a replaced document into the system trash so a confirmed overwrite
 # stays recoverable instead of destroying the original outright.
 trash = "5"
+sys-locale = "0.3.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

@@ -29,8 +29,8 @@ try {
   // The collapsed edge rail opens the panel without a toolbar control.
   const button=page.locator('#notesButton');
   assert.equal(await button.count(),1,'侧边应有注释展开入口');
-  assert.equal(await button.getAttribute('aria-label'),'展开注释');
-  assert.equal(await button.getAttribute('data-tooltip'),'展开注释');
+  assert.equal(await button.getAttribute('aria-label'),'展开脚注');
+  assert.equal(await button.getAttribute('data-tooltip'),'展开脚注');
   assert.equal(await button.locator('svg.ui-icon path').count()>0,true,'按钮要有矢量图标');
   assert.equal(await button.getAttribute('aria-pressed'),'false');
   assert.equal(await drawer.isVisible(),false,'默认收起');
@@ -38,7 +38,7 @@ try {
   await page.click('#notesButton');
   assert.equal(await drawer.isVisible(),true,'点按钮要展开');
   assert.equal(await button.getAttribute('aria-pressed'),'true');
-  assert.equal(await page.locator('.notes-list .empty-hint').textContent(),'此文档没有注释');
+  assert.equal(await page.locator('.notes-list .empty-hint').textContent(),'此文档没有脚注');
 
   // 1. The list follows the reader's order, not the labels and not the order the
   //    definitions happen to sit in the file -- 丙 is cited first so it leads.

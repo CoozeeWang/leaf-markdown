@@ -15,6 +15,7 @@ mod resources;
 mod document_location;
 mod recent;
 mod new_markdown;
+mod i18n;
 #[cfg(target_os = "macos")]
 mod native_services;
 
@@ -75,7 +76,7 @@ fn drain_open_requests(app: tauri::AppHandle) {
     tauri::async_runtime::spawn_blocking(move || {
         while let Some(path) = app.state::<OpenRequests>().next() {
             if let Err(error) = open_document(app.clone(), Some(path.to_string_lossy().into_owned())) {
-                app.dialog().message(format!("无法打开文档：{error}"))
+                app.dialog().message(i18n::render(&app.state::<i18n::Language>().current(), "NA0001", &serde_json::json!({"error":error})))
                     .title("Leaf").show(|_| {});
             }
         }
@@ -168,11 +169,11 @@ fn menu_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
 fn create_from_file_manager(app: tauri::AppHandle, target: impl FnOnce() -> Result<PathBuf, String> + Send + 'static) {
     use tauri_plugin_dialog::DialogExt;
     tauri::async_runtime::spawn_blocking(move || {
-        let result = target().and_then(|folder| new_markdown::create(&folder)).and_then(|path| {
+        let result = target().and_then(|folder| new_markdown::create_localized(&folder, &i18n::app_text(&app, "NA0083"))).and_then(|path| {
             open_document(app.clone(), Some(path.to_string_lossy().into_owned()))
-                .map_err(|error| format!("文档已创建，但未能打开：{}\n{error}", path.display()))
+                .map_err(|error| crate::i18n::error("main.the_document_was_created_but_could_not", serde_json::json!({"path": (path.display()).to_string(), "error": (error).to_string()})))
         });
-        if let Err(error) = result { app.dialog().message(error).title("Leaf · 新建文档").show(|_| {}); }
+        if let Err(error) = result { app.dialog().message(i18n::app_error(&app, &error)).title(i18n::app_text(&app, "NA0003")).show(|_| {}); }
     });
 }
 
@@ -196,7 +197,7 @@ fn open_windows_arguments(app: &tauri::AppHandle, args: Vec<String>, cwd: &str) 
     tauri::async_runtime::spawn_blocking(move || {
         for path in paths {
             if let Err(error) = open_document(app.clone(), Some(path.to_string_lossy().into_owned())) {
-                app.dialog().message(error).title("Leaf").show(|_| {});
+                app.dialog().message(i18n::app_error(&app, &error)).title("Leaf").show(|_| {});
             }
         }
     });
@@ -218,7 +219,7 @@ fn open_export(app: tauri::AppHandle, window: tauri::WebviewWindow, mut snapshot
     let label = format!("export-{}", NEXT_WINDOW.fetch_add(1, Ordering::Relaxed));
     app.state::<Exports>().0.lock().unwrap().insert(label.clone(), snapshot);
     let builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html?export=1".into()))
-        .title("导出 PDF — Leaf").inner_size(950., 800.).min_inner_size(720., 480.);
+        .title(i18n::app_text(&app, "NA0004")).inner_size(950., 800.).min_inner_size(720., 480.);
     let builder = development_window(&app, builder);
     #[cfg(all(target_os = "windows", feature = "native-smoke"))]
     let builder = builder.additional_browser_args(&native_smoke_browser_args());
@@ -232,13 +233,13 @@ fn open_export(app: tauri::AppHandle, window: tauri::WebviewWindow, mut snapshot
 
 #[tauri::command]
 fn export_snapshot(window: tauri::WebviewWindow, exports: tauri::State<Exports>) -> Result<ExportSnapshot, String> {
-    exports.0.lock().unwrap().get(window.label()).cloned().ok_or("导出快照不存在".into())
+    exports.0.lock().unwrap().get(window.label()).cloned().ok_or(crate::i18n::error("main.the_export_preview_is_unavailable", serde_json::json!({})).into())
 }
 
 fn resource_document(app: &tauri::AppHandle, label: &str) -> Result<PathBuf, String> {
     app.state::<Documents>().0.lock().unwrap().get(label).cloned().flatten()
         .or_else(|| app.state::<Exports>().0.lock().unwrap().get(label).and_then(|s| s.base_path.clone()))
-        .ok_or("请先保存文档，以确定资源目录".into())
+        .ok_or(crate::i18n::error("main.save_the_document_first_to_determine_the", serde_json::json!({})).into())
 }
 // Every command below that touches the filesystem is `(async)`: Tauri runs a
 // command on the UI thread unless told otherwise, and one slow read or write
@@ -249,9 +250,9 @@ fn resource_document(app: &tauri::AppHandle, label: &str) -> Result<PathBuf, Str
 // handlers deadlock WebView2 on Windows. Tauri dispatches native UI work itself.
 #[tauri::command(async)]
 fn import_attachment(app: tauri::AppHandle, window: tauri::WebviewWindow, name: String, data: Option<Vec<u8>>, source: Option<String>) -> Result<String, String> {
-    if !window.label().starts_with("document-") { return Err("请先打开或新建文档".into()); }
+    if !window.label().starts_with("document-") { return Err(crate::i18n::error("main.open_or_create_a_document_first", serde_json::json!({})).into()); }
     let doc = resource_document(&app, window.label())?;
-    let data = match (data, source) { (Some(data), None) => data, (None, Some(path)) => resources::bytes(std::path::Path::new(&path))?, _ => return Err("附件来源无效".into()) };
+    let data = match (data, source) { (Some(data), None) => data, (None, Some(path)) => resources::bytes(std::path::Path::new(&path))?, _ => return Err(crate::i18n::error("main.invalid_attachment_source", serde_json::json!({})).into()) };
     resources::import_managed(&doc, &name, &data, Some(&app.path().app_data_dir().map_err(|e| e.to_string())?.join("removed-images-v1")))
 }
 fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
@@ -263,14 +264,14 @@ fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
         std::process::Command::new("explorer").arg(format!("/select,\"{}\"", path.to_string_lossy())).spawn().map_err(|e| e.to_string())?;
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    { let _ = path; return Err("当前平台不支持在文件管理器中显示".into()); }
+    { let _ = path; return Err(crate::i18n::error("main.showing_files_in_the_file_manager_is", serde_json::json!({})).into()); }
     Ok(())
 }
 #[tauri::command(async)]
 fn reveal_document(window: tauri::WebviewWindow, docs: tauri::State<Documents>) -> Result<(), String> {
-    if !window.label().starts_with("document-") { return Err("请先打开或新建文档".into()); }
-    let path = docs.0.lock().unwrap().get(window.label()).cloned().flatten().ok_or("请先保存文档".to_string())?;
-    if !path.is_file() { return Err("文档已不在原位置".into()); }
+    if !window.label().starts_with("document-") { return Err(crate::i18n::error("main.open_or_create_a_document_first", serde_json::json!({})).into()); }
+    let path = docs.0.lock().unwrap().get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})).to_string())?;
+    if !path.is_file() { return Err(crate::i18n::error("main.the_document_is_no_longer_at_its", serde_json::json!({})).into()); }
     reveal_in_file_manager(&path)
 }
 // Shows the attachment in the file manager instead of opening it: a picture the
@@ -278,8 +279,8 @@ fn reveal_document(window: tauri::WebviewWindow, docs: tauri::State<Documents>) 
 #[tauri::command(async)]
 fn reveal_resource(app: tauri::AppHandle, window: tauri::WebviewWindow, relative: String) -> Result<(), String> {
     let doc = resource_document(&app, window.label())?;
-    let path = resources::resolve(&doc, &relative).map_err(|_| "找不到可访问的本地图片，请检查图片文件和路径".to_string())?;
-    if !path.is_file() { return Err("图片文件已不在原位置".into()); }
+    let path = resources::resolve(&doc, &relative).map_err(|_| crate::i18n::error("main.could_not_find_an_accessible_local_image", serde_json::json!({})).to_string())?;
+    if !path.is_file() { return Err(crate::i18n::error("main.the_image_file_is_no_longer_at", serde_json::json!({})).into()); }
     reveal_in_file_manager(&path)
 }
 #[tauri::command(async)]
@@ -290,11 +291,11 @@ fn read_resource(app: tauri::AppHandle, window: tauri::WebviewWindow, relative: 
 }
 #[tauri::command(async)]
 fn copy_pasted_images(window: tauri::WebviewWindow, docs: tauri::State<Documents>, source_label: String, references: Vec<String>) -> Result<Vec<(String,String)>, String> {
-    if !window.label().starts_with("document-") || !source_label.starts_with("document-") { return Err("请在 Leaf 文档之间复制图片".into()); }
+    if !window.label().starts_with("document-") || !source_label.starts_with("document-") { return Err(crate::i18n::error("main.could_not_copy_the_image_copy_it", serde_json::json!({})).into()); }
     let (source, target) = {
         let documents = docs.0.lock().unwrap();
-        let source = documents.get(&source_label).and_then(|path| path.clone()).ok_or("来源文档已关闭，请重新复制带图内容")?;
-        let target = documents.get(window.label()).and_then(|path| path.clone()).ok_or("请先保存目标文档")?;
+        let source = documents.get(&source_label).and_then(|path| path.clone()).ok_or(crate::i18n::error("main.the_source_document_has_been_closed_copy", serde_json::json!({})))?;
+        let target = documents.get(window.label()).and_then(|path| path.clone()).ok_or(crate::i18n::error("main.save_the_destination_document_first", serde_json::json!({})))?;
         (source, target)
     };
     resources::copy_selected_images(&source, &target, &references)
@@ -304,14 +305,14 @@ fn open_link(app: tauri::AppHandle, window: tauri::WebviewWindow, target: String
     let lower = target.to_ascii_lowercase();
     let external = lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:");
     let destination = if external {
-        if target.chars().any(|c| c.is_control()) { return Err("链接无效".into()); }
+        if target.chars().any(|c| c.is_control()) { return Err(crate::i18n::error("main.invalid_link", serde_json::json!({})).into()); }
         target
     } else {
         let doc = resource_document(&app, window.label())?;
         let path = resources::resolve(&doc, &target)?;
         let ext = path.extension().and_then(|v| v.to_str()).unwrap_or("").to_ascii_lowercase();
         if matches!(ext.as_str(), "md" | "markdown" | "mdown") { return open_document(app, Some(path.to_string_lossy().into_owned())); }
-        if !matches!(ext.as_str(), "pdf" | "txt" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "heic" | "heif" | "svg") { return Err("此附件类型请在文件管理器中打开".into()); }
+        if !matches!(ext.as_str(), "pdf" | "txt" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "heic" | "heif" | "svg") { return Err(crate::i18n::error("main.open_this_type_of_attachment_in_the", serde_json::json!({})).into()); }
         path.to_string_lossy().into_owned()
     };
     #[cfg(target_os = "macos")]
@@ -323,14 +324,14 @@ fn open_link(app: tauri::AppHandle, window: tauri::WebviewWindow, target: String
         #[link(name = "shell32")] unsafe extern "system" { fn ShellExecuteW(hwnd: *mut std::ffi::c_void, op: *const u16, file: *const u16, params: *const u16, dir: *const u16, show: i32) -> isize; }
         let path: Vec<u16> = std::ffi::OsStr::new(&destination).encode_wide().chain(Some(0)).collect();
         let result = unsafe { ShellExecuteW(std::ptr::null_mut(), std::ptr::null(), path.as_ptr(), std::ptr::null(), std::ptr::null(), 1) };
-        if result <= 32 { return Err("无法打开链接".into()); }
+        if result <= 32 { return Err(crate::i18n::error("main.could_not_open_the_link", serde_json::json!({})).into()); }
     }
     Ok(())
 }
 
 #[tauri::command]
 fn print_export(window: tauri::WebviewWindow) -> Result<(), String> {
-    if !window.label().starts_with("export-") { return Err("请先打开 PDF 导出预览".into()); }
+    if !window.label().starts_with("export-") { return Err(crate::i18n::error("main.open_the_pdf_export_preview_first", serde_json::json!({})).into()); }
     #[cfg(target_os = "macos")]
     return window.with_webview(|platform| unsafe {
         native_print::show(&*(platform.inner() as *const objc2::runtime::AnyObject));
@@ -348,7 +349,7 @@ fn initial_path(window: tauri::WebviewWindow, docs: tauri::State<Documents>) -> 
 // Replace. Keep the replaced original recoverable from the system trash
 // instead of destroying it outright.
 fn discard_replaced_document(path: &std::path::Path) -> Result<(), String> {
-    trash::delete(path).map_err(|error| format!("无法把原文件移入废纸篓：{error}"))
+    trash::delete(path).map_err(|error| crate::i18n::error("main.could_not_move_the_original_file_to", serde_json::json!({"error": (error).to_string()})))
 }
 
 fn create_empty_document_with(path: &std::path::Path, discard: &dyn Fn(&std::path::Path) -> Result<(), String>) -> Result<(), String> {
@@ -357,7 +358,7 @@ fn create_empty_document_with(path: &std::path::Path, discard: &dyn Fn(&std::pat
     // name between the discard above and this open.
     let file = fs::OpenOptions::new().write(true).create_new(true).open(path)
         .map_err(|error| if error.kind() == std::io::ErrorKind::AlreadyExists {
-            "同名文件已存在，请换一个名称，或直接打开原文件。".to_string()
+            crate::i18n::error("main.a_file_with_this_name_already_exists", serde_json::json!({})).to_string()
         } else { error.to_string() })?;
     file.sync_all().map_err(|error| error.to_string())
 }
@@ -383,7 +384,7 @@ fn create_document(app: tauri::AppHandle, path: Option<String>, recovered: Optio
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     if let Some(expected) = expected_identity {
         if anchor.as_ref().map(document_location::Anchor::token) != Some(expected) {
-            return Err("原文件已移动、删除或被其他文件替换".into());
+            return Err(crate::i18n::error("main.the_original_file_has_been_moved_deleted", serde_json::json!({})).into());
         }
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -481,19 +482,19 @@ fn moved_missing_images(source: &Path, target: &Path, loaded: &[String]) -> Vec<
 fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
     let _guard = recovery.gate.lock().unwrap();
     let mut documents = docs.0.lock().unwrap();
-    let source = documents.get(window.label()).cloned().flatten().ok_or("请先保存文档")?;
+    let source = documents.get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})))?;
     let anchors = anchors.0.lock().unwrap();
     #[cfg(any(target_os = "macos", target_os = "windows"))]
-    let located = anchors.get(window.label()).ok_or("无法确认当前文件的位置")?.locate().map_err(|e| e.to_string())?;
+    let located = anchors.get(window.label()).ok_or(crate::i18n::error("main.could_not_determine_the_current_file_location", serde_json::json!({})))?.locate().map_err(|e| e.to_string())?;
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let located = document_location::Located { path: source.clone(), content: fs::read_to_string(&source).map_err(|e| e.to_string())? };
     let target = fs::canonicalize(&located.path).map_err(|e| e.to_string())?;
     #[cfg(any(target_os = "macos", target_os = "windows"))]
-    if !anchors.get(window.label()).is_some_and(|anchor| anchor.matches_path(&target)) { return Err("原文件在原位置找不到。".into()); }
+    if !anchors.get(window.label()).is_some_and(|anchor| anchor.matches_path(&target)) { return Err(crate::i18n::error("main.the_original_file_could_not_be_found", serde_json::json!({})).into()); }
     let moved_images = if target != source { moved_missing_images(&source, &target, &loaded_images) } else { Vec::new() };
     if target != source {
         if documents.iter().any(|(label, path)| label != window.label() && path.as_ref() == Some(&target)) {
-            return Err("该文件已在另一窗口打开".into());
+            return Err(crate::i18n::error("main.this_file_is_already_open_in_another", serde_json::json!({})).into());
         }
         recovery_store(&app)?.copy_for_rename(&recovery::file_key(&source), &recovery::file_key(&target), &target.to_string_lossy())?;
         documents.insert(window.label().into(), Some(target.clone()));
@@ -520,9 +521,9 @@ fn verify_relocation(path: &str, expected: &str) -> Result<RelocationCandidate, 
     let content = if let Some(ref anchor) = anchor {
         anchor.locate().map_err(|e| e.to_string())?.content
     } else { fs::read_to_string(&target).map_err(|e| e.to_string())? };
-    if content != expected { return Err("所选文件的内容与原文件不同。请检查文件，或另存为。".into()); }
+    if content != expected { return Err(crate::i18n::error("main.the_selected_file_differs_from_the_original", serde_json::json!({})).into()); }
     if anchor.as_ref().is_some_and(|anchor| !anchor.matches_path(&target)) {
-        return Err("所选文件的位置已变化，请重新选择。".into());
+        return Err(crate::i18n::error("main.the_selected_file_location_has_changed_select", serde_json::json!({})).into());
     }
     Ok(RelocationCandidate { path: target, content, anchor })
 }
@@ -531,14 +532,14 @@ fn verify_relocation(path: &str, expected: &str) -> Result<RelocationCandidate, 
 fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, expected: String, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
     let _guard = recovery.gate.lock().unwrap();
     let mut documents = docs.0.lock().unwrap();
-    let source = documents.get(window.label()).cloned().flatten().ok_or("请先保存文档")?;
+    let source = documents.get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})))?;
     let candidate = verify_relocation(&path, &expected)?;
     let target = &candidate.path;
     if documents.iter().any(|(label, open)| label != window.label() && open.as_ref() == Some(target)) {
-        return Err("该文件已在另一窗口打开，请选择其他文件。".into());
+        return Err(crate::i18n::error("main.this_file_is_already_open_in_another_na0029", serde_json::json!({})).into());
     }
     if candidate.anchor.as_ref().is_some_and(|anchor| !anchor.matches_path(target)) {
-        return Err("所选文件的位置已变化，请重新选择。".into());
+        return Err(crate::i18n::error("main.the_selected_file_location_has_changed_select", serde_json::json!({})).into());
     }
     let moved_images = if target != &source { moved_missing_images(&source, target, &loaded_images) } else { Vec::new() };
     if target != &source {
@@ -566,14 +567,14 @@ fn recovery_key(window: &tauri::WebviewWindow, docs: &Documents, recovery: &Reco
 }
 fn retention_days(app: &tauri::AppHandle) -> Result<u32,String> {
     let path=app.path().app_data_dir().map_err(|e|e.to_string())?.join("recovery-retention.json");
-    let days:u32=match fs::read(path) {Ok(bytes)=>serde_json::from_slice(&bytes).map_err(|e|format!("恢复时限设置无法读取：{e}"))?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>30,Err(e)=>return Err(e.to_string())};
-    if ![7,30,90].contains(&days){return Err("恢复记录保留时限无效".into());}Ok(days)
+    let days:u32=match fs::read(path) {Ok(bytes)=>serde_json::from_slice(&bytes).map_err(|e|crate::i18n::error("main.could_not_read_the_recovery_retention_setting", serde_json::json!({"error": (e).to_string()})))?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>30,Err(e)=>return Err(e.to_string())};
+    if ![7,30,90].contains(&days){return Err(crate::i18n::error("main.invalid_recovery_retention_period", serde_json::json!({})).into());}Ok(days)
 }
 #[tauri::command(async)]
 fn recovery_retention(app:tauri::AppHandle,recovery:tauri::State<RecoveryState>,days:Option<u32>)->Result<u32,String>{
     let _guard=recovery.gate.lock().unwrap();
     if let Some(days)=days {
-        if ![7,30,90].contains(&days){return Err("恢复记录保留时限无效".into());}
+        if ![7,30,90].contains(&days){return Err(crate::i18n::error("main.invalid_recovery_retention_period", serde_json::json!({})).into());}
         let root=app.path().app_data_dir().map_err(|e|e.to_string())?;fs::create_dir_all(&root).map_err(|e|e.to_string())?;
         let mut temp=tempfile::NamedTempFile::new_in(&root).map_err(|e|e.to_string())?;
         temp.write_all(days.to_string().as_bytes()).map_err(|e|e.to_string())?;temp.as_file().sync_all().map_err(|e|e.to_string())?;
@@ -596,7 +597,7 @@ fn recovery_initial(window: tauri::WebviewWindow, recovery: tauri::State<Recover
 }
 #[tauri::command(async)]
 fn recovery_checkpoint(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, recovery: tauri::State<RecoveryState>, content: String, preserve: Option<bool>) -> Result<(), String> {
-    if !window.label().starts_with("document-") { return Err("请先打开或新建文档".into()); }
+    if !window.label().starts_with("document-") { return Err(crate::i18n::error("main.open_or_create_a_document_first", serde_json::json!({})).into()); }
     let _guard = recovery.gate.lock().unwrap();
     let key = recovery_key(&window, &docs, &recovery);
     let source = docs.0.lock().unwrap().get(window.label()).and_then(|p| p.as_ref()).map(|p| p.to_string_lossy().into_owned());
@@ -629,7 +630,7 @@ fn recovery_delete(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: ta
     for (label, path) in docs.0.lock().unwrap().iter() {
         if label == window.label() { continue; }
         let other = path.as_ref().map(|p| recovery::file_key(p)).or_else(|| recovery.drafts.lock().unwrap().get(label).cloned());
-        if other.as_ref() == Some(&key) { return Err("该文档正在其他窗口编辑，无法删除。".into()); }
+        if other.as_ref() == Some(&key) { return Err(crate::i18n::error("main.this_document_is_being_edited_in_another", serde_json::json!({})).into()); }
     }
     recovery_store(&app)?.delete_entry(&key, &id)
 }
@@ -646,12 +647,12 @@ fn recovery_open(app: tauri::AppHandle, recovery: tauri::State<RecoveryState>, k
 #[tauri::command]
 fn finish_title_rename(window:tauri::WebviewWindow,error:Option<String>)->Result<(),String>{
     #[cfg(target_os="macos")]
-    {let label=window.label().to_owned();window.run_on_main_thread(move||unsafe{native_title::finish_for(&label,error.as_deref())}).map_err(|e|e.to_string())?;}
+    {let error=error.map(|value|i18n::app_error(window.app_handle(),&value));let label=window.label().to_owned();window.run_on_main_thread(move||unsafe{native_title::finish_for(&label,error.as_deref())}).map_err(|e|e.to_string())?;}
     Ok(())
 }
 fn validate_file_name(name: &str) -> Result<(),String> {
     if name.trim().is_empty() || name=="." || name==".." || name.chars().any(|c| c.is_control() || "\\/:*?\"<>|".contains(c)) || name.ends_with([' ','.']) {
-        return Err("文件名不能包含路径或特殊符号".into());
+        return Err(crate::i18n::error("main.file_names_cannot_contain_path_separators_or", serde_json::json!({})).into());
     }
     Ok(())
 }
@@ -659,18 +660,18 @@ fn rename_file(source: &std::path::Path, name: &str, expected: &str) -> Result<P
     validate_file_name(name)?;
     let target=source.with_file_name(name);
     if target==source { return Ok(target); }
-    if fs::read_to_string(source).map_err(|e|e.to_string())?!=expected { return Err("文件已被其他程序修改，请重新载入后重命名".into()); }
+    if fs::read_to_string(source).map_err(|e|e.to_string())?!=expected { return Err(crate::i18n::error("main.the_file_was_changed_by_another_application", serde_json::json!({})).into()); }
     #[cfg(target_os="macos")]
     {
         use std::os::unix::ffi::OsStrExt;
         unsafe extern "C" { fn renamex_np(from:*const std::ffi::c_char,to:*const std::ffi::c_char,flags:u32)->i32; }
         let from=std::ffi::CString::new(source.as_os_str().as_bytes()).map_err(|e|e.to_string())?;
         let to=std::ffi::CString::new(target.as_os_str().as_bytes()).map_err(|e|e.to_string())?;
-        if unsafe{renamex_np(from.as_ptr(),to.as_ptr(),4)}!=0 {return Err(format!("无法重命名（同名文件不会被覆盖）：{}",std::io::Error::last_os_error()));}
+        if unsafe{renamex_np(from.as_ptr(),to.as_ptr(),4)}!=0 {return Err(crate::i18n::error("main.could_not_rename_the_file_existing_files", serde_json::json!({"error": (std::io::Error::last_os_error()).to_string()})));}
     }
     #[cfg(not(target_os="macos"))]
     {
-        fs::hard_link(source,&target).map_err(|e|format!("无法重命名（同名文件不会被覆盖）：{e}"))?;
+        fs::hard_link(source,&target).map_err(|e|crate::i18n::error("main.could_not_rename_the_file_existing_files_na0036", serde_json::json!({"error": (e).to_string()})))?;
         if let Err(e)=fs::remove_file(source) {let _=fs::remove_file(&target);return Err(e.to_string());}
     }
     Ok(target)
@@ -681,13 +682,13 @@ struct ResourceWrite { path: String, content: String, mappings: Vec<(String,Stri
 fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::State<Documents>,anchors:tauri::State<DocumentAnchors>,recovery:tauri::State<RecoveryState>,path:String,name:String,expected:String,content:String)->Result<ResourceWrite,String>{
     let _guard=recovery.gate.lock().unwrap();
     let mut documents=docs.0.lock().unwrap();
-    let source=documents.get(window.label()).cloned().flatten().ok_or("请先保存文档")?;
-    if source!=PathBuf::from(path) {return Err("文档路径已变化，请重试".into());}
-    if !anchor_matches(&anchors, window.label(), &source) { return Err("原文件在原位置找不到。请先另存为。".into()); }
+    let source=documents.get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})))?;
+    if source!=PathBuf::from(path) {return Err(crate::i18n::error("main.the_document_path_has_changed_try_again", serde_json::json!({})).into());}
+    if !anchor_matches(&anchors, window.label(), &source) { return Err(crate::i18n::error("main.the_original_file_could_not_be_found_na0038", serde_json::json!({})).into()); }
     validate_file_name(&name)?;
     let target=source.with_file_name(&name);
-    if documents.iter().any(|(label,p)|label!=window.label()&&p.as_ref()==Some(&target)){return Err("该文件已在另一窗口打开".into());}
-    if target!=source && target.exists(){return Err("同名文件已存在，请换一个名称".into());}
+    if documents.iter().any(|(label,p)|label!=window.label()&&p.as_ref()==Some(&target)){return Err(crate::i18n::error("main.this_file_is_already_open_in_another", serde_json::json!({})).into());}
+    if target!=source && target.exists(){return Err(crate::i18n::error("main.a_file_with_this_name_already_exists_na0039", serde_json::json!({})).into());}
     let store=recovery_store(&app)?;
     store.copy_for_rename(&recovery::file_key(&source),&recovery::file_key(&target),&target.to_string_lossy())?;
     let (_,mappings)=resources::rehome(&source,&target,&format!("{expected}\n{content}"))?;
@@ -696,10 +697,10 @@ fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::
     let replaced = if rewritten!=expected {
         #[cfg(target_os = "windows")]
         let old_token = release_anchor(&anchors, window.label());
-        match atomic_save(target.to_str().ok_or("文件路径无效")?,&rewritten,Some(expected.clone())) {
+        match atomic_save(target.to_str().ok_or(crate::i18n::error("main.invalid_file_path", serde_json::json!({})))?,&rewritten,Some(expected.clone())) {
             Ok(file) => Some(file),
             Err(error) => {
-                let rolled_back = rename_file(&target,source.file_name().and_then(|s|s.to_str()).ok_or("文件名无效")?,&expected).is_ok();
+                let rolled_back = rename_file(&target,source.file_name().and_then(|s|s.to_str()).ok_or(crate::i18n::error("main.invalid_file_name", serde_json::json!({})))?,&expected).is_ok();
                 #[cfg(target_os = "windows")]
                 if rolled_back { restore_anchor(&anchors, window.label(), &source, old_token); }
                 #[cfg(not(target_os = "windows"))]
@@ -717,33 +718,33 @@ fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::
 }
 #[tauri::command(async)]
 fn export_bundle(window:tauri::WebviewWindow,docs:tauri::State<Documents>,directory:String,content:String,resources:Vec<String>)->Result<String,String> {
-    let source=docs.0.lock().unwrap().get(window.label()).cloned().flatten().ok_or("请先保存文档")?;
-    resources::export_bundle(&source,std::path::Path::new(&directory),&content,&resources).map(|p|p.to_string_lossy().into_owned())
+    let source=docs.0.lock().unwrap().get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})))?;
+    resources::export_bundle_localized(&source,std::path::Path::new(&directory),&content,&resources,&window.app_handle().state::<i18n::Language>().current()).map(|p|p.to_string_lossy().into_owned())
 }
 #[tauri::command(async)]
 fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>) -> Result<ResourceWrite, String> {
-    if !window.label().starts_with("document-") { return Err("请先打开或新建文档".into()); }
+    if !window.label().starts_with("document-") { return Err(crate::i18n::error("main.open_or_create_a_document_first", serde_json::json!({})).into()); }
     let _guard = recovery.gate.lock().unwrap();
     let old_key = recovery_key(&window, &docs, &recovery);
     let target = match fs::canonicalize(&path) {
         Ok(path) => path,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let path = PathBuf::from(&path);
-            fs::canonicalize(path.parent().ok_or("无法确定保存目录")?).map_err(|e| e.to_string())?.join(path.file_name().ok_or("无效文件名")?)
+            fs::canonicalize(path.parent().ok_or(crate::i18n::error("main.could_not_determine_the_save_folder", serde_json::json!({})))?).map_err(|e| e.to_string())?.join(path.file_name().ok_or(crate::i18n::error("main.invalid_file_name_na0043", serde_json::json!({})))?)
         }
         Err(e) => return Err(e.to_string()),
     };
     let mut documents = docs.0.lock().unwrap();
-    if documents.iter().any(|(label, p)| label != window.label() && p.as_ref() == Some(&target)) { return Err("目标文件已在另一个 Leaf 窗口打开，请切换窗口或选择其他文件。".into()); }
+    if documents.iter().any(|(label, p)| label != window.label() && p.as_ref() == Some(&target)) { return Err(crate::i18n::error("main.the_destination_file_is_already_open_in", serde_json::json!({})).into()); }
     if documents.get(window.label()).and_then(|p| p.as_ref()) == Some(&target)
         && !anchor_matches(&anchors, window.label(), &target) {
-        return Err("原文件在原位置找不到。请先另存为。".into());
+        return Err(crate::i18n::error("main.the_original_file_could_not_be_found_na0038", serde_json::json!({})).into());
     }
     let (content,mappings)=if let Some(source)=documents.get(window.label()).and_then(|p|p.as_ref()).filter(|p|*p!=&target) {
         resources::copy_references(source,&target,&resources)?;
         resources::rehome(source,&target,&content)?
     } else { (content,Vec::new()) };
-    let target_string = target.to_str().ok_or("文件路径不是有效 UTF-8")?;
+    let target_string = target.to_str().ok_or(crate::i18n::error("main.the_file_path_is_not_valid_utf", serde_json::json!({})))?;
     let key = recovery::file_key(&target);
     let store = recovery_store(&app)?;
     // If the local history cannot be protected, do not silently overwrite disk.
@@ -772,7 +773,7 @@ fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tau
     };
     let buffers: Vec<String> = app.state::<OpenBuffers>().0.lock().unwrap().iter().filter(|(label,_)| label.as_str()!=window.label()).map(|(_,content)|content.clone()).collect();
     if let Some(before) = previous {
-        if let Err(error) = resources::collect_removed_protected(&image_store, &target, &before, &content, &buffers) { cleanup_warning=Some(format!("文档已保存，图片清理未完成：{error}")); }
+        if let Err(error) = resources::collect_removed_protected(&image_store, &target, &before, &content, &buffers) { cleanup_warning=Some(crate::i18n::error("main.the_document_was_saved_but_unused_images", serde_json::json!({"error": (error).to_string()}))); }
     }
     documents.insert(window.label().to_owned(), Some(target.clone()));
     drop(documents);
@@ -802,31 +803,31 @@ fn atomic_save(path: &str, content: &str, expected: Option<String>) -> Result<fs
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(e.to_string()),
     };
-    if current != expected { return Err("文件已被其他程序修改，请另存为以保留当前编辑内容。".into()); }
+    if current != expected { return Err(crate::i18n::error("main.the_file_was_changed_by_another_application_na0047", serde_json::json!({})).into()); }
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     let original_identity = if current.is_some() {
         Some(document_location::Anchor::open(&target).map_err(|e| e.to_string())?.token())
     } else { None };
-    let parent = target.parent().ok_or("无法确定保存目录")?;
+    let parent = target.parent().ok_or(crate::i18n::error("main.could_not_determine_the_save_folder", serde_json::json!({})))?;
     let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
     if let Ok(meta) = fs::metadata(&target) {
-        if meta.permissions().readonly() { return Err("文件为只读，请另存为。".into()); }
+        if meta.permissions().readonly() { return Err(crate::i18n::error("main.the_file_is_read_only_use_save", serde_json::json!({})).into()); }
         temp.as_file().set_permissions(meta.permissions()).map_err(|e| e.to_string())?;
     }
     temp.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
     temp.as_file().sync_all().map_err(|e| e.to_string())?;
     // Recheck after preparing the temporary file, reducing the external-write race.
     let latest = match fs::read_to_string(&target) { Ok(text) => Some(text), Err(e) if e.kind() == std::io::ErrorKind::NotFound => None, Err(e) => return Err(e.to_string()) };
-    if latest != current { return Err("保存期间文件被其他程序修改，请另存为。".into()); }
+    if latest != current { return Err(crate::i18n::error("main.the_file_was_changed_by_another_application_na0049", serde_json::json!({})).into()); }
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     if let Some(token) = original_identity {
         if document_location::Anchor::open(&target).map_err(|e| e.to_string())?.token() != token {
-            return Err("保存期间文件位置已变化，请重新定位原文件或另存为。".into());
+            return Err(crate::i18n::error("main.the_file_location_changed_while_saving_locate", serde_json::json!({})).into());
         }
     }
     if expected.is_none() {
         temp.persist_noclobber(&target).map_err(|e| if e.error.kind() == std::io::ErrorKind::AlreadyExists {
-            "保存位置已有同名文件，请选择其他位置。".into()
+            crate::i18n::error("main.a_file_with_this_name_already_exists_na0051", serde_json::json!({})).into()
         } else { e.to_string() })
     } else {
         temp.persist(&target).map_err(|e| e.to_string())
@@ -1012,8 +1013,9 @@ fn main() {
     let builder = builder.manage(OpenRequests::default());
     builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open])
+        .invoke_handler(tauri::generate_handler![i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open])
         .setup(|app| {
+            app.manage(i18n::Language::load(app.path().app_data_dir()?.join("language-v1.json")));
             let recent_path = app.path().app_data_dir()?.join("recent-files-v1.json");
             app.manage(recent::Recent::load(recent_path));
             #[cfg(target_os = "macos")]
@@ -1048,7 +1050,9 @@ fn main() {
             let redo = MenuItem::with_id(handle, "redo", "重做", true, Some("CmdOrCtrl+Shift+Z"))?;
             let cycle_mode = MenuItem::with_id(handle, "cycle-mode", "切换视图模式", true, Some("CmdOrCtrl+R"))?;
             let edit = Submenu::with_items(handle, "编辑", true, &[&undo, &redo, &PredefinedMenuItem::cut(handle, None)?, &PredefinedMenuItem::copy(handle, None)?, &PredefinedMenuItem::paste(handle, None)?, &PredefinedMenuItem::select_all(handle, None)?, &find, &copy_rich, &paste_plain, &cycle_mode])?;
-            app.set_menu(Menu::with_items(handle, &[&app_menu, &file, &edit])?)?;
+            let menu = Menu::with_items(handle, &[&app_menu, &file, &edit])?;
+            app.state::<i18n::Language>().attach_menu(&menu)?;
+            app.set_menu(menu)?;
             app.state::<recent::Recent>().set_menu(handle, recent_menu).map_err(std::io::Error::other)?;
             #[cfg(target_os = "macos")]
             if app.config().identifier == "studio.leaf.editor.dev" {
@@ -1103,16 +1107,16 @@ fn main() {
             else if event.id().as_ref() == "recent-clear-missing" {
                 use tauri_plugin_dialog::DialogExt;
                 let message = match app.state::<recent::Recent>().clear_missing(app) {
-                    Ok(count) => format!("已清理 {count} 条失效记录。"),
-                    Err(error) => format!("清理最近记录失败：{error}"),
+                    Ok(count) => i18n::render(&app.state::<i18n::Language>().current(), "NA0071", &serde_json::json!({"count":count})),
+                    Err(error) => i18n::render(&app.state::<i18n::Language>().current(), "NA0072", &serde_json::json!({"error":error})),
                 };
-                app.dialog().message(message).title("Leaf").show(|_| {});
+                app.dialog().message(i18n::app_error(app, &message)).title("Leaf").show(|_| {});
             }
             else if let Some(id) = event.id().as_ref().strip_prefix("recent-") {
                 use tauri_plugin_dialog::DialogExt;
                 if let Some(entry) = app.state::<recent::Recent>().for_id(id) {
                     if let Err(error) = recent::open(app, &entry.path) {
-                        app.dialog().message(format!("无法打开最近文件：{error}。文件可能已移动或删除；可从“文件 > 最近打开”清理失效记录。"))
+                        app.dialog().message(i18n::render(&app.state::<i18n::Language>().current(), "NA0073", &serde_json::json!({"error":error})))
                             .title("Leaf").show(|_| {});
                     }
                 }

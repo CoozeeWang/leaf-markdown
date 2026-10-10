@@ -1,0 +1,118 @@
+import { chromium, launchOptions, artifactPath } from './browser-runtime.mjs';
+import assert from 'node:assert/strict';
+const browser = await chromium.launch(launchOptions);
+try {
+  const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 900 } });
+  const page = await context.newPage(), errors = [];
+  page.on('pageerror', error => { errors.push(error.message); console.error(error.message); });
+  await page.goto('http://127.0.0.1:41732');
+  await page.locator('#welcomeNewButton').waitFor();
+  const language = async value => page.evaluate(async value => { await (await import('/src/i18n.js')).setLanguagePreference(value); }, value);
+  assert.equal(await page.locator('html').getAttribute('lang'), 'zh-Hans');
+  await language('en');
+  assert.equal(await page.locator('#welcomeNewButton').innerText(), 'New Document');
+  await page.click('#welcomeNewButton');
+  await page.evaluate(async () => {
+    const { EditorView } = await import('/node_modules/@codemirror/view/dist/index.js');
+    window.view = EditorView.findFromDOM(document.querySelector('.cm-content'));
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '# 文档原名\n\n未保存正文。\n\n> [!note]\n> 用户内容\n\n[^1]: 注释内容\n' }, selection: { anchor: 10, head: 12 } });
+  });
+  const before = await page.evaluate(async () => {
+    const { undoDepth, redoDepth } = await import('/node_modules/@codemirror/commands/dist/index.js');
+    return { text: view.state.doc.toString(), selection: view.state.selection.toJSON(), undo: undoDepth(view.state), redo: redoDepth(view.state) };
+  });
+  for (const value of ['zh-Hant-TW', 'zh-Hans', 'en']) {
+    await language(value);
+    const after = await page.evaluate(async () => {
+      const { undoDepth, redoDepth } = await import('/node_modules/@codemirror/commands/dist/index.js');
+      return { text: view.state.doc.toString(), selection: view.state.selection.toJSON(), undo: undoDepth(view.state), redo: redoDepth(view.state) };
+    });
+    assert.deepEqual(after, before, 'Switching keeps document, selection and history');
+    for(const [id,key] of [['imageInsert','writing_tools.insert_image'],['attachmentInsert','writing_tools.insert_attachment'],['linkInsert','writing_tools.insert_or_edit_link']])assert.equal(await page.locator('#'+id).getAttribute('aria-label'),await page.evaluate(async key=>(await import('/src/i18n.js')).t(key),key));
+    assert.equal(await page.locator('#fileName').textContent(), 'Untitled.md', 'An existing name is retained');
+  }
+  await page.click('#appearanceButton');
+  assert.equal(await page.locator('#languageSelect').inputValue(), 'en');
+  assert.ok(await page.locator('#languageSelect').evaluate(el => el.compareDocumentPosition(document.querySelector('#themeSelect')) & Node.DOCUMENT_POSITION_FOLLOWING));
+  await page.selectOption('#languageSelect', 'zh-Hant-TW');
+  await page.waitForFunction(() => document.documentElement.lang === 'zh-Hant-TW');
+  assert.equal(await page.locator('#settingsTab-appearance').innerText(), '外觀與排版');
+  await page.click('#settingsClose');
+  // Search remains usable with names from every language.
+  await page.click('#commandsButton');
+  for (const query of ['撤销', '還原', 'Undo']) {
+    await page.fill('#paletteInput', query);
+    assert.ok(await page.locator('#paletteList button').count());
+  }
+  await page.press('#paletteInput', 'Escape');
+  await page.click('#searchButton');
+  await page.fill('.leaf-search input[name=search]', '用户');
+  await page.click('.leaf-search button[name=toggleReplace]');
+  await page.fill('.leaf-search input[name=replace]', '保留');
+  await language('en');
+  assert.equal(await page.locator('.leaf-search input[name=search]').inputValue(), '用户');
+  assert.equal(await page.locator('.leaf-search input[name=replace]').inputValue(), '保留');
+  assert.equal(await page.locator('.leaf-search input[name=search]').getAttribute('placeholder'), 'Find');
+  // IME delays UI refresh until the composition completes.
+  await page.evaluate(() => document.querySelector('.cm-content').dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })));
+  await language('zh-Hant-TW');
+  assert.equal(await page.locator('.leaf-search input[name=search]').getAttribute('placeholder'), 'Find');
+  await page.evaluate(() => document.querySelector('.cm-content').dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })));
+  assert.equal(await page.locator('.leaf-search input[name=search]').getAttribute('placeholder'), '尋找');
+  // A failed preference write keeps the selected language and reports failure.
+  await page.evaluate(() => { window.originalSetItem = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) { if (key === 'leaf-language') throw Error('synthetic failure'); return originalSetItem.call(this, key, value); }; });
+  await page.click('#appearanceButton');
+  await page.selectOption('#languageSelect', 'en');
+  await page.waitForFunction(() => !document.querySelector('#languageSelect').disabled);
+  assert.equal(await page.locator('#languageSelect').inputValue(), 'zh-Hant-TW');
+  assert.match(await page.locator('#saveStatus').innerText(), /語言/);
+  await page.evaluate(() => { Storage.prototype.setItem = originalSetItem; });
+  await page.click('#settingsClose');
+  const other = await context.newPage(); await other.goto('http://127.0.0.1:41732'); await other.locator('#welcomeNewButton').waitFor();
+  await language('en');
+  await other.waitForFunction(() => document.documentElement.lang === 'en');
+  await other.reload(); await other.locator('#welcomeNewButton').waitFor();
+  assert.equal(await other.locator('html').getAttribute('lang'), 'en');
+  await page.click('.leaf-search button[name=close]');
+  for (const value of ['zh-Hans','zh-Hant-TW','en']) {
+    await language(value);
+    for (const theme of ['light','dark']) for (const size of [{width:1280,height:900},{width:900,height:480}]) {
+      await page.setViewportSize(size);
+      await page.click('#appearanceButton'); await page.selectOption('#themeSelect', theme);
+      assert.ok(await page.locator('#languageSelect').evaluate(el => { const r=el.getBoundingClientRect(); return r.right <= innerWidth && r.bottom <= innerHeight; }));
+      await page.screenshot({ path: artifactPath(`i18n-${value}-${theme}-${size.width}.png`) });
+      await page.click('#settingsClose');
+    }
+  }
+  // Deliberately longer UI copy must leave the language control reachable.
+  await language('en');await page.setViewportSize({width:900,height:480});
+  await page.click('#appearanceButton');
+  await page.evaluate(async()=>{
+    const i18n=await import('/src/i18n.js');window.originalLanguageCopy=i18n.resources.en['settings.language'];
+    i18n.resources.en['settings.language']='Interface language with a deliberately longer label';i18n.refreshTranslations();
+  });
+  assert.equal(await page.locator('[data-i18n="UI0256"], [data-i18n="settings.language"]').textContent(), 'Interface language with a deliberately longer label');
+  assert.ok(await page.locator('#languageSelect').evaluate(el=>{const r=el.getBoundingClientRect();return r.right<=innerWidth&&r.bottom<=innerHeight;}));
+  await page.screenshot({path:artifactPath('i18n-long-copy-small.png')});
+  await page.evaluate(async()=>{const i18n=await import('/src/i18n.js');i18n.resources.en['settings.language']=originalLanguageCopy;i18n.refreshTranslations();});
+  await page.click('#settingsClose');
+  // The export window follows preferences while retaining its frozen source and options.
+  const exportPage = await context.newPage();
+  await exportPage.goto('http://127.0.0.1:41732');
+  await exportPage.evaluate(() => sessionStorage.setItem('i18n-export-fixture', JSON.stringify({source:'---\ntitle: User title\n---\n# User heading\n\n> [!note]\n> User body\n',name:'User filename.md',numbered:false})));
+  await exportPage.goto('http://127.0.0.1:41732/?export=i18n-export-fixture');
+  await exportPage.locator('#print').waitFor();
+  await exportPage.check('#properties'); await exportPage.check('#numbered');
+  await exportPage.setViewportSize({width:720,height:480});
+  for (const value of ['zh-Hans','zh-Hant-TW','en']) {
+    await language(value); await exportPage.waitForFunction(value => document.documentElement.lang === value, value);
+    assert.equal(await exportPage.title(), 'User filename');
+    assert.ok(await exportPage.locator('#properties').isChecked());assert.ok(await exportPage.locator('#numbered').isChecked());
+    assert.match(await exportPage.locator('article').innerText(), /User body/);
+    assert.ok(await exportPage.locator('#print').evaluate(el => {const r=el.getBoundingClientRect();return r.right<=innerWidth&&r.bottom<=innerHeight;}));
+  }
+  assert.equal(await exportPage.locator('.export-toolbar strong').innerText(), 'Export PDF');
+  await exportPage.screenshot({path:artifactPath('i18n-export-en-small.png')});
+  assert.deepEqual(errors, []);
+  console.log('PASS: trilingual selection, history, aliases, IME, persistence failure, cross-window/reload and minimum-window controls');
+} finally { await browser.close(); }
