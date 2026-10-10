@@ -54,13 +54,14 @@ pub fn run(){
     let _:()=msg_send![&*web,evaluateJavaScript:&*script,completionHandler:std::ptr::null::<AnyObject>()];
    } else if title.starts_with("LeafKey ") {
     let shift_tab=title=="LeafKey ShiftTab";
-    let chars=NSString::from_str(if shift_tab{"\u{19}"}else{"\u{7f}"});
-    let plain=NSString::from_str(if shift_tab{"\t"}else{"\u{7f}"});
+    let command_a=title=="LeafKey CmdA";
+    let chars=NSString::from_str(if command_a{"a"}else if shift_tab{"\u{19}"}else{"\u{7f}"});
+    let plain=NSString::from_str(if command_a{"a"}else if shift_tab{"\t"}else{"\u{7f}"});
     let number:isize=msg_send![&*window,windowNumber];
     let event:Retained<AnyObject>=msg_send![class!(NSEvent),keyEventWithType:10usize,
-     location:NSPoint::new(0.,0.),modifierFlags:if shift_tab{1usize<<17}else{0usize},timestamp:0f64,windowNumber:number,
+     location:NSPoint::new(0.,0.),modifierFlags:if command_a{1usize<<20}else if shift_tab{1usize<<17}else{0usize},timestamp:0f64,windowNumber:number,
      context:std::ptr::null::<AnyObject>(),characters:&*chars,charactersIgnoringModifiers:&*plain,
-     isARepeat:false,keyCode:if shift_tab{48u16}else{51u16}];
+     isARepeat:false,keyCode:if command_a{0u16}else if shift_tab{48u16}else{51u16}];
     let responder:Retained<AnyObject>=msg_send![&*window,firstResponder];
     let _:()=msg_send![&*responder,keyDown:&*event];
    } else if title.starts_with("LeafTest ") {

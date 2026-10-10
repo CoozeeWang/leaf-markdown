@@ -26,19 +26,25 @@ window.startTest=async()=>{
   if(!editor.getValue().startsWith(source.slice(0,bodyStart(source))) || !editor.getValue().includes('![native]'))throw Error('image drop destroyed properties');
   editor.setValue(source);
   view.focus();
-  let trusted=false;
   view.contentDOM.addEventListener('keydown',event=>{
-   trusted=event.isTrusted;
+   const trusted=event.isTrusted;
    setTimeout(()=>{
     try {
      if(!trusted)throw Error('expected a native AppKit key');
+     if(event.metaKey && event.key.toLowerCase()==='a') {
+      const range=view.state.selection.main, floor=bodyStart(source);
+      if(range.from!==floor || range.to!==source.length)throw Error('native Cmd+A selected properties');
+      view.dispatch({selection:{anchor:floor}});
+      document.title='LeafKey 0';
+      return;
+     }
      if(editor.getValue()!==source)throw Error('native Backspace destroyed properties');
      if(view.state.selection.main.head!==bodyStart(source))throw Error('native Backspace left the caret inside properties');
-     document.title='LeafTest PASS native WKWebView property boundary, text/image insertion and trusted Backspace';
+     document.title='LeafTest PASS native WKWebView property boundary, Cmd+A and trusted Backspace';
     }catch(error){document.title='LeafTest FAIL '+error.message;}
    },200);
   },true);
-  document.title='LeafKey 0';
+  document.title='LeafKey CmdA';
  }catch(error){document.title='LeafTest FAIL '+error.message;}
 };
 document.title='LeafSource';
