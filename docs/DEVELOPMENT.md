@@ -123,3 +123,13 @@ Finder 服务文字由 macOS 选择语言，不随 Leaf 内语言切换。`src-t
 Windows 安装器与右键入口仍待完成三语打包集成和平台验收；资源中已有这些文案不表示安装器已启用三语。系统对话框和系统注入菜单由操作系统决定语言。
 
 Mac 服务的原始 `NSMenuItem.default` 用作稳定标识，不随翻译改变；实际显示文本由三种 `ServicesMenu.strings` 提供，英文仍为包回退语言。先安装 Leaf 主菜单，再初始化 AppKit Services menu 和已就绪的提供者。实际安装版可显式运行 `node tests/finder-service-native.mjs '使用 Leaf 新建 Markdown 文档' '未命名.md'`（按系统菜单名称与当前 Leaf 语言调整参数）。检查使用临时合成文件夹／文件，确认服务接受请求后确实创建新文件并保留已有样本；生成的文档窗口留供观察。此 API 检查不代替 Finder 点击、冷启动或用户验收。
+
+## Windows 安装器三语
+
+NSIS 配置启用 English、SimpChinese、TradChinese 和语言选择器，直接复用 Tauri 官方语言包；不维护标准安装器文案的副本。英文为不支持系统的回退，官方安装器会记住此前安装语言。Leaf 右键菜单文案从正式语言资源生成：`node scripts/sync-windows-locales.mjs`；漂移检查随 `npm test` 执行。
+
+文件夹及文件夹空白处的右键入口按安装器选择语言写入。应用内换语言不刷新 Windows 右键文字，重新运行安装器选择新语言后更新；安装语言不覆盖应用内偏好。标准 Windows/NSIS 系统文字由官方资源控制，Leaf 定稿只控制自己的入口。当前用户安装、文件关联和 UserChoice 保护沿用。
+
+`Internal test packages` 的 Windows 作业在一次性 runner 中运行 `tests/windows-i18n-installer.ps1`，检查实际 EXE 的三语注册、重装更新、应用语言偏好保护及新文件名，然后运行文件图标/关联/卸载检查。脚本拒绝运行于用户电脑；静默安装使用 MUI2 保存的安装语言驱动，不能代替语言选择器界面实机验收。D 仍需在 Windows 检查选择器、系统匹配/回退、应用三语布局与真实右键操作。
+
+已安装 NSIS 的开发机可运行 `node tests/windows-i18n-nsis.mjs` 编译无操作的合成夹具，检查钩子和三语资源语法。生成 EXE 位于忽略提交的 `test-results`，不执行钩子、不安装 Leaf；不算正式 Windows 包。macOS 编译子进程使用 `en_US.UTF-8`，避免不支持的 locale 造成中文编码错误。

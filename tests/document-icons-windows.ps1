@@ -33,6 +33,11 @@ function Assert-UsableIco([string]$Path) {
 }
 $config = Get-Content "$PSScriptRoot/../src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
 $association = $config.bundle.fileAssociations[0]
+$appData = Join-Path $env:APPDATA $config.identifier
+if (Test-Path $appData) { throw 'Runner already has Leaf data; refusing to overwrite' }
+New-Item -ItemType Directory -Path $appData | Out-Null
+# The synthetic collision test below deliberately uses Simplified Chinese names.
+[IO.File]::WriteAllText((Join-Path $appData 'language-v1.json'), '{"preference":"zh-Hans"}', [Text.UTF8Encoding]::new($false))
 $class = "HKCU:\Software\Classes\$($association.name)"
 if (Test-Path $class) { throw 'Runner already has this file class; refusing to modify it' }
 $installDir = Join-Path $env:RUNNER_TEMP 'Leaf icon check'
@@ -114,6 +119,7 @@ try {
     }
   }
   foreach ($key in $menuKeys) { if (Test-Path $key) { throw 'Uninstaller left a Leaf folder action' } }
+  Remove-Item $appData -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item $newFolder -Recurse -ErrorAction SilentlyContinue
   Remove-Item $sample -ErrorAction SilentlyContinue
 }

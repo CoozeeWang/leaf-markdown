@@ -46,6 +46,12 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm test
+      - name: Windows trilingual interface checks
+        if: inputs.platform == 'windows'
+        shell: bash
+        run: |
+          npx playwright install chromium webkit
+          npm run test:browser -- i18n-browser.mjs
       - name: Native unit tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf
       - name: Build installer
@@ -57,6 +63,7 @@ jobs:
         run: |
           $installer = Get-ChildItem "src-tauri/target/$env:LEAF_BUILD_TARGET/release/bundle/nsis/*.exe" | Select-Object -First 1
           if (!$installer) { throw 'NSIS installer not found' }
+          ./tests/windows-i18n-installer.ps1 -Installer $installer.FullName
           ./tests/document-icons-windows.ps1 -Installer $installer.FullName
       - name: Verify macOS file integration
         if: inputs.platform != 'windows'

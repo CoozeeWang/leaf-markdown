@@ -23,7 +23,7 @@ try {
     await page.waitForFunction(value => document.querySelector('#languageSelect').value === value && !document.querySelector('#languageSelect').disabled, value);
   };
   // macOS WebKit uses Option-Tab to include buttons when full keyboard access is off.
-  await page.locator('#welcomeRecentButton').focus(); await page.keyboard.press(engine.name() === 'webkit' ? 'Alt+Tab' : 'Tab');
+  await page.locator('#welcomeRecentButton').focus(); await page.keyboard.press(engine.name() === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'welcomeLanguageSelect');
   assert.ok(await page.locator('#welcomeLanguageSelect').evaluate(el => el.matches(':focus-visible')));
 
@@ -89,7 +89,7 @@ try {
   await page.keyboard.press('Escape');
   await page.setViewportSize({width:900,height:480});
   await page.screenshot({path:artifactPath('i18n-language-editor-minimum.png')});
-  await page.locator('#appearanceButton').focus(); await page.keyboard.press(engine.name() === 'webkit' ? 'Alt+Tab' : 'Tab');
+  await page.locator('#appearanceButton').focus(); await page.keyboard.press(engine.name() === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'editorLanguageSelect');
   assert.ok(await page.locator('#editorLanguageSelect').evaluate(el => el.matches(':focus-visible')));
   await page.click('#appearanceButton');
