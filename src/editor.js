@@ -563,15 +563,17 @@ function insertWritingTab(view) {
 // poked `body.hidden` alone would be silently undone by the next rebuild.
 function setPropertiesFolded(view, folded) {
   view.dispatch({effects: toggleProperties.of(folded)});
-  const body = view.dom.querySelector('.leaf-property-body');
-  if (body) body.hidden = folded;
   view.requestMeasure();
 }
 
 function focusNewProperty(view) {
   requestAnimationFrame(() => {
     const body = view.dom.querySelector('.leaf-property-body');
-    if (body) { setPropertiesFolded(view, false); body.querySelector('[aria-label="添加文档属性"]')?.click(); }
+    if (body) {
+      setPropertiesFolded(view, false);
+      // Unfolding may replace the widget so CodeMirror can measure its height.
+      view.dom.querySelector('.leaf-property-body [aria-label="添加文档属性"]')?.click();
+    }
   });
 }
 
