@@ -1011,6 +1011,7 @@ async function readRecentFiles() {
   return files.sort((a, b) => b.openedAt - a.openedAt).slice(0, 8);
 }
 
+let recentOpenError = '';
 async function renderRecentFiles() {
   const list = document.querySelector('#recentList');
   list.replaceChildren();
@@ -1040,14 +1041,15 @@ async function renderRecentFiles() {
     }
     button.addEventListener('click', async () => {
       if(desktop){
-        try { await invoke('recent_open',{path:item.path});recentPopover.hidden=true; }
+        try {
+          await invoke('recent_open',{path:item.path});
+          recentPopover.hidden=true;
+          statusNotices.clear(recentOpenError);
+          recentOpenError = '';
+        }
         catch (reason) {
-          list.querySelector('.recent-error')?.remove();
-          const error = document.createElement('span');
-          error.className = 'empty-hint recent-error';
-          error.setAttribute('role', 'alert');
-          error.textContent = `无法打开最近文件：${reason}。文件可能已移动、删除或被替换；可清理失效记录或手动打开。`;
-          list.prepend(error);
+          recentOpenError = `无法打开最近文件：${reason}。文件可能已移动、删除或被替换；可清理失效记录或手动打开。`;
+          setStatus(recentOpenError, 'error');
         }
         return;
       }
@@ -1062,7 +1064,12 @@ async function renderRecentFiles() {
     const clear = document.createElement('button');
     clear.textContent = '清理失效记录';
     clear.addEventListener('click', async () => {
-      try { await invoke('recent_clear_missing'); await renderRecentFiles(); }
+      try {
+        await invoke('recent_clear_missing');
+        await renderRecentFiles();
+        statusNotices.clear(recentOpenError);
+        recentOpenError = '';
+      }
       catch (error) { setStatus(`清理最近记录失败：${error}`, 'error'); }
     });
     list.append(clear);

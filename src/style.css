@@ -993,7 +993,6 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
 .close-document-dialog button { border-radius: var(--ui-radius); min-height: var(--ui-control); }
 .footnote-box textarea, .note-body { font: 400 var(--ui-note-size)/1.7 var(--ui-font); }
 .empty-hint, .note-hint { color: var(--muted); }
-.recent-list .recent-error { color: var(--danger); }
 input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, .note-body::placeholder { color: var(--muted); opacity: 1; }
 .note-card.active .note-hint { color: var(--accent-strong); }
 
