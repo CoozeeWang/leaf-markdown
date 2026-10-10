@@ -219,6 +219,7 @@ fn open_export(app: tauri::AppHandle, window: tauri::WebviewWindow, mut snapshot
     app.state::<Exports>().0.lock().unwrap().insert(label.clone(), snapshot);
     let builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html?export=1".into()))
         .title("导出 PDF — Leaf").inner_size(950., 800.).min_inner_size(720., 480.);
+    let builder = development_window(&app, builder);
     #[cfg(all(target_os = "windows", feature = "native-smoke"))]
     let builder = builder.additional_browser_args(&native_smoke_browser_args());
     let result = builder.build();
@@ -410,6 +411,7 @@ fn create_document(app: tauri::AppHandle, path: Option<String>, recovered: Optio
     if let Some(content) = recovered { app.state::<RecoveryState>().initial.lock().unwrap().insert(label.clone(), content); }
     let builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html?document=1".into()))
         .title("Leaf").inner_size(1100., 800.).min_inner_size(900., 480.);
+    let builder = development_window(&app, builder);
     #[cfg(all(target_os = "windows", feature = "native-smoke"))]
     let builder = builder.additional_browser_args(&native_smoke_browser_args());
     let result = builder.build();
@@ -968,9 +970,35 @@ mod tests {
     }
 }
 
+#[cfg(target_os = "macos")]
+const DEVELOPMENT_STORE: [u8; 16] = *b"leaf-dev-store01";
+
+fn configure_development(config: &mut tauri::utils::config::Config) {
+    if config.identifier != "studio.leaf.editor.dev" { return; }
+    // The pinned Tauri code generator emits a Vec for this array field, and
+    // automatic window construction omits it. Build dev startup windows
+    // explicitly with the builder API, as we do for document/PDF windows.
+    #[cfg(target_os = "macos")]
+    for window in &mut config.app.windows {
+        window.data_store_identifier = Some(DEVELOPMENT_STORE);
+        window.create = false;
+    }
+}
+
+fn development_window<'a>(app: &tauri::AppHandle, builder: tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle>) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle> {
+    if app.config().identifier != "studio.leaf.editor.dev" { return builder; }
+    let builder = builder.title("Leaf Dev");
+    // Dynamic document and PDF windows must use the same isolated store as
+    // the launcher, rather than WKWebView's default production store.
+    #[cfg(target_os = "macos")]
+    let builder = builder.data_store_identifier(DEVELOPMENT_STORE);
+    builder
+}
+
 fn main() {
     #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
+    configure_development(context.config_mut());
     #[cfg(all(target_os = "windows", feature = "native-smoke"))]
     for window in &mut context.config_mut().app.windows {
         window.additional_browser_args = Some(native_smoke_browser_args());
@@ -991,7 +1019,7 @@ fn main() {
             #[cfg(target_os = "macos")]
             native_shortcuts::install(app.handle().clone());
             #[cfg(target_os = "macos")]
-            native_services::install(app.handle().clone());
+            if app.config().identifier != "studio.leaf.editor.dev" { native_services::install(app.handle().clone()); }
             use tauri::menu::{Menu, Submenu, MenuItem, PredefinedMenuItem};
             let handle = app.handle();
             let new = MenuItem::with_id(handle, "new", "新建", true, Some("CmdOrCtrl+N"))?;
@@ -1022,6 +1050,13 @@ fn main() {
             let edit = Submenu::with_items(handle, "编辑", true, &[&undo, &redo, &PredefinedMenuItem::cut(handle, None)?, &PredefinedMenuItem::copy(handle, None)?, &PredefinedMenuItem::paste(handle, None)?, &PredefinedMenuItem::select_all(handle, None)?, &find, &copy_rich, &paste_plain, &cycle_mode])?;
             app.set_menu(Menu::with_items(handle, &[&app_menu, &file, &edit])?)?;
             app.state::<recent::Recent>().set_menu(handle, recent_menu).map_err(std::io::Error::other)?;
+            #[cfg(target_os = "macos")]
+            if app.config().identifier == "studio.leaf.editor.dev" {
+                for config in &app.config().app.windows {
+                    let builder = tauri::WebviewWindowBuilder::from_config(app.handle(), config)?;
+                    development_window(app.handle(), builder).build()?;
+                }
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -1141,5 +1176,24 @@ mod rename_tests {
         assert!(rename_file(&old,"new.md","stale").is_err());
         let new=rename_file(&old,"新名字.md","original").unwrap();
         assert!(!old.exists());assert_eq!(fs::read_to_string(new).unwrap(),"original");
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod development_tests {
+    use super::*;
+
+    #[test]
+    fn isolated_store_is_applied_to_every_startup_window_and_production_is_unchanged() {
+        let mut config: tauri::utils::config::Config = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let production = serde_json::to_value(&config).unwrap();
+        configure_development(&mut config);
+        assert_eq!(serde_json::to_value(&config).unwrap(), production);
+        config.identifier = "studio.leaf.editor.dev".into();
+        config.app.windows.push(config.app.windows[0].clone());
+        configure_development(&mut config);
+        assert!(config.app.windows.iter().all(|window| window.data_store_identifier == Some(DEVELOPMENT_STORE)));
+        assert!(config.app.windows.iter().all(|window| !window.create));
+        assert!(!config.app.windows[0].incognito);
     }
 }
