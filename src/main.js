@@ -58,6 +58,7 @@ const state = {
 
 const iconPaths = {
   ...uiIconPaths,
+  language: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 4 6 4 9s-1 6-4 9c-3-3-4-6-4-9s1-6 4-9Z"/>',
   attach: '<path d="m9 12 6-6a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l9-9"/>',
   link: '<path d="m10 13 4-4m-6 6-2 2a3 3 0 0 1-4-4l5-5a3 3 0 0 1 4 0m2 8a3 3 0 0 0 4 0l5-5a3 3 0 0 0-4-4l-2 2"/>',
   paste: '<path d="M9 4H5v17h14V4h-4"/><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M8 11h8M8 15h6"/>',
@@ -84,6 +85,10 @@ function icon(name, size = 18) {
   return `<svg class="ui-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name]}</svg>`;
 }
 
+function languageControl(id, welcome = false) {
+  return `<span class="language-control ${welcome ? 'welcome-icon' : 'icon-control'}" data-tooltip="${t('UI0256')}" data-i18n-data-tooltip="settings.language">${icon('language', 17)}<select id="${id}" class="quick-language-select" aria-label="${t('UI0256')}" data-i18n-aria-label="settings.language"><option value="system" data-i18n="settings.system_default">${t('UI0257')}</option><option value="zh-Hans">简体中文</option><option value="zh-Hant-TW">繁體中文（台灣）</option><option value="en">English</option></select></span>`;
+}
+
 document.querySelector('#app').innerHTML = shortcutText(`
   <main class="shell welcome-state${desktop && new URLSearchParams(location.search).has('document') ? ' document-loading' : ''}">
     <header class="topbar">
@@ -106,6 +111,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <button id="saveButton" class="icon-control" aria-label="${t("main.save")}" data-i18n-aria-label="main.save" data-tooltip="${t("main.save_s")}" data-i18n-data-tooltip="main.save_s">${icon('save')}</button>
         <button id="exportMenuButton" class="icon-control" aria-label="${t("main.export")}" data-i18n-aria-label="main.export" aria-haspopup="menu" aria-expanded="false" data-tooltip="${t("main.export_e")}" data-i18n-data-tooltip="main.export_e">${icon('export')}</button>
         <button id="appearanceButton" class="icon-control" aria-label="${t("main.settings")}" data-i18n-aria-label="main.settings" aria-haspopup="dialog" aria-expanded="false" data-tooltip="${t("main.settings_ui0021")}" data-i18n-data-tooltip="main.settings_ui0021">${icon('appearance', 16)}</button>
+        ${languageControl('editorLanguageSelect')}
       </div>
     </header>
 
@@ -154,6 +160,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
             <button id="welcomeNewButton" class="welcome-primary">${icon('newfile', 17)}<span>${h("main.new_document")}</span></button>
             <button id="welcomeOpenButton" class="welcome-primary">${icon('open', 17)}<span>${h("main.open_file_ui0060")}</span></button>
             <button id="welcomeRecentButton" class="welcome-icon" aria-label="${t("main.open_recent_ui0061")}" data-i18n-aria-label="main.open_recent_ui0061" data-tooltip="${t("main.open_recent_ui0061")}" data-i18n-data-tooltip="main.open_recent_ui0061">${icon('history', 17)}</button>
+            ${languageControl('welcomeLanguageSelect', true)}
           </div>
         </div>
         <p class="welcome-drop-hint">${h("main.drop_a_markdown_file_to_open_it")}</p>
@@ -1982,16 +1989,21 @@ if (desktop) {
   });
 }
 
-const languageSelect = document.querySelector('#languageSelect');
-languageSelect.value = languagePreference();
-languageSelect.addEventListener('change', async () => {
-  languageSelect.disabled = true;
-  try { await setLanguagePreference(languageSelect.value); }
-  catch { setStatus(translatedMessage('UI0261'), 'error'); }
-  finally { languageSelect.value = languagePreference(); languageSelect.disabled = false; }
-});
+const languageSelects = [...document.querySelectorAll('#languageSelect, .quick-language-select')];
+for (const select of languageSelects) {
+  select.value = languagePreference();
+  select.addEventListener('pointerdown', () => select.parentElement.setAttribute('data-focus-source', 'pointer'));
+  select.addEventListener('keydown', () => select.parentElement.removeAttribute('data-focus-source'));
+  select.addEventListener('blur', () => select.parentElement.removeAttribute('data-focus-source'));
+  select.addEventListener('change', async () => {
+    languageSelects.forEach(control => { control.disabled = true; });
+    try { await setLanguagePreference(select.value); }
+    catch { setStatus(translatedMessage('UI0261'), 'error'); }
+    finally { languageSelects.forEach(control => { control.value = languagePreference(); control.disabled = false; }); }
+  });
+}
 onLanguageChange(() => {
-  languageSelect.value = languagePreference();
+  languageSelects.forEach(control => { control.value = languagePreference(); });
   updateDocumentChrome(); updateModeControl(); updateHeadingControl(editor.headingLevel());
   if (!palette.hidden) renderPalette(paletteInput.value);
   for (const el of document.querySelectorAll('[data-callout-label]')) el.textContent = calloutLabels[el.dataset.calloutLabel];

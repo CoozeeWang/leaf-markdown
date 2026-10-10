@@ -1115,3 +1115,13 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .status-notice button:hover { background: var(--accent-soft); }
 .statusbar > #cursorStatus, .statusbar > #stats { padding-block: 5px; }
 .statusbar > #stats { text-align: right; }
+
+/* Native selects retain keyboard and assistive support behind the globe. */
+.language-control { position: relative; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; box-sizing: border-box; }
+.topbar .language-control { width: var(--ui-control); height: var(--ui-control); border: 1px solid var(--line); border-radius: var(--ui-radius); }
+.language-control .ui-icon { pointer-events: none; }
+.language-control select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font: 400 var(--ui-size)/normal var(--ui-font); }
+.language-control option { font: 400 var(--ui-size)/normal var(--ui-font); }
+.language-control:has(select:focus-visible):not([data-focus-source="pointer"]) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.language-control:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: var(--accent-soft); }
+.language-control:has(select:disabled) { opacity: .5; }

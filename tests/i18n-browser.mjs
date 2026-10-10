@@ -7,8 +7,17 @@ try {
   page.on('pageerror', error => { errors.push(error.message); console.error(error.message); });
   await page.goto('http://127.0.0.1:41732');
   await page.locator('#welcomeNewButton').waitFor();
-  const language = async value => page.evaluate(async value => { await (await import('/src/i18n.js')).setLanguagePreference(value); }, value);
+  const language = async value => {
+    const id = await page.locator('#welcomeScreen').isVisible() ? '#welcomeLanguageSelect' : '#editorLanguageSelect';
+    await page.selectOption(id, value);
+    await page.waitForFunction(value => document.querySelector('#languageSelect').value === value && !document.querySelector('#languageSelect').disabled, value);
+  };
+  await page.locator('#welcomeRecentButton').focus(); await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'welcomeLanguageSelect');
+  assert.ok(await page.locator('#welcomeLanguageSelect').evaluate(el => el.matches(':focus-visible')));
+
   assert.equal(await page.locator('html').getAttribute('lang'), 'zh-Hans');
+  await page.screenshot({path:artifactPath('i18n-language-welcome.png')});
   await page.evaluate(() => document.dispatchEvent(new CustomEvent('leaf-image-reveal-failed', {detail: 'Synthetic system diagnosis'})));
   await page.waitForFunction(() => document.querySelector('#statusAnnouncement').textContent.length > 0);
   await language('en');
@@ -29,6 +38,7 @@ try {
   });
   for (const value of ['zh-Hant-TW', 'zh-Hans', 'en']) {
     await language(value);
+    for (const id of ['languageSelect', 'editorLanguageSelect', 'welcomeLanguageSelect']) assert.equal(await page.locator('#'+id).inputValue(), value);
     const after = await page.evaluate(async () => {
       const { undoDepth, redoDepth } = await import('/node_modules/@codemirror/commands/dist/index.js');
       return { text: view.state.doc.toString(), selection: view.state.selection.toJSON(), undo: undoDepth(view.state), redo: redoDepth(view.state) };
@@ -37,6 +47,11 @@ try {
     for(const [id,key] of [['imageInsert','writing_tools.insert_image'],['attachmentInsert','writing_tools.insert_attachment'],['linkInsert','writing_tools.insert_or_edit_link']])assert.equal(await page.locator('#'+id).getAttribute('aria-label'),await page.evaluate(async key=>(await import('/src/i18n.js')).t(key),key));
     assert.equal(await page.locator('#fileName').textContent(), 'Untitled.md', 'An existing name is retained');
   }
+  await page.setViewportSize({width:900,height:480});
+  await page.screenshot({path:artifactPath('i18n-language-editor-minimum.png')});
+  await page.locator('#appearanceButton').focus(); await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'editorLanguageSelect');
+  assert.ok(await page.locator('#editorLanguageSelect').evaluate(el => el.matches(':focus-visible')));
   await page.click('#appearanceButton');
   assert.equal(await page.locator('#languageSelect').inputValue(), 'en');
   assert.ok(await page.locator('#languageSelect').evaluate(el => el.compareDocumentPosition(document.querySelector('#themeSelect')) & Node.DOCUMENT_POSITION_FOLLOWING));
@@ -70,7 +85,7 @@ try {
   await page.click('#appearanceButton');
   await page.selectOption('#languageSelect', 'en');
   await page.waitForFunction(() => !document.querySelector('#languageSelect').disabled);
-  assert.equal(await page.locator('#languageSelect').inputValue(), 'zh-Hant-TW');
+  for (const id of ['languageSelect', 'editorLanguageSelect', 'welcomeLanguageSelect']) assert.equal(await page.locator('#'+id).inputValue(), 'zh-Hant-TW');
   assert.match(await page.locator('#saveStatus').innerText(), /語言/);
   await page.evaluate(() => { Storage.prototype.setItem = originalSetItem; });
   await page.click('#settingsClose');
@@ -79,6 +94,20 @@ try {
   await other.waitForFunction(() => document.documentElement.lang === 'en');
   await other.reload(); await other.locator('#welcomeNewButton').waitFor();
   assert.equal(await other.locator('html').getAttribute('lang'), 'en');
+  assert.equal(await other.locator('#welcomeLanguageSelect').inputValue(), 'en');
+  for (const value of ['zh-Hans','zh-Hant-TW','en']) {
+    await other.selectOption('#welcomeLanguageSelect',value);
+    await other.waitForFunction(value => document.documentElement.lang === value,value);
+    for (const theme of ['light','dark']) {
+      await other.setViewportSize({width:900,height:480});
+      await other.evaluate(theme => { document.documentElement.dataset.theme = theme; },theme);
+      assert.ok(await other.locator('#welcomeLanguageSelect').evaluate(el => { const r=el.getBoundingClientRect(), recent=document.querySelector('#welcomeRecentButton').getBoundingClientRect(); return r.left >= recent.right && r.right <= innerWidth && r.bottom <= innerHeight && r.width >= 40 && el.parentElement.getBoundingClientRect().width === 44; }));
+    }
+  }
+  await other.selectOption('#welcomeLanguageSelect','system');
+  await page.waitForFunction(() => document.querySelector('#editorLanguageSelect').value === 'system');
+  assert.equal(await other.locator('#languageSelect').inputValue(),'system');
+
   await page.click('.leaf-search button[name=close]');
   for (const value of ['zh-Hans','zh-Hant-TW','en']) {
     await language(value);
@@ -86,6 +115,7 @@ try {
       await page.setViewportSize(size);
       await page.click('#appearanceButton'); await page.selectOption('#themeSelect', theme);
       assert.ok(await page.locator('#languageSelect').evaluate(el => { const r=el.getBoundingClientRect(); return r.right <= innerWidth && r.bottom <= innerHeight; }));
+      assert.ok(await page.locator('#editorLanguageSelect').evaluate(el => { const r=el.getBoundingClientRect(), settings=document.querySelector('#appearanceButton').getBoundingClientRect(); return r.left >= settings.right && r.right <= innerWidth && r.bottom <= innerHeight && r.width >= 28; }));
       await page.screenshot({ path: artifactPath(`i18n-${value}-${theme}-${size.width}.png`) });
       await page.click('#settingsClose');
     }
