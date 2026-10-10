@@ -113,6 +113,10 @@ try {
  await native.click('#welcomeRecentButton');
  await native.locator('#recentList button').first().click();
  assert.ok(await native.getByRole('alert').innerText().then(text=>text.includes('文件可能已移动、删除或被替换')));
+ assert.ok(await native.getByRole('alert').evaluate(el=>{
+   const probe=document.createElement('span');probe.style.color='var(--danger)';document.body.append(probe);
+   const matches=getComputedStyle(el).color===getComputedStyle(probe).color;probe.remove();return matches;
+ }), 'missing recent file uses the danger color');
  await native.getByRole('button',{name:'清理失效记录'}).click();
  assert.equal(await native.locator('#recentList button').count(),0);
  await native.getByRole('button',{name:'新建文档',exact:true}).click();
