@@ -121,3 +121,5 @@ Windows 安装包通过 `windows-hooks.nsh` 注册当前用户的文件夹／文
 Finder 服务文字由 macOS 选择语言，不随 Leaf 内语言切换。`src-tauri/locales/` 的 `en`、`zh-Hans`、`zh-Hant` 三种 `ServicesMenu.strings` 从共享语言资源生成；繁中采用台湾用语，英文为包默认语言。修改共享服务文案后运行 `node scripts/sync-macos-locales.mjs`；Mac 构建前检查资源漂移，实际包检查核对三语资源和服务声明。系统服务列表可能缓存旧名称；覆盖安装后如未更新，先退出并重新打开 Finder，必要时注销再登录，不修改系统语言来测试，也不清空全局服务设置。
 
 Windows 安装器与右键入口仍待完成三语打包集成和平台验收；资源中已有这些文案不表示安装器已启用三语。系统对话框和系统注入菜单由操作系统决定语言。
+
+Mac 服务的原始 `NSMenuItem.default` 用作稳定标识，不随翻译改变；实际显示文本由三种 `ServicesMenu.strings` 提供，英文仍为包回退语言。先安装 Leaf 主菜单，再初始化 AppKit Services menu 和已就绪的提供者。实际安装版可显式运行 `node tests/finder-service-native.mjs '使用 Leaf 新建 Markdown 文档' '未命名.md'`（按系统菜单名称与当前 Leaf 语言调整参数）。检查使用临时合成文件夹／文件，确认服务接受请求后确实创建新文件并保留已有样本；生成的文档窗口留供观察。此 API 检查不代替 Finder 点击、冷启动或用户验收。
