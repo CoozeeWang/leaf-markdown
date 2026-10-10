@@ -2,6 +2,7 @@
   "bundle": {
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
+    "resources": { "icons/document-icon.ico": "document-icon.ico" },
     "windows": { "nsis": { "installMode": "currentUser", "installerHooks": "windows-hooks.nsh" } }
   }
 }

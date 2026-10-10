@@ -31,7 +31,7 @@
       <key>LSHandlerRank</key>
       <string>Default</string>
       <key>CFBundleTypeIconFile</key>
-      <string>icon.icns</string>
+      <string>document-icon.icns</string>
     </dict>
   </array>
 </dict>
