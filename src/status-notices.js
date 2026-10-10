@@ -62,6 +62,13 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
   render();
   return {
     show,
+    clear(message) {
+      if (!message || persistent?.text !== message) return;
+      clearTimeout(announcementTimer);
+      announcement.textContent = '';
+      persistent = null;
+      render();
+    },
     reset() {
       clearTimeout(timer);
       clearTimeout(announcementTimer);

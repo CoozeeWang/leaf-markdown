@@ -109,12 +109,27 @@ try {
  assert.ok(await native.locator('#recentPopover').evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}));
  await native.locator('#recentList button').nth(1).click();
  await native.waitForFunction(()=>nativeCalls.some(c=>c.command==='recent_open'&&c.args.path==='/Users/test/项目 B/同名.md'));
- await native.evaluate(()=>{window.missingPath='/Users/test/项目 A/同名.md';});
+ await native.evaluate(()=>{
+   window.nativeRecent=Array.from({length:8},(_,index)=>({name:`样本 ${index}.md`,path:`/Users/test/样本/${index}.md`}));
+   window.missingPath='/Users/test/样本/7.md';
+ });
  await native.click('#welcomeRecentButton');
- await native.locator('#recentList button').first().click();
- assert.ok(await native.getByRole('alert').innerText().then(text=>text.includes('文件可能已移动、删除或被替换')));
+ await native.locator('#recentList button').nth(7).click();
+ assert.ok(await native.locator('#recentPopover').evaluate(el=>el.scrollTop>0),'failed file is reached after scrolling the recent list');
+ const recentError=native.locator('#statusNotice[data-kind="error"] #saveStatus');
+ assert.ok(await recentError.innerText().then(text=>text.includes('文件可能已移动、删除或被替换')));
+ assert.ok(await recentError.evaluate(el=>{
+   const probe=document.createElement('span');probe.style.color='var(--danger)';document.body.append(probe);
+   const matches=getComputedStyle(el).color===getComputedStyle(probe).color;probe.remove();return matches;
+ }), 'missing recent file uses the danger color');
+ assert.ok(await native.locator('#statusNotice').evaluate(el=>{
+   const rect=el.getBoundingClientRect();return rect.top>=0&&rect.bottom<=innerHeight&&rect.height>0;
+ }), 'error stays visible in the main window while the recent list is scrolled');
+ assert.equal(await native.locator('#recentList .recent-error').count(),0,'error is not inside the scrollable list');
+ await native.screenshot({path:artifactPath('leaf-recent-error-scrolled.png')});
  await native.getByRole('button',{name:'清理失效记录'}).click();
  assert.equal(await native.locator('#recentList button').count(),0);
+ assert.equal(await native.locator('#statusNotice').isVisible(),false,'clearing the invalid entry removes its error');
  await native.getByRole('button',{name:'新建文档',exact:true}).click();
  await native.waitForFunction(()=>nativeCalls.some(c=>c.command==='open_document'&&c.args.path==='/Users/test/新建.md'));
  assert.ok(await native.evaluate(()=>nativeCalls.some(c=>c.command==='new_document'&&c.args.path==='/Users/test/新建.md')));

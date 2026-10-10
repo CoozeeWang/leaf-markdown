@@ -127,13 +127,13 @@ class PropertySource extends WidgetType {
 }
 
 class StructuredBlock extends WidgetType {
-  constructor(block, raw, layout, selected = false) { super(); this.block = block; this.raw = raw; this.layout = layout; this.selected = selected; }
+  constructor(block, raw, layout, selected = false, folded = false) { super(); this.block = block; this.raw = raw; this.layout = layout; this.selected = selected; this.folded = folded; }
   get estimatedHeight() { return this.layout.height; }
-  eq(other) { return this.block.from === other.block.from && this.raw === other.raw && this.selected === other.selected; }
+  eq(other) { return this.block.from === other.block.from && this.raw === other.raw && this.selected === other.selected && this.folded === other.folded; }
   updateDOM(dom, view) {
     dom = dom.firstElementChild;
     // Keep the focused control alive across source transactions (including IME).
-    if (dom._widget.block.kind !== this.block.kind) return false;
+    if (dom._widget.block.kind !== this.block.kind || dom._widget.folded !== this.folded) return false;
     if (this.block.kind === 'yaml' && dom._widget.block.fields.length !== this.block.fields.length) return false;
     if (this.block.kind === 'yaml' && this.block.fields.some((f,i) => {
       const old=dom._widget.block.fields[i];
@@ -312,10 +312,8 @@ class StructuredBlock extends WidgetType {
     body.hidden = view.state.field(propertiesFolded);
     root.firstChild.prepend(button('折叠或展开文档属性', '⌄', () => {
       const folded = !view.state.field(propertiesFolded);
-      body.hidden = folded;
-      // The fold lives in state so it outlives this widget; recording it here
-      // rather than rebuilding decorations keeps the click from disturbing the
-      // caret and the scroll position.
+      // The fold lives in state so it outlives this widget. Rebuilding the
+      // widget lets CodeMirror measure its new height and align selections.
       view.dispatch({effects: toggleProperties.of(folded)});
       view.requestMeasure();
     }));
@@ -484,7 +482,7 @@ function build(state, name, sources, remembered = [], previousLayouts = new Map(
     const selected = state.selection.ranges.some(r => !r.empty && r.from < block.to && r.to > block.from);
     if (sources.has(block.from) || selected && block.kind !== 'callout') {
       ranges.push(Decoration.widget({ widget: new SourceReturn(block.from), block: true, side: -1 }).range(block.from));
-    } else ranges.push(Decoration.replace({ widget: new StructuredBlock(block, source.slice(block.from, block.to), layout, selected), block: true }).range(block.from, block.to));
+    } else ranges.push(Decoration.replace({ widget: new StructuredBlock(block, source.slice(block.from, block.to), layout, selected, block.kind === 'yaml' && state.field(propertiesFolded, false)), block: true }).range(block.from, block.to));
   }
   return { name, sources, model, layouts, yamlSource, decorations: Decoration.set(ranges, true) };
 }
