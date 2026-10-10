@@ -22,6 +22,8 @@ import { uiIcon, uiIconPaths } from './ui-icons.js';
 import {readingFolding} from './outline-folding.js';
 
 const welcome = '# Leaf\n\n轻量 Markdown 编辑器。\n';
+const leafDev = typeof __LEAF_DESKTOP_DEV__ !== 'undefined' && __LEAF_DESKTOP_DEV__ && desktop;
+const leafName = leafDev ? 'Leaf Dev' : 'Leaf';
 
 const state = {
   fileHandle: null,
@@ -86,7 +88,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
     <header class="topbar">
       <div class="brand">
         <img class="brand-mark" src="/leaf-icon.png" alt="" aria-hidden="true" />
-        <span class="brand-copy"><strong>Leaf</strong><small>Markdown Editor</small></span>
+        <span class="brand-copy"><strong>${leafName}</strong><small>${leafDev ? '开发模式 · 使用文档副本' : 'Markdown Editor'}</small></span>
       </div>
       <div class="topbar-actions">
         <div class="document-controls">
@@ -146,7 +148,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <button id="welcomeSettings" class="welcome-settings icon-control" aria-label="设置" data-tooltip="设置">${icon('appearance', 16)}</button>
         <div class="welcome-card">
           <img class="welcome-mark" src="/leaf-icon.png" alt="" aria-hidden="true" />
-          <h1 class="welcome-title"><span class="welcome-name">Leaf</span><span class="welcome-description">轻量 Markdown 编辑器</span></h1>
+          <h1 class="welcome-title"><span class="welcome-name">${leafName}</span><span class="welcome-description">${leafDev ? "开发模式 · 使用文档副本" : "轻量 Markdown 编辑器"}</span></h1>
           <div class="welcome-actions">
             <button id="welcomeNewButton" class="welcome-primary">${icon('newfile', 17)}<span>新建文档</span></button>
             <button id="welcomeOpenButton" class="welcome-primary">${icon('open', 17)}<span>打开文件</span></button>
@@ -278,7 +280,7 @@ const outlineList = document.querySelector('#outlineList');
 // undefined, which the typeof guards absorb.
 const leafVersion = typeof __LEAF_VERSION__ === 'string' ? __LEAF_VERSION__ : '';
 const leafBuild = typeof __LEAF_BUILD__ === 'string' ? __LEAF_BUILD__ : '';
-document.querySelector('#settingsVersion').textContent = `Leaf ${leafVersion}`.trim();
+document.querySelector('#settingsVersion').textContent = `${leafName} ${leafVersion}`.trim();
 const settingsBuild = document.querySelector('#settingsBuild');
 settingsBuild.textContent = leafBuild ? `构建 ${leafBuild}` : '';
 settingsBuild.hidden = !leafBuild;
@@ -330,8 +332,8 @@ function updateDocumentChrome() {
   dirtyElement.textContent = changed ? '●' : '';
   dirtyElement.hidden = !changed;
   document.title = shell.classList.contains('welcome-state')
-    ? 'Leaf — Markdown Editor'
-    : `${changed ? '• ' : ''}${state.fileName} — Leaf`;
+    ? `${leafName} — Markdown Editor`
+    : `${changed ? '• ' : ''}${state.fileName} — ${leafName}`;
   statsElement.textContent = `${state.content.length} 字符 · ${state.content.split(/\s+/).filter(Boolean).length} 词`;
   desktopTitle(document.title);
   editor.setFileName(state.fileName);

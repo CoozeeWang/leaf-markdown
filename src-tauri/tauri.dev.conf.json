@@ -1,0 +1,11 @@
+{
+  "productName": "Leaf Dev",
+  "identifier": "studio.leaf.editor.dev",
+  "app": {
+    "windows": [{
+      "label": "main", "title": "Leaf Dev", "width": 1100, "height": 800,
+      "minWidth": 900, "minHeight": 480
+    }]
+  },
+  "bundle": { "active": false, "fileAssociations": [] }
+}

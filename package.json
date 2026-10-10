@@ -21,7 +21,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "desktop:dev": "tauri dev",
+    "desktop:dev": "node scripts/desktop-dev.mjs",
     "desktop:build": "node scripts/desktop-build.mjs"
   },
   "dependencies": {

@@ -30,6 +30,7 @@ function buildStamp() {
 
 export default defineConfig({
   define: {
+    __LEAF_DESKTOP_DEV__: JSON.stringify(process.env.LEAF_DESKTOP_DEV === '1'),
     __LEAF_VERSION__: JSON.stringify(pkg.version),
     __LEAF_BUILD__: JSON.stringify(buildStamp()),
   },
