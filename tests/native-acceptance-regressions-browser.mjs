@@ -4,7 +4,7 @@ import {webkit} from 'playwright';
 for(const engine of ['chrome','webkit']) {
  const browser=await(engine==='webkit'?webkit.launch({headless:true}):chromium.launch(launchOptions));
  try {
-  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const page=await browser.newPage({locale:'zh-CN'}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:41732');await page.click('#welcomeNewButton');
   await page.locator('.cm-content').fill('第一段正文');await page.keyboard.press('End');
   const copy=await page.evaluate(async()=>{
@@ -33,12 +33,20 @@ for(const engine of ['chrome','webkit']) {
   await page.keyboard.type('---',{delay:30});
   await page.getByLabel('新属性名',{exact:true}).waitFor();
   assert.ok((await page.locator('.cm-content').innerText()).includes('正文标题'));
+  // Finish a real field before testing source/view transitions. Empty pending
+  // property forms are intentionally discarded on blur, including in WebKit.
+  await page.getByLabel('新属性名',{exact:true}).fill('示例属性');
+  await page.getByLabel('新属性值',{exact:true}).fill('示例值');
+  await page.locator('.brand').click();
+  assert.equal(await page.getByLabel('示例属性',{exact:true}).inputValue(),'示例值');
   await page.getByRole('button',{name:'编辑此块 Markdown 源码',exact:true}).click();
   await page.getByRole('button',{name:'返回实时渲染',exact:true}).click();
   assert.ok(await page.getByRole('button',{name:'添加文档属性',exact:true}).isVisible());
   await page.getByRole('button',{name:'编辑此块 Markdown 源码',exact:true}).click();
   await page.getByLabel('文档属性源码',{exact:true}).fill('');
-  await page.getByRole('button',{name:'返回实时渲染',exact:true}).click();
+  // Empty property source removes the whole block immediately, including its
+  // return button. Verify the surviving body rather than clicking a removed UI.
+  assert.equal(await page.getByLabel('文档属性源码',{exact:true}).count(),0);
   assert.ok((await page.locator('.cm-content').innerText()).includes('正文标题'));
   assert.deepEqual(errors,[]);
   console.log(`PASS ${engine}: empty copy/cut, export shortcut, typed properties and separator deletion`);
@@ -46,7 +54,7 @@ for(const engine of ['chrome','webkit']) {
 }
 const browser=await chromium.launch(launchOptions);
 try {
- const page=await browser.newPage();await page.addInitScript(()=>{
+ const page=await browser.newPage({locale:'zh-CN'});await page.addInitScript(()=>{
   window.isTauri=true;window.calls=[];window.chosenPath=null;
   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},transformCallback:()=>1,invoke:async(cmd,args)=>{
       if (cmd === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};calls.push({cmd,args});if(cmd==='plugin:dialog|save')return chosenPath;if(cmd==='recovery_list')return [];if(cmd==='recovery_retention')return 30;return null;}};
