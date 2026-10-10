@@ -4,6 +4,9 @@ import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 
+// Preserve the original Services identity across upgrades. This is a lookup
+// key, not the displayed language; en.lproj supplies the English fallback.
+export const serviceIdentity = '使用 Leaf 新建 Markdown 文档';
 export const serviceKey = 'Info.create_a_markdown_document_with_leaf';
 export const macLocales = {en: 'en', 'zh-Hans': 'zh-Hans', 'zh-Hant': 'zh-Hant-TW'};
 export function serviceStrings(key, value) {
@@ -11,9 +14,7 @@ export function serviceStrings(key, value) {
 }
 
 export async function syncMacLocales({check = false} = {}) {
-  const english = JSON.parse(await readFile(new URL('../src/locales/en.json', import.meta.url), 'utf8'));
-  const key = english[serviceKey];
-  if (typeof key !== 'string' || !key.trim()) throw new Error('Missing English Finder service name');
+  const key = serviceIdentity;
   for (const [bundleLocale, resourceLocale] of Object.entries(macLocales)) {
     const resources = JSON.parse(await readFile(new URL(`../src/locales/${resourceLocale}.json`, import.meta.url), 'utf8'));
     const value = resources[serviceKey];

@@ -52,8 +52,10 @@ pub fn install(app: tauri::AppHandle) {
     unsafe {
         let provider: Retained<AnyObject> = msg_send![provider_class(), new];
         let application: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+        // AppKit may deliver a request inside setServicesProvider. Keep the
+        // handler ready before registration, without holding a RefCell borrow.
+        PROVIDER.with(|slot| *slot.borrow_mut() = Some((provider.clone(), app)));
         let _: () = msg_send![application, setServicesProvider: &*provider];
-        PROVIDER.with(|slot| *slot.borrow_mut() = Some((provider, app)));
     }
 }
 

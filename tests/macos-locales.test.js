@@ -1,13 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {macLocales, serviceKey, serviceStrings, syncMacLocales} from '../scripts/sync-macos-locales.mjs';
+import {macLocales, serviceIdentity, serviceKey, serviceStrings, syncMacLocales} from '../scripts/sync-macos-locales.mjs';
 
 test('Finder service resources and package declarations stay aligned with approved copy', async () => {
   await syncMacLocales({check: true});
-  const english = JSON.parse(await readFile(new URL('../src/locales/en.json', import.meta.url), 'utf8'));
+  // macOS can retain this pre-i18n identity after an application upgrade.
+  // Translating the identity breaks cached requests, even if the menu remains.
+  assert.equal(serviceIdentity, '使用 Leaf 新建 Markdown 文档');
   const plist = await readFile(new URL('../src-tauri/Info.plist', import.meta.url), 'utf8');
-  assert.ok(plist.includes(`<key>default</key><string>${english[serviceKey]}</string>`));
+  assert.ok(plist.includes(`<key>default</key><string>${serviceIdentity}</string>`));
   assert.match(plist, /<key>CFBundleDevelopmentRegion<\/key><string>en<\/string>/);
   const config = JSON.parse(await readFile(new URL('../src-tauri/tauri.macos.conf.json', import.meta.url), 'utf8'));
   for (const locale of Object.keys(macLocales)) {
