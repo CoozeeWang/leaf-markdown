@@ -1,21 +1,56 @@
 import { chromium, launchOptions, artifactPath } from './browser-runtime.mjs';
 import assert from 'node:assert/strict';
-const browser = await chromium.launch(launchOptions);
+import { webkit } from 'playwright';
+for (const [engine, options] of [[chromium, launchOptions], [webkit, {headless: true}]]) {
+const browser = await engine.launch(options);
 try {
   const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 900 } });
   const page = await context.newPage(), errors = [];
   page.on('pageerror', error => { errors.push(error.message); console.error(error.message); });
   await page.goto('http://127.0.0.1:41732');
   await page.locator('#welcomeNewButton').waitFor();
+  const chooseQuickLanguage = async (target, id, value) => {
+    await target.click(id);
+    assert.ok(await target.locator('#languagePopover').isVisible(), 'First click opens the language menu');
+    assert.equal(await target.locator(id).getAttribute('aria-expanded'), 'true');
+    await target.click(`#languagePopover [data-language="${value}"]`);
+    await target.waitForFunction(() => !document.querySelector('#languageSelect').disabled);
+    assert.ok(await target.locator('#languagePopover').isHidden());
+  };
   const language = async value => {
     const id = await page.locator('#welcomeScreen').isVisible() ? '#welcomeLanguageSelect' : '#editorLanguageSelect';
-    await page.selectOption(id, value);
+    await chooseQuickLanguage(page, id, value);
     await page.waitForFunction(value => document.querySelector('#languageSelect').value === value && !document.querySelector('#languageSelect').disabled, value);
   };
-  await page.locator('#welcomeRecentButton').focus(); await page.keyboard.press('Tab');
+  // macOS WebKit uses Option-Tab to include buttons when full keyboard access is off.
+  await page.locator('#welcomeRecentButton').focus(); await page.keyboard.press(engine.name() === 'webkit' ? 'Alt+Tab' : 'Tab');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'welcomeLanguageSelect');
   assert.ok(await page.locator('#welcomeLanguageSelect').evaluate(el => el.matches(':focus-visible')));
 
+  const checkClicks = async id => {
+    for (const position of [{x:3,y:3}, undefined, {x:20,y:20}]) {
+      await page.locator(id).click(position ? {position} : {});
+      assert.ok(await page.locator('#languagePopover').isVisible(), 'A single pointer click opens the menu');
+      await page.keyboard.press('Escape');
+      assert.equal(await page.evaluate(() => document.activeElement.id), id.slice(1));
+      await page.locator(id).click(); await page.locator(id).click();
+      assert.ok(await page.locator('#languagePopover').isHidden(), 'Second click closes without reopening');
+    }
+    await page.locator(id).click();
+    assert.ok(await page.locator('#languagePopover').evaluate(el => {const r=el.getBoundingClientRect();return r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight;}));
+    await page.mouse.click(5, (await page.evaluate(() => innerHeight)) - 1);
+    assert.ok(await page.locator('#languagePopover').isHidden(), 'Clicking outside dismisses the menu');
+    await page.locator(id).focus(); await page.keyboard.press('Enter');
+    await page.keyboard.press('End');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.language), 'en');
+    await page.keyboard.press('Home');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.language), 'system');
+    await page.keyboard.press('Escape');
+  };
+  await checkClicks('#welcomeLanguageSelect');
+  await page.click('#welcomeLanguageSelect');
+  await page.screenshot({path:artifactPath(`i18n-language-menu-welcome-${engine.name()}.png`)});
+  await page.keyboard.press('Escape');
   assert.equal(await page.locator('html').getAttribute('lang'), 'zh-Hans');
   await page.screenshot({path:artifactPath('i18n-language-welcome.png')});
   await page.evaluate(() => document.dispatchEvent(new CustomEvent('leaf-image-reveal-failed', {detail: 'Synthetic system diagnosis'})));
@@ -38,7 +73,7 @@ try {
   });
   for (const value of ['zh-Hant-TW', 'zh-Hans', 'en']) {
     await language(value);
-    for (const id of ['languageSelect', 'editorLanguageSelect', 'welcomeLanguageSelect']) assert.equal(await page.locator('#'+id).inputValue(), value);
+    for (const id of ['languageSelect', 'editorLanguageSelect', 'welcomeLanguageSelect']) assert.equal(await page.locator('#'+id).evaluate(el => el.value), value);
     const after = await page.evaluate(async () => {
       const { undoDepth, redoDepth } = await import('/node_modules/@codemirror/commands/dist/index.js');
       return { text: view.state.doc.toString(), selection: view.state.selection.toJSON(), undo: undoDepth(view.state), redo: redoDepth(view.state) };
@@ -48,8 +83,13 @@ try {
     assert.equal(await page.locator('#fileName').textContent(), 'Untitled.md', 'An existing name is retained');
   }
   await page.setViewportSize({width:900,height:480});
+  await checkClicks('#editorLanguageSelect');
+  await page.click('#editorLanguageSelect');
+  await page.screenshot({path:artifactPath(`i18n-language-menu-editor-${engine.name()}.png`)});
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({width:900,height:480});
   await page.screenshot({path:artifactPath('i18n-language-editor-minimum.png')});
-  await page.locator('#appearanceButton').focus(); await page.keyboard.press('Tab');
+  await page.locator('#appearanceButton').focus(); await page.keyboard.press(engine.name() === 'webkit' ? 'Alt+Tab' : 'Tab');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'editorLanguageSelect');
   assert.ok(await page.locator('#editorLanguageSelect').evaluate(el => el.matches(':focus-visible')));
   await page.click('#appearanceButton');
@@ -85,7 +125,7 @@ try {
   await page.click('#appearanceButton');
   await page.selectOption('#languageSelect', 'en');
   await page.waitForFunction(() => !document.querySelector('#languageSelect').disabled);
-  for (const id of ['languageSelect', 'editorLanguageSelect', 'welcomeLanguageSelect']) assert.equal(await page.locator('#'+id).inputValue(), 'zh-Hant-TW');
+  for (const id of ['languageSelect', 'editorLanguageSelect', 'welcomeLanguageSelect']) assert.equal(await page.locator('#'+id).evaluate(el => el.value), 'zh-Hant-TW');
   assert.match(await page.locator('#saveStatus').innerText(), /語言/);
   await page.evaluate(() => { Storage.prototype.setItem = originalSetItem; });
   await page.click('#settingsClose');
@@ -94,17 +134,17 @@ try {
   await other.waitForFunction(() => document.documentElement.lang === 'en');
   await other.reload(); await other.locator('#welcomeNewButton').waitFor();
   assert.equal(await other.locator('html').getAttribute('lang'), 'en');
-  assert.equal(await other.locator('#welcomeLanguageSelect').inputValue(), 'en');
+  assert.equal(await other.locator('#welcomeLanguageSelect').evaluate(el => el.value), 'en');
   for (const value of ['zh-Hans','zh-Hant-TW','en']) {
-    await other.selectOption('#welcomeLanguageSelect',value);
+    await chooseQuickLanguage(other, '#welcomeLanguageSelect', value);
     await other.waitForFunction(value => document.documentElement.lang === value,value);
     for (const theme of ['light','dark']) {
       await other.setViewportSize({width:900,height:480});
       await other.evaluate(theme => { document.documentElement.dataset.theme = theme; },theme);
-      assert.ok(await other.locator('#welcomeLanguageSelect').evaluate(el => { const r=el.getBoundingClientRect(), recent=document.querySelector('#welcomeRecentButton').getBoundingClientRect(); return r.left >= recent.right && r.right <= innerWidth && r.bottom <= innerHeight && r.width >= 40 && el.parentElement.getBoundingClientRect().width === 44; }));
+      assert.ok(await other.locator('#welcomeLanguageSelect').evaluate(el => { const r=el.getBoundingClientRect(), recent=document.querySelector('#welcomeRecentButton').getBoundingClientRect(); return r.left >= recent.right && r.right <= innerWidth && r.bottom <= innerHeight && r.width >= 40 && r.width === 44; }));
     }
   }
-  await other.selectOption('#welcomeLanguageSelect','system');
+  await chooseQuickLanguage(other, '#welcomeLanguageSelect', 'system');
   await page.waitForFunction(() => document.querySelector('#editorLanguageSelect').value === 'system');
   assert.equal(await other.locator('#languageSelect').inputValue(),'system');
 
@@ -150,5 +190,7 @@ try {
   assert.equal(await exportPage.locator('.export-toolbar strong').innerText(), 'Export PDF');
   await exportPage.screenshot({path:artifactPath('i18n-export-en-small.png')});
   assert.deepEqual(errors, []);
-  console.log('PASS: trilingual selection, history, aliases, IME, persistence failure, cross-window/reload and minimum-window controls');
+  console.log(engine.name() + ' PASS: pointer opening/closing, keyboard menu, trilingual selection, history, aliases, IME, persistence failure, cross-window/reload and minimum-window controls');
 } finally { await browser.close(); }
+
+}

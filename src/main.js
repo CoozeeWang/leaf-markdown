@@ -86,7 +86,7 @@ function icon(name, size = 18) {
 }
 
 function languageControl(id, welcome = false) {
-  return `<span class="language-control ${welcome ? 'welcome-icon' : 'icon-control'}" data-tooltip="${t('UI0256')}" data-i18n-data-tooltip="settings.language">${icon('language', 17)}<select id="${id}" class="quick-language-select" aria-label="${t('UI0256')}" data-i18n-aria-label="settings.language"><option value="system" data-i18n="settings.system_default">${t('UI0257')}</option><option value="zh-Hans">简体中文</option><option value="zh-Hant-TW">繁體中文（台灣）</option><option value="en">English</option></select></span>`;
+  return `<button type="button" id="${id}" class="language-control quick-language-button ${welcome ? 'welcome-icon' : 'icon-control'}" data-tooltip="${t('UI0256')}" data-i18n-data-tooltip="settings.language" aria-label="${t('UI0256')}" data-i18n-aria-label="settings.language" aria-haspopup="menu" aria-controls="languagePopover" aria-expanded="false">${icon('language', 17)}</button>`;
 }
 
 document.querySelector('#app').innerHTML = shortcutText(`
@@ -220,6 +220,12 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <p class="settings-about"><strong id="settingsVersion">${h("main.leaf")}</strong><span id="settingsBuild" hidden></span></p>
     </section>
 
+    <section id="languagePopover" class="popover action-popover" role="menu" aria-label="${t('UI0256')}" data-i18n-aria-label="settings.language" hidden>
+      <button type="button" role="menuitemradio" data-language="system" aria-checked="false">${h('settings.system_default')}</button>
+      <button type="button" role="menuitemradio" data-language="zh-Hans" aria-checked="false">简体中文</button>
+      <button type="button" role="menuitemradio" data-language="zh-Hant-TW" aria-checked="false">繁體中文（台灣）</button>
+      <button type="button" role="menuitemradio" data-language="en" aria-checked="false">English</button>
+    </section>
     <section id="documentPopover" class="popover action-popover" role="menu" aria-label="${t("main.current_document_actions")}" data-i18n-aria-label="main.current_document_actions" hidden>
       ${desktop ? `<button id="documentReveal" role="menuitem">${h("main.show_in_file_manager")}</button><button id="documentRename" role="menuitem">${h("main.rename")}</button>` : ''}
       <button id="documentHistory" role="menuitem">${desktop ? t("main.versions_drafts") : t("main.restore_version_before_last_save_ui0107")}</button>
@@ -299,6 +305,7 @@ const headingPopover = document.querySelector('#headingPopover');
 const calloutPopover = document.querySelector('#calloutPopover');
 const documentPopover = document.querySelector('#documentPopover');
 const exportPopover = document.querySelector('#exportPopover');
+const languagePopover = document.querySelector('#languagePopover');
 const displayPopover = document.querySelector('#displayPopover');
 const displayButton = document.querySelector('#displayButton');
 const palette = document.querySelector('#palette');
@@ -1248,10 +1255,11 @@ async function checkExternalChanges() {
 }
 
 function closePopovers(except = null) {
-  for (const popover of [appearancePopover, recentPopover, headingPopover, calloutPopover, modePopover, documentPopover, exportPopover, displayPopover]) {
+  for (const popover of [appearancePopover, recentPopover, headingPopover, calloutPopover, modePopover, documentPopover, exportPopover, displayPopover, languagePopover]) {
     if (popover !== except) popover.hidden = true;
     if (popover===modePopover && popover.hidden) document.querySelector('#readingToggle').setAttribute('aria-expanded','false');
   }
+  for (const control of document.querySelectorAll('.quick-language-button')) control.setAttribute('aria-expanded', String(!languagePopover.hidden && languagePopover.dataset.trigger === control.id));
   document.querySelector('#appearanceButton').setAttribute('aria-expanded', String(except === appearancePopover && !appearancePopover.hidden));
   document.querySelector('#headingButton').setAttribute('aria-expanded', String(except === headingPopover && !headingPopover.hidden));
   document.querySelector('#calloutButton').setAttribute('aria-expanded', String(except === calloutPopover && !calloutPopover.hidden));
@@ -1780,7 +1788,7 @@ palette.addEventListener('mousedown', (event) => {
 });
 
 document.addEventListener('mousedown', (event) => {
-    if (!event.target.closest('.popover') && !event.target.closest('#readingToggle') && !event.target.closest('#appearanceButton') && !event.target.closest('#welcomeSettings') && !event.target.closest('#recentButton') && !event.target.closest('#welcomeRecentButton') && !event.target.closest('#headingButton') && !event.target.closest('#documentMenuButton') && !event.target.closest('#exportMenuButton') && !event.target.closest('#displayButton')) closePopovers();
+    if (!event.target.closest('.quick-language-button') && !event.target.closest('.popover') && !event.target.closest('#readingToggle') && !event.target.closest('#appearanceButton') && !event.target.closest('#welcomeSettings') && !event.target.closest('#recentButton') && !event.target.closest('#welcomeRecentButton') && !event.target.closest('#headingButton') && !event.target.closest('#documentMenuButton') && !event.target.closest('#exportMenuButton') && !event.target.closest('#displayButton')) closePopovers();
 });
 
 let tooltipTimer = null;
@@ -1989,21 +1997,59 @@ if (desktop) {
   });
 }
 
-const languageSelects = [...document.querySelectorAll('#languageSelect, .quick-language-select')];
-for (const select of languageSelects) {
-  select.value = languagePreference();
-  select.addEventListener('pointerdown', () => select.parentElement.setAttribute('data-focus-source', 'pointer'));
-  select.addEventListener('keydown', () => select.parentElement.removeAttribute('data-focus-source'));
-  select.addEventListener('blur', () => select.parentElement.removeAttribute('data-focus-source'));
-  select.addEventListener('change', async () => {
-    languageSelects.forEach(control => { control.disabled = true; });
-    try { await setLanguagePreference(select.value); }
-    catch { setStatus(translatedMessage('UI0261'), 'error'); }
-    finally { languageSelects.forEach(control => { control.value = languagePreference(); control.disabled = false; }); }
+const languageSelects = [...document.querySelectorAll('#languageSelect, .quick-language-button')];
+let languageReturnFocus;
+function syncLanguageControls() {
+  languageSelects.forEach(control => { control.value = languagePreference(); });
+  for (const item of languagePopover.querySelectorAll('[data-language]')) item.setAttribute('aria-checked', String(item.dataset.language === languagePreference()));
+}
+async function chooseLanguage(value) {
+  languageSelects.forEach(control => { control.disabled = true; });
+  try { await setLanguagePreference(value); }
+  catch { setStatus(translatedMessage('UI0261'), 'error'); }
+  finally { syncLanguageControls(); languageSelects.forEach(control => { control.disabled = false; }); }
+}
+for (const control of languageSelects) {
+  control.value = languagePreference();
+  if (control instanceof HTMLSelectElement) {
+    control.addEventListener('change', () => { void chooseLanguage(control.value); });
+    continue;
+  }
+  control.addEventListener('click', () => {
+    const opening = languagePopover.hidden || languagePopover.dataset.trigger !== control.id;
+    closePopovers();
+    if (!opening) return;
+    hideTooltip();
+    languageReturnFocus = control;
+    languagePopover.dataset.trigger = control.id;
+    languagePopover.hidden = false;
+    syncLanguageControls();
+    control.setAttribute('aria-expanded', 'true');
+    positionMenu(languagePopover, control.getBoundingClientRect());
+    languagePopover.querySelector('[aria-checked="true"]').focus({preventScroll: true});
   });
 }
+for (const item of languagePopover.querySelectorAll('[data-language]')) {
+  item.addEventListener('click', async () => {
+    closePopovers();
+    await chooseLanguage(item.dataset.language);
+    languageReturnFocus?.focus({preventScroll: true});
+  });
+}
+languagePopover.addEventListener('keydown', event => {
+  const items = [...languagePopover.querySelectorAll('[data-language]')];
+  const index = items.indexOf(document.activeElement);
+  const next = event.key === 'ArrowDown' ? (index + 1) % items.length
+    : event.key === 'ArrowUp' ? (index + items.length - 1) % items.length
+    : event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : undefined;
+  if (next !== undefined) { event.preventDefault(); items[next].focus(); }
+  if (event.key === 'Escape' || event.key === 'Tab') {
+    event.preventDefault(); closePopovers(); languageReturnFocus?.focus({preventScroll: true});
+  }
+});
+syncLanguageControls();
 onLanguageChange(() => {
-  languageSelects.forEach(control => { control.value = languagePreference(); });
+  syncLanguageControls();
   updateDocumentChrome(); updateModeControl(); updateHeadingControl(editor.headingLevel());
   if (!palette.hidden) renderPalette(paletteInput.value);
   for (const el of document.querySelectorAll('[data-callout-label]')) el.textContent = calloutLabels[el.dataset.calloutLabel];
