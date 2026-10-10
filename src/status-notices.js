@@ -65,7 +65,13 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
       document.querySelector(target)?.focus();
     }
   });
-  onLanguageChange(render);
+  onLanguageChange(() => {
+    // Live-region announcements describe past actions, not current UI. Don't
+    // leave an old-language announcement or repeat it when switching language.
+    clearTimeout(announcementTimer);
+    announcement.textContent = '';
+    render();
+  });
   render();
   return {
     refresh: render,

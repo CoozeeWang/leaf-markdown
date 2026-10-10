@@ -9,7 +9,13 @@ try {
   await page.locator('#welcomeNewButton').waitFor();
   const language = async value => page.evaluate(async value => { await (await import('/src/i18n.js')).setLanguagePreference(value); }, value);
   assert.equal(await page.locator('html').getAttribute('lang'), 'zh-Hans');
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent('leaf-image-reveal-failed', {detail: 'Synthetic system diagnosis'})));
+  await page.waitForFunction(() => document.querySelector('#statusAnnouncement').textContent.length > 0);
   await language('en');
+  assert.equal(await page.locator('#statusAnnouncement').textContent(), '', 'Old-language announcements are cleared without repeating a past action');
+  assert.match(await page.locator('#saveStatus').textContent(), /Synthetic system diagnosis/, 'Persistent errors survive the language switch');
+  assert.match(await page.locator('#saveStatus').textContent(), /Could not/);
+  await page.click('#dismissStatus');
   assert.equal(await page.locator('#welcomeNewButton').innerText(), 'New Document');
   await page.click('#welcomeNewButton');
   await page.evaluate(async () => {
