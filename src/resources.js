@@ -193,9 +193,9 @@ export function imageNode(alt, path) {
   const actions = document.createElement('button');
   actions.type = 'button'; actions.className = 'leaf-image-actions';
   actions.innerHTML = uiIcon('folder', 14);
-  actions.dataset.tooltip = revealLabel();
+  setAttr(actions, 'data-tooltip', revealLabel);
   actions.dataset.tooltipKind = 'image';
-  actions.setAttribute('aria-label', revealLabel());
+  setAttr(actions, 'aria-label', revealLabel);
   actions.addEventListener('mousedown', event => { event.preventDefault(); event.stopPropagation(); });
   actions.addEventListener('click', event => {
     event.stopPropagation();
@@ -211,7 +211,10 @@ export function imageNode(alt, path) {
 }
 export async function loadImage(img) {
   const token = {}; img._resourceToken = token;
-  const status = img.parentElement.querySelector('.leaf-image-status');
+  // A retry starts with a plain status, without failure styles, focus targets
+  // or reveal handlers left by the previous attempt.
+  const status = document.createElement('span'); status.className = 'leaf-image-status';
+  img.parentElement.querySelector('.leaf-image-status').replaceWith(status);
   setText(status, () => t("resources.loading_image")); img.hidden = true; img.dataset.loaded = 'pending';
   delete img.dataset.failure;
   try {
@@ -239,7 +242,7 @@ export async function loadImage(img) {
       img.src = url;
       await Promise.race([img.decode(), new Promise((_, reject) => setTimeout(() => reject(new Error(t("resources.image_loading_timed_out"))), 15000))]);
       if (img._resourceToken !== token) return;
-      img.hidden = false; status.textContent = ''; img.dataset.loaded = 'yes';
+      img.hidden = false; setText(status, () => ''); img.dataset.loaded = 'yes';
       movedMissing.delete(decodeURIComponent(target));
     } catch (error) {
       // A known type that still will not decode is this platform refusing the

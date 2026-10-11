@@ -41,3 +41,24 @@ export function renderShortcutText(container, text) {
   }
   container.append(document.createTextNode(text.slice(from)));
 }
+
+// Tooltips share one convention; menus keep their separate shortcut column.
+export function tooltipShortcutText(text) {
+  return text.replace(/[⌃⌥⇧⌘]+(?:[A-Za-z0-9\\.,](?:[–-][0-9])?)?|\b(?:(?:Ctrl|Alt|Shift|Cmd|Command|Option)\+)+(?:[A-Za-z0-9\\.,](?:[–-][0-9])?)|\b(?:Esc|Enter|Tab|Ctrl|Alt|Shift|Cmd)\b/g, (key, offset) => {
+    const before = text.slice(0, offset);
+    const open = Math.max(before.lastIndexOf('('), before.lastIndexOf('（'));
+    const close = Math.max(before.lastIndexOf(')'), before.lastIndexOf('）'));
+    return open > close ? key : `(${key})`;
+  });
+}
+
+export function renderTooltipText(container, text) {
+  container.replaceChildren();
+  for (const part of tooltipShortcutText(text).split(/(\([^)]*\))/)) {
+    if (!part) continue;
+    const span = document.createElement('span');
+    if (part.startsWith('(')) span.style.whiteSpace = 'nowrap';
+    renderShortcutText(span, part);
+    container.append(span);
+  }
+}

@@ -79,6 +79,8 @@ export function renderInline(target, text, footnotes) {
     return sup;
   }
   function visit(node, parent, inLink = false) {
+    if (node.name === 'HardBreak') { parent.append(document.createElement('br')); return; }
+    if (node.name === 'Escape') { parent.append(document.createTextNode(text.slice(node.from + 1, node.to))); return; }
     if (node.name === 'Image') {
       const url = node.getChild('URL');
       if (url) { const raw = text.slice(node.from, node.to); parent.append(imageNode(raw.slice(2, raw.indexOf(']')), text.slice(url.from, url.to))); return; }

@@ -16,7 +16,7 @@ import { frontmatter } from './markdown-model.js';
 import './reading.css';
 import { desktop, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
 import { invoke } from '@tauri-apps/api/core';
-import { shortcutText, renderShortcutText } from './platform-shortcuts.js';
+import { shortcutText, renderShortcutText, renderTooltipText } from './platform-shortcuts.js';
 import { labels as calloutLabels } from './callout.js';
 import { indexFootnotes, notePanelRows } from './footnotes.js';
 import { uiIcon, uiIconPaths } from './ui-icons.js';
@@ -196,7 +196,6 @@ document.querySelector('#app').innerHTML = shortcutText(`
       </div>
       <div class="appearance-scroll" tabindex="-1">
       <section id="settingsPanel-appearance" role="tabpanel" aria-labelledby="settingsTab-appearance" data-settings-panel="appearance">
-      <fieldset class="appearance-group" aria-label="${t("UI0256")}" data-i18n-aria-label="settings.language"><label class="setting-row"><span>${h("UI0256")}</span><span class="ui-select"><select id="languageSelect"><option value="system" data-i18n="settings.system_default">${t("UI0257")}</option><option value="zh-Hans">简体中文</option><option value="zh-Hant-TW">繁體中文（台灣）</option><option value="en">English</option></select>${icon("chevron", 16)}</span></label></fieldset>
       <fieldset class="appearance-group" aria-label="${t("main.theme")}" data-i18n-aria-label="main.theme">
       <label class="setting-row"><span>${h("main.theme")}</span>
         <span class="ui-select"><select id="themeSelect"><option value="system" data-i18n="main.system_default">${t("main.system_default")}</option><option value="light" data-i18n="main.light">${t("main.light")}</option><option value="dark" data-i18n="main.dark">${t("main.dark")}</option></select>${icon('chevron', 16)}</span>
@@ -212,7 +211,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
       </section>
       <section id="settingsPanel-recovery" role="tabpanel" aria-labelledby="settingsTab-recovery" data-settings-panel="recovery" hidden>
       ${desktop ? `<fieldset class="appearance-group" aria-label="${t("main.recovery_records")}" data-i18n-aria-label="main.recovery_records"><label class="setting-row"><span>${h("main.version_draft_retention")}</span><span class="ui-select"><select id="recoveryRetentionSelect" aria-label="${t("main.version_draft_retention")}" data-i18n-aria-label="main.version_draft_retention" disabled><option value="7" data-i18n="main.7_days">${t("main.7_days")}</option><option value="30" selected data-i18n="main.30_days">${t("main.30_days")}</option><option value="90" data-i18n="main.90_days">${t("main.90_days")}</option></select>${icon('chevron',16)}</span></label></fieldset>` : ''}
-      <div class="settings-recovery-action"><button id="settingsRecovery" class="settings-action">${desktop ? t("main.view_recoverable_drafts") : t("main.restore_version_before_last_save")}</button></div>
+      <div class="settings-recovery-action"><button id="settingsRecovery" class="settings-action">${h(desktop ? "main.view_recoverable_drafts" : "main.restore_version_before_last_save")}</button></div>
       ${desktop ? '' : `<p class="setting-hint">${h("main.restoring_replaces_the_current_editor_content_and")}</p>`}
       </section>
       </div>
@@ -228,7 +227,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
     </section>
     <section id="documentPopover" class="popover action-popover" role="menu" aria-label="${t("main.current_document_actions")}" data-i18n-aria-label="main.current_document_actions" hidden>
       ${desktop ? `<button id="documentReveal" role="menuitem">${h("main.show_in_file_manager")}</button><button id="documentRename" role="menuitem">${h("main.rename")}</button>` : ''}
-      <button id="documentHistory" role="menuitem">${desktop ? t("main.versions_drafts") : t("main.restore_version_before_last_save_ui0107")}</button>
+      <button id="documentHistory" role="menuitem">${h(desktop ? "main.versions_drafts" : "main.restore_version_before_last_save_ui0107")}</button>
     </section>
 
     <section id="exportPopover" class="popover action-popover" role="menu" aria-label="${t("main.export_ui0108")}" data-i18n-aria-label="main.export_ui0108" hidden>
@@ -1441,9 +1440,12 @@ function cycleTheme() {
 }
 
 function toggleFocusMode() {
+  closePopovers();
   state.focusMode = !state.focusMode;
   shell.classList.toggle('focus-mode', state.focusMode);
-  if (!state.focusMode) editor.focus();
+  // Visually hidden chrome must also leave keyboard and accessibility navigation.
+  for (const region of shell.querySelectorAll('.topbar, .format-toolbar, .statusbar')) region.inert = state.focusMode;
+  if (state.reading) readingPane.focus(); else editor.focus();
 }
 
 document.querySelector('#openButton')?.addEventListener('click', openFile);
@@ -1547,7 +1549,7 @@ for (const button of appearancePopover.querySelectorAll('[data-settings-tab]')) 
   button.onclick = () => selectSettingsTab(button.dataset.settingsTab);
   button.onkeydown = event => {
     const tabs = [...appearancePopover.querySelectorAll('[data-settings-tab]')], i = tabs.indexOf(button);
-    const next = {ArrowRight:(i+1)%2, ArrowLeft:(i+2)%2, Home:0, End:1}[event.key];
+    const next = {ArrowRight:(i+1)%tabs.length, ArrowLeft:(i-1+tabs.length)%tabs.length, Home:0, End:tabs.length-1}[event.key];
     if (next !== undefined) { event.preventDefault(); tabs[next].click(); tabs[next].focus(); }
   };
 }
@@ -1601,8 +1603,21 @@ displayButton.addEventListener('click', () => {
 // the menu loop, which closes on any button press.
 displayPopover.addEventListener('keydown', event => {
   if (event.key === 'Escape') { event.preventDefault(); closePopovers(); displayButton.focus(); }
-  if (event.key === 'Tab') { closePopovers(); displayButton.focus(); }
 });
+// These non-modal panels allow native Tab order within the panel. Once focus
+// leaves via Tab, dismiss it without covering the next keyboard target. A
+// mouse click can blur native macOS checkboxes before their click fires; never
+// close the panel in that interval. Outside clicks are handled separately.
+for (const [panel, trigger] of [[appearancePopover, document.querySelector('#appearanceButton')], [displayPopover, displayButton]]) {
+  panel.addEventListener('keydown', event => {
+    if (event.key !== 'Tab') return;
+    requestAnimationFrame(() => {
+    if (panel.hidden || panel.contains(document.activeElement)) return;
+    panel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    });
+  });
+}
 displayPopover.querySelector('#documentPropertiesToggle').addEventListener('change', event => {
   // A document with no properties has no rows to unfold, and creating the
   // region is what showing them means there.
@@ -1813,7 +1828,7 @@ function showTooltip(target) {
     if (imageRect.width <= 38) { hideTooltip(); return; }
     tooltip.style.maxWidth = `${Math.min(window.innerWidth - 16, imageRect.width - 34)}px`;
   }
-  renderShortcutText(tooltip, target.dataset.tooltip);
+  renderTooltipText(tooltip, target.dataset.tooltip);
   tooltip.hidden = false;
   const targetRect = target.getBoundingClientRect();
   const tooltipRect = tooltip.getBoundingClientRect();
@@ -1997,7 +2012,7 @@ if (desktop) {
   });
 }
 
-const languageSelects = [...document.querySelectorAll('#languageSelect, .quick-language-button')];
+const languageSelects = [...document.querySelectorAll('.quick-language-button')];
 let languageReturnFocus;
 function syncLanguageControls() {
   languageSelects.forEach(control => { control.value = languagePreference(); });
@@ -2011,10 +2026,6 @@ async function chooseLanguage(value) {
 }
 for (const control of languageSelects) {
   control.value = languagePreference();
-  if (control instanceof HTMLSelectElement) {
-    control.addEventListener('change', () => { void chooseLanguage(control.value); });
-    continue;
-  }
   control.addEventListener('click', () => {
     const opening = languagePopover.hidden || languagePopover.dataset.trigger !== control.id;
     closePopovers();
