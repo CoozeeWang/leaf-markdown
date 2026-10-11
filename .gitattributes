@@ -1,0 +1,4 @@
+# Generated locale resources are checked byte-for-byte. Keep checkout
+# line endings stable on Windows without rewriting translation contents.
+src-tauri/windows-locales.nsh text eol=lf
+src-tauri/locales/**/ServicesMenu.strings text eol=lf
