@@ -200,9 +200,11 @@ try {
   }
   // Nothing above the heading's text or in the blank row after the selected
   // paragraph is painted. Do not sample the next paragraph's real text.
-  const aboveSelection = await column(sampleX, Math.round(geo.heading.box.top) + 1, geo.heading.text.top - 1);
+  const aboveSelection = geo.heading.text.top - geo.heading.box.top > 2
+    ? await column(sampleX, geo.heading.box.top + 1, geo.heading.text.top - 1) : [];
   for (const row of aboveSelection) assert.ok(isCanvas(row.rgb), `no band above the selected text: y=${row.y} ${show(row.rgb)}`);
-  const belowSelection = await column(sampleX, Math.round(geo.followingBlank.box.top) + 2, Math.round(geo.followingBlank.box.bottom) - 2);
+  const blankInset = Math.min(2, geo.followingBlank.box.height / 4);
+  const belowSelection = await column(sampleX, geo.followingBlank.box.top + blankInset, geo.followingBlank.box.bottom - blankInset);
   for (const row of belowSelection) assert.ok(isCanvas(row.rgb), `nothing below the selection: y=${row.y} ${show(row.rgb)}`);
   // The selection really did cover the rows it is supposed to, or the loop
   // above would pass on an empty selection.

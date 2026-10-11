@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 for (const engine of [chromium, webkit]) {
  const browser=await engine.launch(engine===chromium ? launchOptions : {headless:true});
  try {
-  const page=await browser.newPage({viewport:{width:1100,height:820}});
+  const page=await browser.newPage({viewport:{width:1100,height:820},locale:'zh-CN'});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(source=>{
    window.fixtureFile={content:source,modified:1,writes:0};
@@ -23,7 +23,7 @@ for (const engine of [chromium, webkit]) {
    return EditorView.findFromDOM(document.querySelector('.cm-content')).state.doc.toString();
   });
   assert.equal(await value(),source,'opening does not silently tidy or renumber the file');
-  assert.equal(await page.locator('#tidyBlankLines').getAttribute('data-tooltip'),'整理段落空行  ⌥⌘\\','hover wording is unchanged');
+  assert.equal(await page.locator('#tidyBlankLines').getAttribute('data-tooltip'),`整理段落空行  ${process.platform==='darwin' ? '⌥⌘' : 'Ctrl+Alt+'}\\`,'hover wording follows the platform shortcut');
   await page.click('#tidyBlankLines');
   assert.equal(await value(),expected);
   assert.deepEqual(await page.locator('.leaf-list-marker').allTextContents(),['●','○','○','●','1.','2.','●','●','●','●'],'preview preserves nested marker levels and consecutive ordered numbers');

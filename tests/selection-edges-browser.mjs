@@ -16,14 +16,16 @@ try {
    await page.waitForTimeout(100);
    const geometry=await page.evaluate(()=>{
     const rects=[...document.querySelectorAll('.leaf-selectionLayer .cm-selectionBackground')].map(e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};});
-    const start=v.coordsAtPos(v.state.selection.main.from),end=v.coordsAtPos(v.state.selection.main.to,-1);
+    // Match CodeMirror selection geometry: strict sides stay inside the
+    // selected text instead of borrowing the adjacent image widget position.
+    const start=v.coordsAtPos(v.state.selection.main.from,2),end=v.coordsAtPos(v.state.selection.main.to,-2);
     return {rects,start,end,left:v.contentDOM.getBoundingClientRect().left+6,source:v.state.doc.toString()};
    });
    assert.equal(geometry.source,source);
    assert.ok(geometry.rects.length>=3);
    assert.ok(Math.abs(geometry.rects[0].left-geometry.start.left)<1,'partial first row remains exact');
    for(const rect of geometry.rects.slice(1)) assert.ok(Math.abs(rect.left-geometry.left)<1,`continuation inherits indentation: ${JSON.stringify({prefix,geometry})}`);
-   assert.ok(Math.abs(geometry.rects.at(-1).right-geometry.end.right)<1,'partial last row remains exact');
+   assert.ok(Math.abs(geometry.rects.at(-1).right-geometry.end.right)<1,`partial last row remains exact: ${JSON.stringify({prefix,reverse,geometry})}`);
   }
  }
  await page.screenshot({path:artifactPath('selection-edges-fixed.png')});

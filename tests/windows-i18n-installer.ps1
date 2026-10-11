@@ -17,6 +17,18 @@ New-Item -ItemType Directory -Path $appData, $sampleDir | Out-Null
 # Deliberately differ from the Chinese installer languages; installing must preserve it.
 [IO.File]::WriteAllText($preference, '{"preference":"en"}', [Text.UTF8Encoding]::new($false))
 $preferenceHash = (Get-FileHash $preference).Hash
+$association = $config.bundle.fileAssociations[0]
+$previousClasses = @{}
+$originalClasses = @{}
+foreach ($ext in $association.ext) {
+  $key = "HKCU:\Software\Classes\.$ext"
+  $originalClasses[$ext] = if (Test-Path $key) { (Get-Item $key).GetValue('') } else { $null }
+  if ($originalClasses[$ext] -eq $association.name) { throw 'Runner already has a Leaf association' }
+  # Seed a distinct synthetic previous handler: repeated installs must preserve it.
+  $previousClasses[$ext] = 'Leaf.Synthetic.PreviousHandler'
+  New-Item -Path $key -Force | Out-Null
+  (Get-Item $key).SetValue('', $previousClasses[$ext])
+}
 function Stop-TestLeaf {
   Get-Process leaf -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
 }
@@ -41,6 +53,11 @@ function Uninstall-TestLeaf {
     $process = Start-Process -FilePath $uninstaller -ArgumentList @('/S', "_?=$installDir") -Wait -PassThru
     if ($process.ExitCode -ne 0) { throw "Uninstaller exit: $($process.ExitCode)" }
     foreach ($key in $menuKeys) { if (Test-Path $key) { throw 'Uninstaller left a Leaf shell entry' } }
+    foreach ($ext in $association.ext) {
+      $key = "HKCU:\Software\Classes\.$ext"
+      $restored = if (Test-Path $key) { (Get-Item $key).GetValue('') } else { '' }
+      if ($restored -cne $previousClasses[$ext]) { throw "Uninstall did not restore the previous .$ext association" }
+    }
   }
 }
 try {
@@ -68,6 +85,11 @@ try {
   Write-Output 'PASS cold/warm new-file language and collision preservation'
 } finally {
   Uninstall-TestLeaf
+  foreach ($ext in $association.ext) {
+    $key = "HKCU:\Software\Classes\.$ext"
+    if ($null -eq $originalClasses[$ext]) { (Get-Item $key).DeleteValue('', $false) }
+    else { (Get-Item $key).SetValue('', $originalClasses[$ext]) }
+  }
   Remove-Item $appData -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item $sampleDir -Recurse -Force -ErrorAction SilentlyContinue
 }

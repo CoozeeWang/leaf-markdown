@@ -47,7 +47,7 @@ for (const [name, engine, options] of [['chromium',chromium,launchOptions],['web
    await verifyViews(false);
    await page.keyboard.press('ControlOrMeta+z');
    if(steps===1)assert.equal(await get(),source,'one undo restores indentation and inserted separator together');
-   await page.keyboard.press('ControlOrMeta+Shift+z');
+   await page.keyboard.press(process.platform==='darwin' ? 'Meta+Shift+z' : 'Control+y');
    assert.equal(await get(),detached);
    await page.evaluate(()=>{const at=v.state.doc.toString().indexOf('![');v.dispatch({selection:{anchor:at}});v.focus();});
    await page.keyboard.press('Shift+Tab');
