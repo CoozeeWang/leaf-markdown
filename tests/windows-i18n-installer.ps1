@@ -27,7 +27,7 @@ foreach ($ext in $association.ext) {
   # Seed a distinct synthetic previous handler: repeated installs must preserve it.
   $previousClasses[$ext] = 'Leaf.Synthetic.PreviousHandler'
   New-Item -Path $key -Force | Out-Null
-  (Get-Item $key).SetValue('', $previousClasses[$ext])
+  Set-Item -LiteralPath $key -Value $previousClasses[$ext]
 }
 function Stop-TestLeaf {
   Get-Process leaf -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
@@ -87,8 +87,11 @@ try {
   Uninstall-TestLeaf
   foreach ($ext in $association.ext) {
     $key = "HKCU:\Software\Classes\.$ext"
-    if ($null -eq $originalClasses[$ext]) { (Get-Item $key).DeleteValue('', $false) }
-    else { (Get-Item $key).SetValue('', $originalClasses[$ext]) }
+    $entry = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Classes\.$ext", $true)
+    try {
+      if ($null -eq $originalClasses[$ext]) { $entry.DeleteValue('', $false) }
+      else { $entry.SetValue('', $originalClasses[$ext]) }
+    } finally { $entry.Dispose() }
   }
   Remove-Item $appData -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item $sampleDir -Recurse -Force -ErrorAction SilentlyContinue

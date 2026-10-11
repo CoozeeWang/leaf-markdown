@@ -10,7 +10,9 @@ try {
   const source=prefix+'\n\n正文甲乙\n\n### 问题02\n\n![截图](assets/'+'abc'.repeat(55)+'.png)\n\n最后';
   for(const reverse of [false,true]) {
    await page.evaluate(({source,reverse})=>{
-    const from=source.indexOf('正文甲乙')+2,to=source.indexOf('\n\n最后');
+    // End inside the image source: a full line ending has CodeMirror's
+    // newline-selection geometry rather than a partial text-row edge.
+    const from=source.indexOf('正文甲乙')+2,to=source.indexOf('\n\n最后')-3;
     v.dispatch({changes:{from:0,to:v.state.doc.length,insert:source},selection:{anchor:reverse?to:from,head:reverse?from:to},scrollIntoView:true});v.focus();
    },{source,reverse});
    await page.waitForTimeout(100);
