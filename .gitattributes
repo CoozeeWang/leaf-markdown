@@ -1,0 +1,4 @@
+# Generated resources are compared byte-for-byte with their locale sources.
+# Keep their canonical LF endings when Git checks them out on Windows.
+src-tauri/windows-locales.nsh text eol=lf
+src-tauri/locales/**/*.strings text eol=lf
