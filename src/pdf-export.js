@@ -7,6 +7,19 @@ import './callout.css';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
+// Theme affects export controls only; the paper has its own light palette.
+const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+function updateExportTheme() {
+  const preference = localStorage.getItem('leaf-theme') || 'system';
+  document.documentElement.dataset.exportTheme = preference === 'dark' || (preference !== 'light' && systemTheme.matches) ? 'dark' : 'light';
+}
+updateExportTheme();
+systemTheme.addEventListener('change', updateExportTheme);
+window.addEventListener('storage', event => {
+  if (event.key === 'leaf-theme' || event.key === null) updateExportTheme();
+});
+window.addEventListener('focus', updateExportTheme);
+
 async function init() {
   const native = isTauri();
   if (native) setResourceReader(relative => invoke("read_resource", { relative }));
@@ -37,7 +50,7 @@ async function init() {
     try {
       document.querySelector('#export-error').textContent = '';
       await document.fonts.ready;
-      await waitForImages(document.querySelector("article"));
+      await waitForImages(document.querySelector("article"), { allowPlaceholders: true });
       if (native) await invoke('print_export'); else window.print();
     } catch (error) { setText(document.querySelector('#export-error'), () => t("pdf_export.could_not_open_the_print_dialog", {"error": error})); }
     finally { printing = false; }

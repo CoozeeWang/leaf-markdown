@@ -24,7 +24,7 @@ i18next.init({ initAsync: false, lng: 'zh-Hans', fallbackLng: 'en', supportedLng
   load: 'currentOnly', keySeparator: false, interpolation: { escapeValue: false },
   resources: Object.fromEntries(Object.entries(resources).map(([lng, translation]) => [lng, { translation }])) });
 export function errorCode(value) {
-  try { const error = typeof value === 'object' && value?.leafError ? value : JSON.parse(String(value)); return error?.leafError === 1 && resources.en[error.code] ? error : null; } catch { return null; }
+  try { const error = typeof value === 'object' && value?.leafError ? value : JSON.parse(String(value?.message ?? value)); return error?.leafError === 1 && resources.en[error.code] ? error : null; } catch { return null; }
 }
 export function formatError(value) {
   const error = errorCode(value); return error ? t(error.code, error.params) : String(value?.message ?? value ?? '');
@@ -32,7 +32,7 @@ export function formatError(value) {
 export function t(key, values = {}) {
   const args = { ...values };
   if ((copyKeys[key] || key) === 'search_panel.matches') args.count = args.total;
-  for (const name of ['error','detail']) if (name in args) args[name] = formatError(args[name]);
+  for (const name of ['error','detail','reason']) if (name in args) args[name] = formatError(args[name]);
   return i18next.t(copyKeys[key] || key, args);
 }
 export function aliases(key) { return languages.map(lng => t(key, { lng })); }

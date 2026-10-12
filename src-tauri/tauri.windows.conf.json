@@ -18,8 +18,22 @@
           "SimpChinese",
           "TradChinese"
         ],
-        "displayLanguageSelector": true
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico"
       }
     }
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Leaf",
+        "width": 1100,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 480,
+        "visible": false
+      }
+    ]
   }
 }

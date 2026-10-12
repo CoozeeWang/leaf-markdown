@@ -221,6 +221,8 @@ fn open_export(app: tauri::AppHandle, window: tauri::WebviewWindow, mut snapshot
     let builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html?export=1".into()))
         .title(i18n::app_text(&app, "NA0004")).inner_size(950., 800.).min_inner_size(720., 480.);
     let builder = development_window(&app, builder);
+    #[cfg(not(target_os = "macos"))]
+    let builder = if let Some(menu) = app.menu() { builder.menu(menu) } else { builder };
     #[cfg(all(target_os = "windows", feature = "native-smoke"))]
     let builder = builder.additional_browser_args(&native_smoke_browser_args());
     let result = builder.build();
@@ -261,7 +263,14 @@ fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         // Quoting the path keeps spaces in folder names from splitting the argument.
-        std::process::Command::new("explorer").arg(format!("/select,\"{}\"", path.to_string_lossy())).spawn().map_err(|e| e.to_string())?;
+        use std::os::windows::process::CommandExt;
+        let display = path.to_string_lossy();
+        let display = display.strip_prefix("\\\\?\\UNC\\").map(|p| format!("\\\\{p}"))
+            .unwrap_or_else(|| display.strip_prefix("\\\\?\\").unwrap_or(&display).to_string());
+        // Explorer has its own comma/quote grammar. Command::arg would add a
+        // second escaping layer and prevent Explorer from finding this file.
+        std::process::Command::new("explorer.exe").raw_arg(format!("/select,\"{display}\""))
+            .spawn().map_err(|e| e.to_string())?;
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     { let _ = path; return Err(crate::i18n::error("main.showing_files_in_the_file_manager_is", serde_json::json!({})).into()); }
@@ -413,6 +422,8 @@ fn create_document(app: tauri::AppHandle, path: Option<String>, recovered: Optio
     let builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html?document=1".into()))
         .title("Leaf").inner_size(1100., 800.).min_inner_size(900., 480.);
     let builder = development_window(&app, builder);
+    #[cfg(not(target_os = "macos"))]
+    let builder = if let Some(menu) = app.menu() { builder.menu(menu) } else { builder };
     #[cfg(all(target_os = "windows", feature = "native-smoke"))]
     let builder = builder.additional_browser_args(&native_smoke_browser_args());
     let result = builder.build();
@@ -712,6 +723,12 @@ fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::
     documents.insert(window.label().into(),Some(target.clone()));
     drop(documents);
     if let Some(file) = replaced { rebind_anchor(&anchors, window.label(), file); }
+    else {
+        // Windows may retain the deleted hard-link name on the old handle.
+        // Track the surviving name through a fresh handle on both platforms.
+        let anchor = document_location::Anchor::open(&target).map_err(|e| e.to_string())?;
+        anchors.0.lock().unwrap().insert(window.label().into(), anchor);
+    }
     drop(_guard);
     if let Err(error) = app.state::<recent::Recent>().replace(&app, &source, &target) { eprintln!("Recent files: {error}"); }
     Ok(ResourceWrite {path:target.to_string_lossy().into_owned(),content:rewritten,mappings,warning:None})
@@ -1145,6 +1162,13 @@ fn main() {
                     if let Err(error) = hide_launcher(app) { eprintln!("{error}"); }
                     let _ = window.set_focus();
                 }
+                else {
+                    #[cfg(target_os = "windows")]
+                    if let Some(window) = app.get_webview_window(LAUNCHER) {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
             }
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Opened { urls } => {
@@ -1178,8 +1202,12 @@ mod rename_tests {
         assert_eq!(fs::read_to_string(dir.path().join("taken.md")).unwrap(),"other");
         assert!(rename_file(&old,"../escape.md","original").is_err());
         assert!(rename_file(&old,"new.md","stale").is_err());
+        let identity=document_location::Anchor::open(&old).unwrap().token();
         let new=rename_file(&old,"新名字.md","original").unwrap();
-        assert!(!old.exists());assert_eq!(fs::read_to_string(new).unwrap(),"original");
+        assert!(!old.exists());assert_eq!(fs::read_to_string(&new).unwrap(),"original");
+        let rebound=document_location::Anchor::open(&new).unwrap();
+        assert_eq!(rebound.token(),identity);
+        assert_eq!(rebound.locate().unwrap().path,fs::canonicalize(&new).unwrap());
     }
 }
 

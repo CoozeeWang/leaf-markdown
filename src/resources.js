@@ -1,4 +1,4 @@
-import { t, setText, setAttr } from './i18n.js';
+import { t, setText, setAttr, formatError } from './i18n.js';
 import { uiIcon } from './ui-icons.js';
 import { positionMenu } from './menu-position.js';
 let readLocal = null;
@@ -68,7 +68,7 @@ function revealImage(img) {
   void revealLocal(relative).catch(error => {
     (img.isConnected ? img : document).dispatchEvent(new CustomEvent('leaf-image-reveal-failed', {
       bubbles: true,
-      detail: `${fileNameOf(img.dataset.resource)}：${String(error?.message ?? error)}`,
+      detail: `${fileNameOf(img.dataset.resource)}：${formatError(error)}`,
     }));
   });
 }
@@ -193,9 +193,9 @@ export function imageNode(alt, path) {
   const actions = document.createElement('button');
   actions.type = 'button'; actions.className = 'leaf-image-actions';
   actions.innerHTML = uiIcon('folder', 14);
-  actions.dataset.tooltip = revealLabel();
+  setAttr(actions, 'data-tooltip', revealLabel);
   actions.dataset.tooltipKind = 'image';
-  actions.setAttribute('aria-label', revealLabel());
+  setAttr(actions, 'aria-label', revealLabel);
   actions.addEventListener('mousedown', event => { event.preventDefault(); event.stopPropagation(); });
   actions.addEventListener('click', event => {
     event.stopPropagation();
@@ -211,7 +211,10 @@ export function imageNode(alt, path) {
 }
 export async function loadImage(img) {
   const token = {}; img._resourceToken = token;
-  const status = img.parentElement.querySelector('.leaf-image-status');
+  // A retry starts with a plain status, without failure styles, focus targets
+  // or reveal handlers left by the previous attempt.
+  const status = document.createElement('span'); status.className = 'leaf-image-status';
+  img.parentElement.querySelector('.leaf-image-status').replaceWith(status);
   setText(status, () => t("resources.loading_image")); img.hidden = true; img.dataset.loaded = 'pending';
   delete img.dataset.failure;
   try {
@@ -239,7 +242,7 @@ export async function loadImage(img) {
       img.src = url;
       await Promise.race([img.decode(), new Promise((_, reject) => setTimeout(() => reject(new Error(t("resources.image_loading_timed_out"))), 15000))]);
       if (img._resourceToken !== token) return;
-      img.hidden = false; status.textContent = ''; img.dataset.loaded = 'yes';
+      img.hidden = false; setText(status, () => ''); img.dataset.loaded = 'yes';
       movedMissing.delete(decodeURIComponent(target));
     } catch (error) {
       // A known type that still will not decode is this platform refusing the
@@ -256,7 +259,7 @@ export async function loadImage(img) {
 }
 export function refreshImages(root = document) { root.querySelectorAll('img[data-resource]').forEach(loadImage); }
 export function retryMissingImages(root = document) { root.querySelectorAll('img[data-failure="missing"], img[data-failure="moved-missing"]').forEach(loadImage); }
-export async function waitForImages(root) {
+export async function waitForImages(root, { allowPlaceholders = false } = {}) {
   const until = Date.now() + 16000;
   while ([...root.querySelectorAll('img[data-resource]')].some(img => img.dataset.loaded === 'pending')) {
     if (Date.now() > until) throw new Error(t("resources.the_image_is_still_loading_try_again"));
@@ -265,7 +268,7 @@ export async function waitForImages(root) {
   // A format this platform cannot decode is exported as its placeholder: the
   // file is intact and the reader can find it. A missing or damaged file would
   // export a document whose gap is invisible, so that still stops the export.
-  if (root.querySelector('img[data-failure="missing"], img[data-failure="broken"]')) throw new Error(t("resources.some_images_could_not_be_loaded_check"));
+  if (!allowPlaceholders && root.querySelector('img[data-failure="missing"], img[data-failure="broken"]')) throw new Error(t("resources.some_images_could_not_be_loaded_check"));
 }
 export function markdownLink(label, path, image = false) {
   const url = safeTarget(path, image); if (!url) throw new Error(t("resources.enter_a_web_address_email_address_heading"));

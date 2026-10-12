@@ -12,12 +12,12 @@ export class LeafSearchPanel {
     this.dom.setAttribute('role', 'search');
     setAttr(this.dom, 'aria-label', () => t("search_panel.find_and_replace_in_document"));
     this.dom.innerHTML = `<div class="leaf-search-main">
-      <button type="button" name="toggleReplace" aria-expanded="false" aria-label="${t("search_panel.show_replace")}" data-i18n-aria-label="search_panel.show_replace">${h("editor.replace")}</button>
       <input name="search" main-field="true" placeholder="${t("editor.find")}" data-i18n-placeholder="editor.find" aria-label="${t("editor.find")}" data-i18n-aria-label="editor.find" autocomplete="off" spellcheck="false">
-      <span class="search-result" role="status" aria-live="polite" aria-atomic="true"></span>
+      <div class="leaf-search-actions"><span class="search-result" role="status" aria-live="polite" aria-atomic="true"></span>
       <button type="button" name="prev"></button><button type="button" name="next"></button>
+      <button type="button" name="toggleReplace" aria-expanded="false" aria-label="${t("search_panel.show_replace")}" data-i18n-aria-label="search_panel.show_replace">${h("editor.replace")}</button>
       <button type="button" name="options" aria-expanded="false">${h("search_panel.options")}</button>
-      <button type="button" name="close"></button>
+      <button type="button" name="close"></button></div>
     </div>
     <div class="leaf-search-options" hidden>
       <label><input type="checkbox" name="case">${h("editor.match_case")}</label>
@@ -27,7 +27,7 @@ export class LeafSearchPanel {
     </div>
     <div class="leaf-search-replace" hidden>
       <input name="replace" placeholder="${t("editor.replace_with")}" data-i18n-placeholder="editor.replace_with" aria-label="${t("editor.replace_with")}" data-i18n-aria-label="editor.replace_with" autocomplete="off" spellcheck="false">
-      <button type="button" name="replace">${h("editor.replace")}</button><button type="button" name="replaceAll">${h("editor.replace_all")}</button>
+      <div class="leaf-search-actions"><button type="button" name="replace">${h("editor.replace")}</button><button type="button" name="replaceAll">${h("editor.replace_all")}</button></div>
     </div>`;
     this.field = name => this.dom.querySelector(`input[name="${name}"]`);
     this.button = name => this.dom.querySelector(`button[name="${name}"]`);

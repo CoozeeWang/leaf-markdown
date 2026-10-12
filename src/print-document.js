@@ -106,13 +106,23 @@ export function renderPrintDocument(target, source, {
       }); return;
     }
     if (node.name === 'FencedCode' || node.name === 'CodeBlock') {
-      const code = node.getChild('CodeText');
+      const code = node.getChildren('CodeText');
       const pre = markSource(add('pre', parent), node, doc), info = node.getChild('CodeInfo');
       if (info) pre.dataset.language = doc.slice(info.from, info.to);
-      add('code', pre, code ? doc.slice(code.from, code.to) : ''); return;
+      add('code', pre, code.map(part => doc.slice(part.from, part.to)).join('')); return;
     }
     if (node.name === 'HorizontalRule') { markSource(add('hr', parent), node, doc); return; }
-    if (node.name === 'Paragraph') { renderInline(markSource(add('p', parent), node, doc), text, state); return; }
+    if (node.name === 'Paragraph') {
+      // Continuation quote markers are parser children, not inline content.
+      // Remove only those marks; a literal > inside text/code must survive.
+      let content = '', cursor = node.from;
+      for (const mark of node.getChildren('QuoteMark')) {
+        content += doc.slice(cursor, mark.from);
+        cursor = mark.to + (/^[ \t]/.test(doc.slice(mark.to)) ? 1 : 0);
+      }
+      content += doc.slice(cursor, node.to);
+      renderInline(markSource(add('p', parent), node, doc), content, state); return;
+    }
     if (node.name === 'Task') {
       const p = markSource(add('p', parent), node, doc); p.textContent = /^\[[xX]\]/.test(text) ? '☑ ' : '☐ ';
       renderInline(add('span', p), text.replace(/^\[[ xX]\]\s*/, ''), state); return;

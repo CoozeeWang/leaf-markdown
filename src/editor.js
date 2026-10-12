@@ -1072,6 +1072,7 @@ export function createLeafEditor(options) {
   };
 
   const appKeymap = keymap.of([
+    { key: 'Mod-Shift-z', run: redo },
     { key: 'Mod-e', run: () => (options.onExport?.(), true) },
     { key: 'Mod-Shift-s', run: () => (options.onSaveAs?.(), true) },
     { key: 'Mod-s', run: () => (options.onSave?.(), true) },
@@ -1338,6 +1339,7 @@ export function createLeafEditor(options) {
     setBlankMarkers(show) { view.dispatch({effects:toggleBlankMarkers.of(show)}); },
     tidyBlankLines() {
       const changes=paragraphBlankLineChanges(view.state.doc.toString());
+      if (changes.length && view.state.changes(changes).apply(view.state.doc).eq(view.state.doc)) return 0;
       if (changes.length) view.dispatch({changes, userEvent:'input', annotations:isolateHistory.of('full')});
       return changes.length;
     },

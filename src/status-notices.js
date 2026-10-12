@@ -1,8 +1,10 @@
 import { copyKeys, resolveMessage, onLanguageChange } from './i18n.js';
 // One visible message, one lifetime. Dismissing UI never changes file state.
-export function setupStatusNotices({ container, text, recovery, actions, dismiss, announcement, format = value => value }) {
+export function setupStatusNotices({ container, text, recovery, actions, dismiss, announcement, saveIndicator, format = value => value }) {
   let current = null, persistent = null, recoveryAvailable = false, recoveryDismissed = false;
   let timer, announcementTimer;
+  let saveState = null;
+  const routineSave = new Set(['main.saved','main.autosaved','main.waiting_to_autosave','main.saving','document_session.saved','document_session.saving','document_session.waiting_to_autosave']);
   const resolvedSave = /^(已保存|已自动保存|已下载保存副本|已载入外部修改|已恢复读取原文件|已开启自动保存|已重新定位原文件)/;
   const resolvedKeys = new Set(['UI0194','UI0195','UI0197','UI0198','UI0188','MO0032','MO0036','MO0037','MO0042','MO0044'].map(id => copyKeys[id]));
   const quietKeys = new Set(['UI0194','UI0188','UI0198','MO0042','MO0044'].map(id => copyKeys[id]));
@@ -10,6 +12,10 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
   const quiet = message => message?.key ? quietKeys.has(copyKeys[message.key] || message.key) : quietSave.test(message);
   const quietSave = /^(已自动保存|已开启自动保存|已载入外部修改|已恢复读取原文件)/;
   const render = () => {
+    if (saveIndicator) {
+      saveIndicator.textContent = saveState ? format(resolveMessage(saveState.text)) : '';
+      saveIndicator.dataset.kind = saveState?.kind || '';
+    }
     const visible = current || persistent;
     text.textContent = visible ? format(resolveMessage(visible.text)) : '';
     text.hidden = !visible;
@@ -37,6 +43,13 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
     clearTimeout(announcementTimer);
     announcement.textContent = '';
     if (kind === 'saved' && resolved(message)) persistent = null;
+    if (kind === 'error' || kind === 'manual') saveState = null;
+    if (saveIndicator && (kind === 'pending' || kind === 'saved' && routineSave.has(copyKeys[message?.key] || message?.key)) && !choices?.length) {
+      saveState = {text:message,kind};
+      current = null;
+      render();
+      return;
+    }
     const next = message ? { text: message, kind, actions: choices } : null;
     if (kind === 'error' || kind === 'manual') { persistent = next; current = null; }
     else current = next;
@@ -87,6 +100,7 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
       clearTimeout(timer);
       clearTimeout(announcementTimer);
       current = persistent = null;
+      saveState = null;
       recoveryAvailable = recoveryDismissed = false;
       announcement.textContent = '';
       render();

@@ -173,7 +173,12 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
   }
   async function copyRich(){
     try{const range=view.state.selection.main;const source=range.empty?editor.getValue():view.state.doc.sliceString(range.from,range.to);const root=document.createElement('div');renderPrintDocument(root,source,{fallbackTitle:false});root.querySelectorAll('.leaf-image').forEach(n=>n.replaceWith(document.createTextNode(n.querySelector('img')?.alt||'')));
-      await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([root.innerHTML],{type:'text/html'}),'text/plain':new Blob([source],{type:'text/plain'})})]);status(translatedMessage("writing_tools.copied_as_rich_text"),'saved');
+      // Targets without HTML support still receive the rendered words, not
+      // YAML and Markdown syntax. innerText preserves paragraph/table breaks.
+      root.style.cssText='position:fixed;left:-10000px;top:0;opacity:0;pointer-events:none;width:800px';
+      root.setAttribute('aria-hidden','true');document.body.append(root);
+      let plain;try{plain=root.innerText;}finally{root.remove();}
+      await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([root.innerHTML],{type:'text/html'}),'text/plain':new Blob([plain],{type:'text/plain'})})]);status(translatedMessage("writing_tools.copied_as_rich_text"),'saved');
     }catch(error){status(translatedMessage("writing_tools.could_not_copy", {"error": error.message||error}),'error');}
   }
   document.addEventListener('mousedown',event=>{

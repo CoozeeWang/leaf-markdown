@@ -28,12 +28,12 @@ function propertyNameControl(name,type) {
   update();type.addEventListener('change',()=>queueMicrotask(update));
   trigger.append(glyph,type);wrap.append(trigger,name);return wrap;
 }
-function valueControl(type,value,label,save,choices=[]) {
+function valueControl(type,value,label,save,choices=[],live=false) {
   if(type==='list') {
     const wrap=el('div','leaf-property-list');
     value.forEach((text,index)=>{const chip=el('span','leaf-property-chip',text);chip.append(button(translatedMessage("properties_ui.remove", {"text": text}),()=>save(value.filter((_,i)=>i!==index))));chip.lastChild.innerHTML=uiIcon('close', 12);wrap.append(chip);});
     const add=input(label);setAttr(add,'placeholder',()=>t("properties_ui.enter_an_item_then_press_enter"));
-    add.onkeydown=e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();e.stopPropagation();if(add.value.trim())save([...value,add.value.trim()]);}};
+    add.onkeydown=e=>{if(e.isComposing)return;if(e.key==='Escape'){e.preventDefault();e.stopPropagation();add.value='';add.blur();}if(e.key==='Enter'){e.preventDefault();e.stopPropagation();if(add.value.trim())save([...value,add.value.trim()]);}};
     wrap.append(add);return wrap;
   }
   if(type==='enum') {
@@ -44,11 +44,25 @@ function valueControl(type,value,label,save,choices=[]) {
   const n=input(label);n.type=type==='checkbox'?'checkbox':type==='date'?'date':type==='number'?'number':'text';
   if(type==='checkbox')n.checked=value;else n.value=value;
   if(type==='number')n.step='any';
-  n.oninput=()=>{
-    if(type==='date'&&!n.value)return;
-    if(type==='number'&&(!n.value||!n.checkValidity()))return;
-    save(type==='checkbox'?n.checked:type==='number'?Number(n.value):n.value);
-  };return n;
+  let original = value;
+  n.onfocus=()=>{original=type==='checkbox'?n.checked:type==='number'?Number(n.value):n.value;};
+  const submit=()=>{
+    if(type==='date'&&!n.value){n.value=original;return;}
+    if(type==='number'&&(!n.value||!n.checkValidity())){n.value=original;return;}
+    const next=type==='checkbox'?n.checked:type==='number'?Number(n.value):n.value;
+    if(next!==original){save(next);original=next;}
+  };
+  if(type==='checkbox')n.onchange=submit;
+  else {
+    if(live)n.oninput=submit;
+    n.onblur=submit;
+    n.onkeydown=e=>{
+      if(e.isComposing||e.keyCode===229)return;
+      if(e.key==='Escape'){e.preventDefault();e.stopPropagation();n.value=original;n.blur();}
+      if(e.key==='Enter'){e.preventDefault();e.stopPropagation();submit();n.blur();}
+    };
+  }
+  return n;
 }
 export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=()=>{},removeField=()=>{}) {
   body.replaceChildren();const block=getBlock();
@@ -56,6 +70,7 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
   const error=el('div','leaf-property-error');error.setAttribute('role','status');
   const refresh=()=>renderProperties(body,getBlock,commit,focusEditor,discardEmpty,removeField);
   block.fields.forEach((field,index)=>{
+    const error=el('div','leaf-property-error');error.setAttribute('role','status');
     const row=el('div','leaf-property-row'),name=el('span','leaf-property-key',field.key);
     if(!field.editable){row.append(name,el('span','leaf-property-unsupported',field.value));body.append(row);return;}
     const pref=preferences(field.key),inferred=inferType(field.value);
@@ -69,21 +84,21 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
       const empty=current?.value==='' || Array.isArray(current?.value)&&!current.value.length;
       if(!(valueInput && valueInput.type!=='checkbox' && !valueInput.value.trim()) && !empty)return false;
       if(Array.isArray(current?.value)&&current.value.length)return false;
-      renaming=true;error.textContent='';removeField(index);return true;
+      renaming=true;setText(error,()=> '');removeField(index);return true;
     };
     const renameKey=(explicit=false)=>{
       if(renaming)return;
       const key=keyInput.value.trim(),current=getBlock().fields[index];
-      if(key===current.key)return;
+      if(key===current.key){setText(error,()=> '');return;}
       if(!key){if(removeIfEmpty())return;if(explicit)setText(error, () => t("properties_ui.this_property_still_has_a_value_enter"));return;}
       if(getBlock().fields.some((f,i)=>i!==index&&f.key===key)){
         setText(error, () => key?t("properties_ui.this_property_name_already_exists_choose_another"):t("properties_ui.the_property_name_cannot_be_empty"));keyInput.value=current.key;return;
       }
-      renaming=true;error.textContent='';savePreference(key,preferences(current.key));
+      renaming=true;setText(error,()=> '');savePreference(key,preferences(current.key));
       focusEditor();commit({from:current.keyFrom,to:current.keyTo},JSON.stringify(key));
       if(body.isConnected)refresh();
     };
-    keyInput.oninput=()=>{error.textContent='';};
+    keyInput.oninput=()=>{setText(error,()=> '');};
     keyInput.onblur=()=>{if(keyInput.value.trim())renameKey();};
     row.addEventListener('compositionstart',()=>composing=true);
     row.addEventListener('compositionend',()=>{composing=false;queueMicrotask(removeIfEmpty);});
@@ -96,7 +111,7 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
         keyInput.value=getBlock().fields[index].key;
       }
     },0));
-    keyInput.onkeydown=e=>{if(e.isComposing)return;if(e.key==='Enter'){e.preventDefault();e.stopPropagation();renameKey(true);}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();keyInput.value=getBlock().fields[index].key;focusEditor();}};
+    keyInput.onkeydown=e=>{if(e.isComposing)return;if(e.key==='Enter'){e.preventDefault();e.stopPropagation();renameKey(true);}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();keyInput.value=getBlock().fields[index].key;setText(error,()=> '');focusEditor();}};
     const select=typeSelect(translatedMessage("properties_ui.type_of", {"key": field.key}),type);
     const setValue=(value,structural=false)=>{
       const current=getBlock().fields[index];
@@ -129,10 +144,11 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
         setAttr(options,'placeholder',()=>t("properties_ui.separate_options_with_semicolons"));options.value=(pref.options||[]).join('；');
         form.append(options,button(translatedMessage("properties_ui.save_options"),()=>form.requestSubmit()));
         form.onsubmit=e=>{e.preventDefault();savePreference(field.key,{type:'enum',options:[...new Set(options.value.split(/[;；\n]/).map(x=>x.trim()).filter(Boolean))]});refresh();};
+        form.addEventListener('keydown',e=>{if(e.key==='Escape'&&!e.isComposing){e.preventDefault();e.stopPropagation();form.remove();control.querySelector('button')?.focus();}});
         control.append(form);options.focus();
       }));
     }
-    row.append(propertyNameControl(keyInput,select),control);body.append(row);
+    row.append(propertyNameControl(keyInput,select),control,error);body.append(row);
   });
   body.append(error,button(translatedMessage("properties_ui.add_document_property"),()=>{
     if(body.querySelector('.leaf-property-add'))return;
@@ -141,7 +157,7 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
     setAttr(key,'placeholder',()=>t("properties_ui.property_name_mo0101"));key.required=true;
     const draw=()=>{
       const editing=holder.contains(document.activeElement);
-      holder.replaceChildren(valueControl(type.value,value,translatedMessage("properties_ui.new_property_value"),v=>{value=v;if(type.value==='list')draw();},[]));
+      holder.replaceChildren(valueControl(type.value,value,translatedMessage("properties_ui.new_property_value"),v=>{value=v;if(type.value==='list')draw();},[],true));
       const valueInput = holder.querySelector('input');
       if (valueInput && type.value === 'text') setAttr(valueInput,'placeholder',()=>t("properties_ui.property_value"));
       if(editing)valueInput?.focus();
@@ -185,7 +201,7 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
     form.addEventListener('focusout',()=>setTimeout(()=>{
       if(!form.contains(document.activeElement))finish();
     },0));
-    key.oninput=()=>{key.setCustomValidity('');error.textContent='';};body.insertBefore(form,addButton);key.focus();
+    key.oninput=()=>{key.setCustomValidity('');setText(error,()=> '');};body.insertBefore(form,addButton);key.focus();
   }));
   const addButton=body.lastChild;
   addButton.classList.add('leaf-property-add-button');addButton.dataset.action='add-property';

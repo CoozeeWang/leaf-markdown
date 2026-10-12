@@ -1,0 +1,10 @@
+{
+  "productName": "Leaf Test",
+  "identifier": "studio.leaf.editor.dev",
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "fileAssociations": [],
+    "macOS": { "infoPlist": "Test-Info.plist" }
+  }
+}

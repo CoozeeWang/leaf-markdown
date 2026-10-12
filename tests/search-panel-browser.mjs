@@ -14,10 +14,24 @@ try {
  assert.equal(await page.locator('.leaf-search-replace').isVisible(),false);
  assert.equal(await result.textContent(),'输入查找内容');assert.ok(await button('next').isDisabled());
  await field.fill('写作');assert.equal(await result.textContent(),'共 3 处');
- await field.press('Enter');assert.equal(await result.textContent(),'第 1 / 3 处');
- await field.press('Enter');assert.equal(await result.textContent(),'第 2 / 3 处');
- await field.press('Shift+Enter');assert.equal(await result.textContent(),'第 1 / 3 处');
+ await field.press('Enter');assert.equal(await result.textContent(),'第 1 处，共 3 处');
+ await field.press('Enter');assert.equal(await result.textContent(),'第 2 处，共 3 处');
+ await field.press('Shift+Enter');assert.equal(await result.textContent(),'第 1 处，共 3 处');
  await button('toggleReplace').click();await page.locator('input[name=replace]').fill('阅读');
+ const buttonWidths=await page.evaluate(()=>['replace','replaceAll'].map(name=>{
+  const button=document.querySelector(`button[name="${name}"]`),range=document.createRange();
+  range.selectNodeContents(button);
+  return {width:button.getBoundingClientRect().width,textWidth:range.getBoundingClientRect().width};
+ }));
+ for(const {width,textWidth} of buttonWidths) assert.ok(Math.abs(width-textWidth-16)<1,JSON.stringify(buttonWidths));
+ const layout=await page.evaluate(()=>{
+  const box=selector=>document.querySelector(selector).getBoundingClientRect();
+  const find=box('input[name=search]'),replace=box('input[name=replace]');
+  const result=box('.search-result'),one=box('button[name=replace]'),all=box('button[name=replaceAll]');
+  return {widthDelta:Math.abs(find.width-replace.width),leftDelta:Math.abs(find.left-replace.left),topGap:result.left-find.right,bottomGap:one.left-replace.right,buttonGap:all.left-one.right};
+ });
+ assert.ok(layout.widthDelta<1&&layout.leftDelta<1,JSON.stringify(layout));
+ for(const gap of [layout.topGap,layout.bottomGap,layout.buttonGap]) assert.ok(Math.abs(gap-6)<1,JSON.stringify(layout));
  await button('replace').click();assert.equal(await text(),source.replace('写作','阅读'));
  await page.click('#undoButton');assert.equal(await text(),source);
  await button('replaceAll').click();assert.equal(await text(),source.replaceAll('写作','阅读'));assert.equal(await result.textContent(),'无匹配');

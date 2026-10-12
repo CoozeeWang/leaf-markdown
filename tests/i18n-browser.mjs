@@ -14,13 +14,13 @@ try {
     assert.ok(await target.locator('#languagePopover').isVisible(), 'First click opens the language menu');
     assert.equal(await target.locator(id).getAttribute('aria-expanded'), 'true');
     await target.click(`#languagePopover [data-language="${value}"]`);
-    await target.waitForFunction(() => !document.querySelector('#languageSelect').disabled);
+    await target.waitForFunction(() => !document.querySelector('#editorLanguageSelect').disabled);
     assert.ok(await target.locator('#languagePopover').isHidden());
   };
   const language = async value => {
     const id = await page.locator('#welcomeScreen').isVisible() ? '#welcomeLanguageSelect' : '#editorLanguageSelect';
     await chooseQuickLanguage(page, id, value);
-    await page.waitForFunction(value => document.querySelector('#languageSelect').value === value && !document.querySelector('#languageSelect').disabled, value);
+    await page.waitForFunction(value => document.querySelector('#editorLanguageSelect').value === value && !document.querySelector('#editorLanguageSelect').disabled, value);
   };
   // macOS WebKit uses Option-Tab to include buttons when full keyboard access is off.
   await page.locator('#welcomeRecentButton').focus(); await page.keyboard.press(engine.name() === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab');
@@ -73,7 +73,7 @@ try {
   });
   for (const value of ['zh-Hant-TW', 'zh-Hans', 'en']) {
     await language(value);
-    for (const id of ['languageSelect', 'editorLanguageSelect', 'welcomeLanguageSelect']) assert.equal(await page.locator('#'+id).evaluate(el => el.value), value);
+    for (const id of ['editorLanguageSelect', 'welcomeLanguageSelect']) assert.equal(await page.locator('#'+id).evaluate(el => el.value), value);
     const after = await page.evaluate(async () => {
       const { undoDepth, redoDepth } = await import('/node_modules/@codemirror/commands/dist/index.js');
       return { text: view.state.doc.toString(), selection: view.state.selection.toJSON(), undo: undoDepth(view.state), redo: redoDepth(view.state) };
@@ -92,10 +92,9 @@ try {
   await page.locator('#appearanceButton').focus(); await page.keyboard.press(engine.name() === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'editorLanguageSelect');
   assert.ok(await page.locator('#editorLanguageSelect').evaluate(el => el.matches(':focus-visible')));
+  assert.equal(await page.locator('#languageSelect').count(), 0);
+  await language('zh-Hant-TW');
   await page.click('#appearanceButton');
-  assert.equal(await page.locator('#languageSelect').inputValue(), 'en');
-  assert.ok(await page.locator('#languageSelect').evaluate(el => el.compareDocumentPosition(document.querySelector('#themeSelect')) & Node.DOCUMENT_POSITION_FOLLOWING));
-  await page.selectOption('#languageSelect', 'zh-Hant-TW');
   await page.waitForFunction(() => document.documentElement.lang === 'zh-Hant-TW');
   assert.equal(await page.locator('#settingsTab-appearance').innerText(), '外觀與排版');
   await page.click('#settingsClose');
@@ -122,13 +121,11 @@ try {
   assert.equal(await page.locator('.leaf-search input[name=search]').getAttribute('placeholder'), '尋找');
   // A failed preference write keeps the selected language and reports failure.
   await page.evaluate(() => { window.originalSetItem = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) { if (key === 'leaf-language') throw Error('synthetic failure'); return originalSetItem.call(this, key, value); }; });
-  await page.click('#appearanceButton');
-  await page.selectOption('#languageSelect', 'en');
-  await page.waitForFunction(() => !document.querySelector('#languageSelect').disabled);
-  for (const id of ['languageSelect', 'editorLanguageSelect', 'welcomeLanguageSelect']) assert.equal(await page.locator('#'+id).evaluate(el => el.value), 'zh-Hant-TW');
+  await chooseQuickLanguage(page, '#editorLanguageSelect', 'en');
+  await page.waitForFunction(() => !document.querySelector('#editorLanguageSelect').disabled);
+  for (const id of ['editorLanguageSelect', 'welcomeLanguageSelect']) assert.equal(await page.locator('#'+id).evaluate(el => el.value), 'zh-Hant-TW');
   assert.match(await page.locator('#saveStatus').innerText(), /語言/);
   await page.evaluate(() => { Storage.prototype.setItem = originalSetItem; });
-  await page.click('#settingsClose');
   const other = await context.newPage(); await other.goto('http://127.0.0.1:41732'); await other.locator('#welcomeNewButton').waitFor();
   await language('en');
   await other.waitForFunction(() => document.documentElement.lang === 'en');
@@ -146,7 +143,7 @@ try {
   }
   await chooseQuickLanguage(other, '#welcomeLanguageSelect', 'system');
   await page.waitForFunction(() => document.querySelector('#editorLanguageSelect').value === 'system');
-  assert.equal(await other.locator('#languageSelect').inputValue(),'system');
+  assert.equal(await other.locator('#welcomeLanguageSelect').evaluate(el=>el.value),'system');
 
   await page.click('.leaf-search button[name=close]');
   for (const value of ['zh-Hans','zh-Hant-TW','en']) {
@@ -154,7 +151,7 @@ try {
     for (const theme of ['light','dark']) for (const size of [{width:1280,height:900},{width:900,height:480}]) {
       await page.setViewportSize(size);
       await page.click('#appearanceButton'); await page.selectOption('#themeSelect', theme);
-      assert.ok(await page.locator('#languageSelect').evaluate(el => { const r=el.getBoundingClientRect(); return r.right <= innerWidth && r.bottom <= innerHeight; }));
+      assert.ok(await page.locator('#themeSelect').evaluate(el => { const r=el.getBoundingClientRect(); return r.right <= innerWidth && r.bottom <= innerHeight; }));
       assert.ok(await page.locator('#editorLanguageSelect').evaluate(el => { const r=el.getBoundingClientRect(), settings=document.querySelector('#appearanceButton').getBoundingClientRect(); return r.left >= settings.right && r.right <= innerWidth && r.bottom <= innerHeight && r.width >= 28; }));
       await page.screenshot({ path: artifactPath(`i18n-${value}-${theme}-${size.width}.png`) });
       await page.click('#settingsClose');
@@ -167,8 +164,8 @@ try {
     const i18n=await import('/src/i18n.js');window.originalLanguageCopy=i18n.resources.en['settings.language'];
     i18n.resources.en['settings.language']='Interface language with a deliberately longer label';i18n.refreshTranslations();
   });
-  assert.equal(await page.locator('[data-i18n="UI0256"], [data-i18n="settings.language"]').textContent(), 'Interface language with a deliberately longer label');
-  assert.ok(await page.locator('#languageSelect').evaluate(el=>{const r=el.getBoundingClientRect();return r.right<=innerWidth&&r.bottom<=innerHeight;}));
+  assert.equal(await page.locator('#editorLanguageSelect').getAttribute('aria-label'), 'Interface language with a deliberately longer label');
+  assert.ok(await page.locator('#themeSelect').evaluate(el=>{const r=el.getBoundingClientRect();return r.right<=innerWidth&&r.bottom<=innerHeight;}));
   await page.screenshot({path:artifactPath('i18n-long-copy-small.png')});
   await page.evaluate(async()=>{const i18n=await import('/src/i18n.js');i18n.resources.en['settings.language']=originalLanguageCopy;i18n.refreshTranslations();});
   await page.click('#settingsClose');

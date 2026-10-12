@@ -1,7 +1,7 @@
 import { parser } from '@lezer/markdown';
 import { leafMarkdownExtensions } from './markdown-extensions.js';
 import { frontmatter } from './markdown-model.js';
-import { EditorState } from '@codemirror/state';
+import { EditorState, ChangeSet } from '@codemirror/state';
 
 const markdown = parser.configure(leafMarkdownExtensions);
 
@@ -90,8 +90,36 @@ export const orderedListRenumber = EditorState.transactionFilter.of(tr => {
   });
   if (!suspected) return tr;
   const previous = removed.length
-    ? {text: tr.startState.doc.toString(), map: pos => tr.changes.mapPos(pos, -1), removed}
+    ? {text: tr.startState.doc.toString(), map: pos => tr.changes.invertedDesc.mapPos(pos, -1), removed}
     : null;
+  // A list starting at 2 cannot interrupt a paragraph. Restore the inherited
+  // start before parsing the new document, while the old tree still proves
+  // which lines were list items. Never normalize arbitrary numbered prose.
+  const starts = [];
+  const previousYaml = frontmatter(tr.startState.doc.toString());
+  if (removed.length) markdown.parse(tr.startState.doc.toString()).iterate({enter(node) {
+    if (previousYaml && node.name !== 'Document' && node.from < previousYaml.to) return false;
+    if (node.name !== 'OrderedList') return;
+    const items = node.node.getChildren('ListItem'), first = items[0];
+    if (!first || !removed.some(r => r.from <= first.from && r.to >= first.to)) return;
+    const survivor = items.find(item => !removed.some(r => r.from <= item.from && r.to >= item.to));
+    if (!survivor) return;
+    const from = tr.changes.mapPos(survivor.from, 1);
+    const old = /^\d+[.)][ \t]/.exec(tr.startState.doc.sliceString(survivor.from, survivor.to));
+    const now = /^\d+[.)][ \t]/.exec(doc.sliceString(from));
+    const start = /^\d+/.exec(tr.startState.doc.sliceString(first.from, first.to))?.[0];
+    if (old && now?.[0] === old[0] && start && /^\d+/.exec(now[0])[0] !== start) {
+      starts.push({from, to: from + /^\d+/.exec(now[0])[0].length, insert: start});
+    }
+  }});
+  if (starts.length) {
+    starts.sort((a,b) => a.from-b.from);
+    const startChanges = ChangeSet.of(starts, doc.length);
+    const restored = startChanges.apply(doc).toString();
+    const ranges = touched.map(r => ({from:startChanges.mapPos(r.from,-1),to:startChanges.mapPos(r.to,1)}));
+    const rest = orderedListNumberChanges(restored, ranges);
+    return rest.length ? [tr, {changes:starts,sequential:true}, {changes:rest,sequential:true}] : [tr, {changes:starts,sequential:true}];
+  }
   const changes = orderedListNumberChanges(doc.toString(), touched, previous);
   if (!changes.length) return tr;
   return [tr, {changes, sequential: true}];

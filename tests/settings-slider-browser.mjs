@@ -12,8 +12,49 @@ for (const engine of ['chrome', 'webkit']) {
     assert.equal(await activeTab.evaluate(el => getComputedStyle(el).outlineStyle), 'none');
     await page.keyboard.press('ArrowRight');
     assert.equal(await activeTab.getAttribute('id'), 'settingsTab-recovery');
+    assert.equal(await activeTab.evaluate(el => getComputedStyle(el).outlineStyle), 'solid');
+    assert.equal(await activeTab.evaluate(el => getComputedStyle(el).outlineWidth), '1px');
+    for (const theme of ['dark','light']) {
+      await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+      assert.equal(await activeTab.evaluate(el => getComputedStyle(el).outlineColor),theme==='dark'?'rgb(155, 188, 160)':'rgb(96, 123, 104)');
+    }
+    await page.locator('#appearancePopover').focus();
     assert.equal(await activeTab.evaluate(el => getComputedStyle(el).outlineStyle), 'none');
+    assert.equal(await activeTab.getAttribute('aria-selected'), 'true');
+    await activeTab.focus();
     await page.keyboard.press('ArrowLeft');
+    const checkTab = async tab => {
+      assert.equal(await activeTab.getAttribute('id'), `settingsTab-${tab}`);
+      assert.equal(await page.evaluate(() => document.activeElement.id), `settingsTab-${tab}`);
+      assert.ok(await page.locator(`#settingsPanel-${tab}`).isVisible());
+      const other = tab === 'appearance' ? 'recovery' : 'appearance';
+      assert.ok(await page.locator(`#settingsPanel-${other}`).isHidden());
+      assert.equal(await page.locator(`#settingsTab-${other}`).getAttribute('tabindex'), '-1');
+    };
+    await checkTab('appearance');
+    for (const language of ['zh-Hans', 'zh-Hant-TW', 'en']) {
+      await page.click('#editorLanguageSelect');
+      await page.click(`#languagePopover [data-language=\"${language}\"]`);
+      await page.click('#appearanceButton');
+      await page.waitForFunction(language => document.documentElement.lang === language, language);
+      await page.click('#settingsTab-appearance');
+      for (const [key, tab] of [
+        ['ArrowLeft', 'recovery'], ['ArrowLeft', 'appearance'],
+        ['ArrowRight', 'recovery'], ['ArrowRight', 'appearance'],
+        ['End', 'recovery'], ['Home', 'appearance'],
+      ]) {
+        await page.keyboard.press(key);
+        await checkTab(tab);
+      }
+      await page.click('#settingsTab-recovery');
+      await checkTab('recovery');
+      await page.keyboard.press('Escape');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'appearanceButton');
+      await page.click('#appearanceButton');
+      await checkTab('recovery');
+      await page.keyboard.press('ArrowLeft');
+      await checkTab('appearance');
+    }
 
     for (const [id, output] of [['fontSizeInput','fontSizeValue'], ['contentWidthInput','contentWidthValue']]) {
       const slider = page.locator('#' + id), rect = await slider.boundingBox();
@@ -32,6 +73,6 @@ for (const engine of ['chrome', 'webkit']) {
     }
     await page.locator('#themeSelect').focus();
     assert.equal(await page.locator('#themeSelect').evaluate(el => getComputedStyle(el).outlineStyle), 'none');
-    console.log(`PASS ${engine}: drag then arrow keys without programmatic focus`);
+    console.log(`PASS ${engine}: trilingual tab arrows/wrap/Home/End, panel/focus sync, mouse/reopen and slider drag then arrow keys`);
   } finally { await browser.close(); }
 }

@@ -65,3 +65,8 @@ test('literal UI translation calls refer to existing resources', () => {
   for(const name of readdirSync('src').filter(name=>name.endsWith('.js')))visit(parseAst(readFileSync('src/'+name,'utf8')));
   for(const key of Object.keys(resources.en))for(const language of ['zh-Hans','zh-Hant-TW'])assert.ok(resources[language][key],`${language} missing ${key}`);
 });
+
+test('native errors wrapped in Error remain readable',()=>{
+ const code='main.a_file_with_this_name_already_exists_na0039';
+ assert.equal(formatError(new Error(JSON.stringify({leafError:1,code,params:{}}))),t(code));
+});

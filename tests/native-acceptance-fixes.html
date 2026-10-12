@@ -1,0 +1,22 @@
+<!doctype html><html><meta charset="utf-8"><nav class="format-toolbar"><span class="toolbar-spacer"></span></nav><div id="editor" style="height:600px"></div><div id="rendered"></div>
+<script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import {renderPrintDocument} from '/src/print-document.js';
+import '/src/style.css';
+window.startTest=async()=>{
+ try{
+  const source='正文\n1. 一\n2. 二\n3. 三';let changed='';
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:source,onChange:s=>changed=s});
+  editor.view.dispatch({changes:{from:3,to:8},userEvent:'delete.selection'});
+  if(editor.getValue()!=='正文\n1. 二\n2. 三')throw Error('list structure/numbering lost');
+  editor.undo();if(editor.getValue()!==source)throw Error('list undo lost original');
+  editor.redo();if(editor.getValue()!=='正文\n1. 二\n2. 三')throw Error('list redo differs');
+  editor.setSource(true);editor.view.dispatch({changes:{from:editor.view.state.doc.length,insert:'\nSOURCE-TAIL'},userEvent:'input.type'});
+  if(!changed.endsWith('SOURCE-TAIL'))throw Error('source edit did not notify saving');
+  renderPrintDocument(document.querySelector('#rendered'),'    FIRST\n    > SECOND\n\n> QUOTE-A\n> QUOTE-B',{fallbackTitle:false});
+  if(!document.querySelector('pre code').textContent.includes('> SECOND'))throw Error('code continuation lost');
+  if(document.querySelector('blockquote').textContent.includes('>'))throw Error('quote syntax leaked');
+  document.title='LeafTest PASS native list deletion undo/redo, source edit callback and code/quote rendering';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};document.title='LeafSource';
+</script></html>
