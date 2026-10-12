@@ -26,7 +26,11 @@ function buildStamp() {
   const commit = git('rev-parse', '--short=8', 'HEAD');
   if (!commit) return time;
   const changes = git('status', '--porcelain');
-  if (changes) console.warn(`[Leaf build] Working-tree changes at build time:\n${changes}`);
+  if (changes) {
+    console.warn(`[Leaf build] Working-tree changes at build time:\n${changes}`);
+    const manifestChanges = git('diff', '--', 'src-tauri/Cargo.toml');
+    if (manifestChanges) console.warn(`[Leaf build] Cargo manifest diff:\n${manifestChanges}`);
+  }
   return `${commit}${changes ? '+' : ''} · ${time}`;
 }
 

@@ -33,6 +33,13 @@ function Assert-UsableIco([string]$Path) {
 }
 $config = Get-Content "$PSScriptRoot/../src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
 $association = $config.bundle.fileAssociations[0]
+# Restore the pre-install extension defaults, including a pre-existing value
+# that happens to equal our class name; UserChoice is checked separately.
+$extensionDefaults = @{}
+foreach ($ext in $association.ext) {
+  $key = "HKCU:\Software\Classes\.$ext"
+  $extensionDefaults[$ext] = if (Test-Path $key) { (Get-Item $key).GetValue('') } else { $null }
+}
 $appData = Join-Path $env:APPDATA $config.identifier
 if (Test-Path $appData) { throw 'Runner already has Leaf data; refusing to overwrite' }
 New-Item -ItemType Directory -Path $appData | Out-Null
@@ -114,7 +121,8 @@ try {
     if (Test-Path $documentIcon) { throw 'Uninstaller left the document icon resource' }
     foreach ($ext in $association.ext) {
       $extension = "HKCU:\Software\Classes\.$ext"
-      if ((Test-Path $extension) -and (Get-Item $extension).GetValue('') -eq $association.name) { throw "Uninstaller left the .$ext association" }
+      $restored = if (Test-Path $extension) { (Get-Item $extension).GetValue('') } else { $null }
+      if ($restored -ne $extensionDefaults[$ext]) { throw "Uninstaller did not restore the .$ext association: before='$($extensionDefaults[$ext])' after='$restored'" }
       if ((Get-UserChoiceSnapshot $ext) -ne $choices[$ext]) { throw "Uninstaller changed Windows UserChoice for .$ext" }
     }
   }
