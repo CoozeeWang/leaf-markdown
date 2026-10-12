@@ -5,7 +5,7 @@ import { unfoldAll } from '@codemirror/language';
 import { Compartment, EditorSelection, EditorState, StateEffect, StateField } from '@codemirror/state';
 import { renderBlock, sourceBlock, propertiesFolded, toggleProperties } from './structured-preview.js';
 import { labels as calloutLabels, titleSlotInSource, bodyToSource } from './callout.js';
-import { footnoteIndex, footnoteLabelFollow, footnoteRenumber, footnoteReferenceDeletion, footnoteLabelMap } from './footnote-state.js';
+import { footnoteIndex, footnoteLabelFollow, footnoteRenumber, footnoteReferenceDeletion, footnoteReferenceCompletion, footnoteLabelMap } from './footnote-state.js';
 import { orderedListRenumber } from './list-order.js';
 import { imageLines, outdentWritingImage } from './image-list-indent.js';
 import { planFootnoteInsertion, planFootnoteDeletion, indexFootnotes, displayNotes, footnoteBodyText, appendDefinition } from './footnotes.js';
@@ -1138,6 +1138,7 @@ export function createLeafEditor(options) {
       // Registered before the reading-mode filter below, which runs first: a
       // document that is only being read has no edit for this one to follow.
       footnoteRenumber,
+      footnoteReferenceCompletion,
       footnoteReferenceDeletion,
       footnoteLabelFollow,
       orderedListRenumber,

@@ -34,10 +34,11 @@ try {
   for (const key of '[^Test]') {
     typed+=key;
     await page.keyboard.type(key);
-    assert.equal(await doc(),original.slice(0,at)+typed+original.slice(at),`输入 ${typed} 不得改动旧定义`);
+    const expected=key===']'?'甲[^1] 乙[^Test][^3]\n\n[^1]: A\n[^Test]:\n[^3]: B':original.slice(0,at)+typed+original.slice(at);
+    assert.equal(await doc(),expected,`输入 ${typed} 保留旧脚注内容`);
   }
   await page.click('#notesButton');
-  assert.deepEqual(await page.locator('.note-body').evaluateAll(es=>es.map(e=>e.value)),['A','B','']);
+  assert.deepEqual(await page.locator('.note-body').evaluateAll(es=>es.map(e=>e.value)),['A','','B']);
   const newBody=page.locator('.note-card[data-label="Test"] .note-body');
   await newBody.locator('.cm-content').fill('行业注释');
   await newBody.press('Escape');

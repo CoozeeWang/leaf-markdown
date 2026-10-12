@@ -24,7 +24,19 @@ window.startTest=async()=>{
   document.querySelector('#undoButton').click();check(view.state.doc.toString()===source,'note undo changed source');
   check(!card._noteEditor.value().includes('新粗体'),'note undo left stale sidebar text');
   check(document.querySelector('[data-format=highlight] svg'),'highlighter icon missing');
-  document.title='LeafTest PASS native footnote sidebar modes, source preservation, shared undo and toolbar icon';
+  const incomplete='正文[^1] ==高亮[^6==\n\n[^1]: 第一条';
+  view.dispatch({changes:{from:0,to:view.state.doc.length,insert:incomplete}});
+  const at=incomplete.indexOf('==',incomplete.indexOf('==')+2);
+  view.dispatch({changes:{from:at,insert:']'},selection:{anchor:at+1},userEvent:'input.type'});
+  check(view.state.doc.toString()==='正文[^1] ==高亮[^2]==\n\n[^1]: 第一条\n\n[^2]:','typed citation not completed');
+  await pause();check(document.querySelector('#notesCount').textContent==='2','completed note count wrong');
+  check(!document.querySelector('.note-card[data-state=undefined]'),'completed note still undefined');
+  const old='正文[^6]';view.dispatch({changes:{from:0,to:view.state.doc.length,insert:old}});await pause();
+  check(view.state.doc.toString()===old,'loading altered an undefined citation');
+  document.querySelector('.note-body .cm-content').focus();await pause();
+  check(view.state.doc.toString()==='正文[^1]\n\n[^1]:','editing missing note did not complete definition');
+  document.querySelector('#undoButton').click();check(view.state.doc.toString()===old,'missing note completion undo wrong');
+  document.title='LeafTest PASS native footnote sidebar modes, shared undo, toolbar icon and manual citation completion';
  }catch(error){document.title='LeafTest FAIL '+error.message;}
 };
 document.title='LeafSource';

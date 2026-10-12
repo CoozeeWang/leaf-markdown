@@ -657,6 +657,11 @@ function noteCard(row, measure) {
       onUndo:()=>editor.undo(),onRedo:()=>editor.redo(),onLeave:()=>editor.focus()});
   }
   if(card._noteEditor) setAttr(card._noteEditor.view.contentDOM,'aria-label',()=>t('main.content_of_footnote',{note:card._noteRow.number??card._noteRow.label}));
+  body.addEventListener('focusin', () => {
+    if (card._noteRow.state === 'undefined' && !state.source && !state.reading) {
+      editor.setFootnoteBody(card._noteRow.label, '');
+    }
+  });
   // A source-value accessor keeps diagnostics independent of rendering.
   Object.defineProperty(body,'value',{get:()=>card._noteEditor?.value()??card._noteRow.body});
 
