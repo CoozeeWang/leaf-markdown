@@ -8,7 +8,7 @@ installMenuInteraction();
 import { setupWriting } from './writing-tools.js';
 import { loadedLocalImagePaths, refreshImages, retryMissingImages, setMovedMissingImages } from './resources.js';
 import { showRecovery, setupWelcomeRecovery } from './recovery-dialog.js';
-import { createLeafEditor } from './editor.js';
+import { createLeafEditor, createLeafNoteEditor } from './editor.js';
 import { setupSidebarResize } from './outline-resize.js';
 import './style.css';
 import { renderPrintDocument } from './print-document.js';
@@ -123,6 +123,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <span class="toolbar-divider"></span>
       <button data-format="bold" aria-label="${t("main.bold")}" data-i18n-aria-label="main.bold" data-tooltip="${t("main.bold_b")}" data-i18n-data-tooltip="main.bold_b"><span class="format-glyph bold">B</span></button>
       <button data-format="italic" aria-label="${t("main.italic")}" data-i18n-aria-label="main.italic" data-tooltip="${t("main.italic_i")}" data-i18n-data-tooltip="main.italic_i"><span class="format-glyph italic">I</span></button>
+      <button data-format="highlight" aria-label="${t('main.highlight')}" data-i18n-aria-label="main.highlight">${icon('highlight')}</button>
       <button data-format="strike" aria-label="${t("main.strikethrough")}" data-i18n-aria-label="main.strikethrough" data-tooltip="${t("main.strikethrough_x")}" data-i18n-data-tooltip="main.strikethrough_x"><span class="format-glyph strike">S</span></button>
       <button data-format="sup" aria-label="${t("main.superscript")}" data-i18n-aria-label="main.superscript" data-tooltip="${t("main.superscript_ui0036")}" data-i18n-data-tooltip="main.superscript_ui0036"><span class="format-glyph">x<sup>2</sup></span></button>
       <button data-format="sub" aria-label="${t("main.subscript")}" data-i18n-aria-label="main.subscript" data-tooltip="${t("main.subscript_ui0038")}" data-i18n-data-tooltip="main.subscript_ui0038"><span class="format-glyph">x<sub>2</sub></span></button>
@@ -543,7 +544,7 @@ const notesCount = document.querySelector('#notesCount');
 // signature of what is on screen.
 function renderNotes() {
   const rows = notePanelRows(indexFootnotes(state.content));
-  const signature = JSON.stringify([state.reading, rows]);
+  const signature = JSON.stringify([state.reading, state.source, rows]);
   if (signature === state.notesSignature) return;
   // A drawer that is closed has no width to lay a textarea out in, so a height
   // measured now would be fixed to the wrong width; the redraw waits for the next
@@ -551,7 +552,7 @@ function renderNotes() {
   // Rebuilding under the caret is worse: it would take the words out from under
   // the fingers -- and out of an unfinished pinyin run.
   if (!notesDrawer.classList.contains('visible')) return;
-  if (notesList.contains(document.activeElement)) {
+  if (notesList.contains(document.activeElement) && state.notesMode === (state.reading?'reading':state.source?'source':'edit')) {
     // Keep the focused textarea (including its IME state), but update every
     // card's identity and number before another card can be edited.
     for (const card of notesList.querySelectorAll('.note-card')) {
@@ -565,10 +566,11 @@ function renderNotes() {
       setAttr(number, 'aria-label', () => t("main.jump_to_footnote", {"note": row.number ?? row.label}));
       const body = card.querySelector('.note-body');
       setAttr(body, 'aria-label', () => t("main.content_of_footnote", {"note": row.number ?? row.label}));
-      if (body !== document.activeElement && body.value !== row.body) { body.value = row.body; fitNoteBody(body); }
+      syncNoteBody(card, row);
       if (row.state === 'complete') card.querySelector('.note-card-head')?.remove();
     }
     notesCount.textContent = rows.filter(row => row.number !== null).length || '';
+    state.notesSignature = signature;
     return;
   }
   state.notesSignature = signature;
@@ -577,11 +579,11 @@ function renderNotes() {
   // editor, or in the box under a fresh marker, arrives one keystroke at a time,
   // and rebuilding a row per keystroke would cost a textarea per note in the
   // document each time. Same notes, different words: patch the words.
-  const skeleton = JSON.stringify([state.reading, rows.map(row => [row.label, row.number, row.state])]);
+  const skeleton = JSON.stringify([state.reading, state.source, rows.map(row => [row.label, row.number, row.state])]);
   if (skeleton === state.notesSkeleton) {
     for (const row of rows) {
       const body = notesList.querySelector(`.note-card[data-label="${CSS.escape(row.label)}"] .note-body`);
-      if (body && body.value !== row.body) { body.value = row.body; fitNoteBody(body); }
+      if (body) syncNoteBody(body.closest('.note-card'), row);
     }
     return;
   }
@@ -589,6 +591,8 @@ function renderNotes() {
 
   const numbered = rows.filter(row => row.number !== null).length;
   notesCount.textContent = numbered ? `${numbered}` : '';
+  for (const card of notesList.querySelectorAll('.note-card')) card._noteEditor?.destroy();
+  state.notesMode = state.reading?'reading':state.source?'source':'edit';
   notesList.replaceChildren();
   if (!rows.length) {
     notesList.innerHTML = `<span class="empty-hint">${h("main.no_footnotes_in_this_document")}</span>`;
@@ -597,6 +601,13 @@ function renderNotes() {
   const measure = [];
   for (const row of rows) notesList.append(noteCard(row, measure));
   for (const fit of measure) fit();
+}
+
+function syncNoteBody(card, row) {
+  Object.assign(card._noteRow, row);
+  if (card._noteUpdating) return;
+  if (card._noteEditor) card._noteEditor.sync(row.body);
+  else renderPrintDocument(card.querySelector('.note-body'),row.body,{fallbackTitle:false,footnotes:{map:new Map(),link:false,seen:new Map()}});
 }
 
 function fitNoteBody(body) {
@@ -631,25 +642,24 @@ function noteCard(row, measure) {
     head.append(hint);
   }
 
-  const body = document.createElement('textarea');
+  const body = document.createElement('div');
   body.className = 'note-body';
-  body.rows = 1;
-  body.spellcheck = false;
-  body.value = row.body;
-  setAttr(body, 'placeholder', () => t("main.enter_footnote_content"));
-  setAttr(body, 'aria-label', () => t("main.content_of_footnote", {"note": row.number ?? row.label}));
-  // The reading view shows the notes the way they will print, and an edit made
-  // there would be dropped on the floor, so the panel stops offering one.
-  body.readOnly = state.reading;
-  measure.push(() => fitNoteBody(body));
-  body.addEventListener('input', () => { editor.setFootnoteBody(row.label, body.value); fitNoteBody(body); });
-  body.addEventListener('keydown', event => {
-    if (event.isComposing) return;
-    if (event.key === 'Escape' || (event.key === 'Enter' && !event.shiftKey)) {
-      event.preventDefault();
-      if (!state.reading) editor.focus();
-    }
-  });
+  if (state.reading) {
+    body.classList.add('note-reading');
+    renderPrintDocument(body, row.body, {fallbackTitle:false, footnotes:{map:new Map(),link:false,seen:new Map()}});
+  } else {
+    card._noteEditor = createLeafNoteEditor({parent:body,doc:row.body,source:state.source,
+      label:t('main.content_of_footnote',{note:row.number??row.label}),
+      onChange: value => {
+        card._noteUpdating=true;
+        try { editor.setFootnoteBody(card._noteRow.label,value); }
+        finally { card._noteUpdating=false; }
+      },
+      onUndo:()=>editor.undo(),onRedo:()=>editor.redo(),onLeave:()=>editor.focus()});
+  }
+  if(card._noteEditor) setAttr(card._noteEditor.view.contentDOM,'aria-label',()=>t('main.content_of_footnote',{note:card._noteRow.number??card._noteRow.label}));
+  // A source-value accessor keeps diagnostics independent of rendering.
+  Object.defineProperty(body,'value',{get:()=>card._noteEditor?.value()??card._noteRow.body});
 
   // The number goes beside the text, so a row reads the way its definition does
   // in the file instead of stacking the two as separate blocks.
@@ -714,10 +724,7 @@ function revealNote(label) {
   if (!card) return;
   markActiveNote(card);
   card.scrollIntoView({ block: 'nearest' });
-  const body = card.querySelector('.note-body');
-  if (!body || body.readOnly) return;
-  body.focus();
-  body.setSelectionRange(body.value.length, body.value.length);
+  card._noteEditor?.focus();
 }
 
 function markActiveNote(card) {
@@ -727,7 +734,10 @@ function markActiveNote(card) {
 
 // A keystroke in a note leaves the caret in the panel, so the redraw waits for
 // the blur rather than stealing the words mid-word.
-notesList.addEventListener('focusout', () => requestAnimationFrame(renderNotes));
+notesList.addEventListener('focusout', () => {
+  state.notesSignature = '';
+  requestAnimationFrame(renderNotes);
+});
 
 function scheduleSave() {
   clearTimeout(state.saveTimer);
@@ -811,6 +821,7 @@ document.addEventListener('leaf-heading-link', event => {
   if (state.reading) reader.querySelector(`[data-source-line="${event.detail}"]`)?.scrollIntoView({block:'start'});
   else editor.goToLine(event.detail);
 });
+setAttr(document.querySelector('[data-format="highlight"]'), 'data-tooltip', () => shortcutText(`${t('main.highlight')}  ⌘=`));
 setAttr(document.querySelector('[data-format="code"]'), 'data-tooltip', () => shortcutText(`${t('main.inline_code')}  ⌘⌥C`));
 
 // History lives in the editor state, so ask the editor rather than track edits
@@ -919,7 +930,7 @@ function setMode(mode){
  if(mode===current){closePopovers();updateModeControl();return;}
  const position=state.reading?visibleReadingPosition():editor.visiblePosition();
  if(state.reading!==(mode==='reading'))toggleReading();
- state.source=mode==='source';editor.setSource(state.source);closePopovers();updateModeControl();
+ state.source=mode==='source';editor.setSource(state.source);closePopovers();updateModeControl();renderNotes();
  if(!state.reading)editor.focus();
  if(state.reading)revealReadingPosition(position);else editor.revealPosition(position);
 }
@@ -1715,7 +1726,8 @@ document.querySelector('#welcomeNewButton').addEventListener('click', () => {
 
 document.querySelectorAll('[data-format]').forEach((button) => {
   button.addEventListener('click', () => {
-    editor.format(button.dataset.format);
+    const note=document.activeElement.closest?.('.note-card')?._noteEditor;
+    if(note)note.format(button.dataset.format);else editor.format(button.dataset.format);
     closePopovers();
     headingPopover.hidden = true;
     document.querySelector('#headingButton').setAttribute('aria-expanded', 'false');

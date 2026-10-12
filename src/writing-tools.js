@@ -121,7 +121,7 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
   setAttr(document.querySelector('#richCopy'), 'data-tooltip', () => shortcutText(t("writing_tools.copy_as_rich_text_c")));
   document.addEventListener('keydown',event=>{
     if(event.isComposing||!(event.metaKey||event.ctrlKey)||document.querySelector('.leaf-writing-backdrop,.recovery-dialog'))return;
-    if(event.target.closest?.('input,textarea'))return;
+    if(event.target.closest?.('input,textarea,.leaf-note-editor'))return;
     if(!event.shiftKey&&!event.altKey&&event.key.toLowerCase()==='t'){event.preventDefault();event.stopPropagation();void pastePlain();return;}
     if(event.key.toLowerCase()==='k'&&!event.shiftKey){event.preventDefault();event.stopPropagation();editLink();}
     if(event.shiftKey&&event.key.toLowerCase()==='c'){event.preventDefault();void copyRich();}

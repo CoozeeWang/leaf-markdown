@@ -135,3 +135,5 @@ NSIS 配置启用 English、SimpChinese、TradChinese 和语言选择器，直�
 `Internal test packages` 的 Windows 作业在一次性 runner 中运行 `tests/windows-i18n-installer.ps1`，检查实际 EXE 的三语注册、重装更新、应用语言偏好保护及新文件名，然后运行文件图标/关联/卸载检查。脚本拒绝运行于用户电脑；静默安装使用 MUI2 保存的安装语言驱动，不能代替语言选择器界面实机验收。D 仍需在 Windows 检查选择器、系统匹配/回退、应用三语布局与真实右键操作。
 
 已安装 NSIS 的开发机可运行 `node tests/windows-i18n-nsis.mjs` 编译无操作的合成夹具，检查钩子和三语资源语法。生成 EXE 位于忽略提交的 `test-results`，不执行钩子、不安装 Leaf；不算正式 Windows 包。macOS 编译子进程使用 `en_US.UTF-8`，避免不支持的 locale 造成中文编码错误。
+
+脚注侧栏三模式由 `footnote-sidebar-modes-browser.mjs` 检查；长文浮框输入由 `footnote-input-performance-browser.mjs` 使用约十九万字符合成样本检查即时写回、侧栏同步和组合输入。macOS 原生夹具为 `native-footnote-sidebar.html`，使用现有 `native-table-keys` 入口验证实际 WKWebView 的渲染与共享撤销。性能数字来自本机合成样本，不代替用户原文、真实输入法或安装版验收。

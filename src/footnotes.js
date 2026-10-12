@@ -14,6 +14,7 @@
 import {parser} from '@lezer/markdown';
 import {leafMarkdownExtensions} from './markdown-extensions.js';
 import {frontmatter} from './markdown-model.js';
+import {parseMarkdown} from './markdown-parse.js';
 
 const parserInstance = parser.configure(leafMarkdownExtensions);
 
@@ -27,7 +28,13 @@ const REFERENCE = /\[\^([^\[\]\r\n]+)\]/g;
 const CODE_NODES = new Set(['FencedCode', 'CodeBlock', 'InlineCode', 'URL', 'HTMLTag']);
 const FENCE_NODES = new Set(['FencedCode']);
 
-export function indexFootnotes(text, tree = parserInstance.parse(text)) {
+// Consumers treat indexes as immutable. Retain only the current and previous
+// snapshots so transaction filters and renderers share a scan, including undo.
+const recentIndexes = new Map();
+export function indexFootnotes(text, tree) {
+  const reusable = tree === undefined;
+  if (reusable && recentIndexes.has(text)) return recentIndexes.get(text);
+  tree ??= parseMarkdown(text);
   const lines = linesOf(text);
   // Definitions are scanned against fences only. An indented continuation line
   // is reported as a CodeBlock by the parser, so masking every code range up
@@ -90,7 +97,12 @@ export function indexFootnotes(text, tree = parserInstance.parse(text)) {
   // every one of them out of the flow, including an orphan nobody cites and a
   // duplicate that lost the id, and those are exactly the two that do not
   // survive into `notes`.
-  return {notes: [...referenced.map(id => notes.get(id)), ...unreferenced], warnings, definitions};
+  const result = {notes: [...referenced.map(id => notes.get(id)), ...unreferenced], warnings, definitions};
+  if (reusable) {
+    recentIndexes.set(text, result);
+    if (recentIndexes.size > 2) recentIndexes.delete(recentIndexes.keys().next().value);
+  }
+  return result;
 }
 
 // ------------------------------------------------------------------ writing

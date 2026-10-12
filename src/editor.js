@@ -246,7 +246,13 @@ const leafHighlightStyle = HighlightStyle.define([
 // boundaries count as inside: the markup then stays put right after its closing
 // delimiter is typed, and clicking a rendered span reveals its source instead of
 // being swallowed by a replacement that covers the caret.
+const noteFocus = StateField.define({
+  create: () => false,
+  update: (value, tr) => tr.effects.reduce((value, effect) => effect.is(setNoteFocus) ? effect.value : value, value),
+});
+const setNoteFocus = StateEffect.define();
 function caretInRange(state, from, to) {
+  if (state.field(noteFocus, false) === false) return false;
   return state.selection.ranges.some(range => range.from <= to && range.to >= from);
 }
 
@@ -487,7 +493,7 @@ const livePreview = ViewPlugin.fromClass(
     }
 
     update(update) {
-      if (update.transactions.some(tr => tr.effects.some(effect => effect.is(languageChanged))) || update.docChanged || update.selectionSet || update.viewportChanged || update.startState.field(sourceMode) !== update.state.field(sourceMode) || update.startState.field(blankMarkers) !== update.state.field(blankMarkers) || update.startState.field(headingNumbers) !== update.state.field(headingNumbers)) {
+      if (update.transactions.some(tr => tr.effects.some(effect => effect.is(languageChanged) || effect.is(setNoteFocus))) || update.docChanged || update.selectionSet || update.viewportChanged || update.startState.field(sourceMode) !== update.state.field(sourceMode) || update.startState.field(blankMarkers) !== update.state.field(blankMarkers) || update.startState.field(headingNumbers) !== update.state.field(headingNumbers)) {
         this.decorations = livePreviewDecorations(update.view);
       }
     }
@@ -833,7 +839,7 @@ function placeFootnotePopup() {
 // definition behind, so the marker and the note stay paired.
 function applyFootnoteBody(view, label, body) {
   const text = view.state.doc.toString();
-  const note = indexFootnotes(text).notes.find(candidate => candidate.id === label);
+  const note = view.state.field(footnoteIndex).notes.find(candidate => candidate.id === label);
   if (!note) return;
   const changes = note.def
     ? [{ from: note.def.markerTo, to: note.def.bodyTo, insert: body.trim() ? ` ${footnoteBodyText(body)}` : '' }]
@@ -1393,4 +1399,51 @@ export function createLeafEditor(options) {
       view.destroy();
     },
   };
+}
+
+// A note uses the same Markdown grammar and live-preview decorations as the
+// document, but sends every edit through the document's history/save pipeline.
+export function createLeafNoteEditor({parent, doc, source = false, label, onChange, onUndo, onRedo, onLeave}) {
+  let syncing = false;
+  const view = new EditorView({parent, doc, extensions: [
+    markdown({extensions: leafMarkdownExtensions, addKeymap: false}),
+    sourceMode.init(() => source), blankMarkers, headingNumbers,
+    fileNameTitle.init(() => false), propertiesFolded, structuredPreview,
+    footnoteIndex, noteFocus,
+    syntaxHighlighting(leafHighlightStyle), livePreview,
+    EditorView.lineWrapping,
+    EditorView.contentAttributes.of({'aria-label': label, spellcheck: 'false'}),
+    EditorView.theme({'&': {backgroundColor:'transparent'}, '.cm-content': {padding:'0', minHeight:'1.7em'}, '.cm-line': {padding:'0'}, '.cm-scroller': {overflow:'visible', fontFamily:'inherit'}}),
+    EditorView.updateListener.of(update => {
+      if (update.docChanged && !syncing) onChange(update.state.doc.toString());
+    }),
+    EditorView.domEventHandlers({
+      focus(_event, view) { view.dispatch({effects:setNoteFocus.of(true)}); return false; },
+      blur(_event, view) { view.dispatch({effects:setNoteFocus.of(false)}); return false; },
+    }),
+    keymap.of([
+      {key:'Mod-z',run:()=>{onUndo();return true;}},
+      {key:'Mod-Shift-z',run:()=>{onRedo();return true;}},
+      ...[['Mod-b','bold'],['Mod-i','italic'],['Mod-=','highlight'],['Mod-Alt-c','code']].map(([key,type])=>({key,run:view=>{formatEditor(view,type);return true;}})),
+      {key:'Mod-k',run:view=>{const r=view.state.selection.main;const selected=view.state.doc.sliceString(r.from,r.to);const address=t('writing_tools.link_address');const insert=`[${selected||t('writing_tools.link_text')}](${address})`;const from=r.from+insert.lastIndexOf(address);view.dispatch({changes:{from:r.from,to:r.to,insert},selection:{anchor:from,head:from+address.length},userEvent:'input'});return true;}},
+      {key:'Shift-Enter',run:view=>{view.dispatch(view.state.replaceSelection('\n'));return true;}},
+      {key:'Enter',run:()=>{onLeave();return true;}},
+      {key:'Escape',run:()=>{onLeave();return true;}},
+      ...defaultKeymap,
+    ]),
+  ]});
+  view.dom.classList.add('leaf-note-editor');
+  const sync = text => {
+    if (view.state.doc.toString() === text) return;
+    syncing = true;
+    const length = view.state.doc.length;
+    let from=0, suffix=0;const before=view.state.doc.toString();
+    while(from<Math.min(length,text.length)&&before[from]===text[from])from++;
+    while(suffix<Math.min(length,text.length)-from&&before[length-1-suffix]===text[text.length-1-suffix])suffix++;
+    view.dispatch({changes:{from,to:length-suffix,insert:text.slice(from,text.length-suffix)}});
+    syncing = false;
+  };
+  return {view, sync, focus(){view.focus();view.dispatch({selection:{anchor:view.state.doc.length}});},
+    value:()=>view.state.doc.toString(), format:type=>formatEditor(view,type),
+    destroy:()=>view.destroy()};
 }

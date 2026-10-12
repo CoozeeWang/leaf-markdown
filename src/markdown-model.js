@@ -1,10 +1,9 @@
 import { t, h } from './i18n.js';
-import { parser } from '@lezer/markdown';
-import { leafMarkdownExtensions } from './markdown-extensions.js';
+import { parseMarkdown } from './markdown-parse.js';
 import { parseDocument, isMap, isScalar, isSeq } from 'yaml';
 import { parseCallout } from './callout.js';
 
-const mdParser = parser.configure(leafMarkdownExtensions);
+
 
 export function frontmatter(source) {
   const match = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)(?=\r?\n|$)/.exec(source);
@@ -71,7 +70,7 @@ export function analyzeMarkdown(source) {
   const yaml = frontmatter(source), blocks = yaml ? [yaml] : [];
   const headings = [];
   let hasH1 = false;
-  mdParser.parse(source).iterate({ enter(node) {
+  parseMarkdown(source).iterate({ enter(node) {
     if (yaml && node.from < yaml.to && node.name !== 'Document') return false;
     if (node.name === 'Blockquote') {
       const raw = source.slice(node.from, node.to), callout = parseCallout(raw);
