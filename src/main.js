@@ -611,9 +611,8 @@ function syncNoteBody(card, row) {
 }
 
 function fitNoteBody(body) {
-  if (!body.clientWidth) return;
   body.style.height = 'auto';
-  body.style.height = `${body.scrollHeight}px`;
+  body.closest('.note-card')?._noteEditor?.view.requestMeasure();
 }
 
 function noteCard(row, measure) {
