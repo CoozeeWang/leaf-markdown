@@ -195,3 +195,12 @@ export async function initDesktop(callbacks) {
 }
 
 export function desktopTitle(title) { if (desktop) void getCurrentWindow().setTitle(title); }
+
+export async function desktopRevealDocument() {
+  const platform = globalThis.navigator?.userAgentData?.platform || globalThis.navigator?.platform || '';
+  if (desktop && /win/i.test(platform) && new URLSearchParams(location.search).get('document') === '1') {
+    const window = getCurrentWindow();
+    await window.show();
+    await window.setFocus();
+  }
+}

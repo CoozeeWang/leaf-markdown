@@ -14,7 +14,7 @@ import './style.css';
 import { renderPrintDocument } from './print-document.js';
 import { frontmatter } from './markdown-model.js';
 import './reading.css';
-import { desktop, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
+import { desktop, desktopRevealDocument, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
 import { invoke } from '@tauri-apps/api/core';
 import { shortcutText, renderShortcutText, renderTooltipText } from './platform-shortcuts.js';
 import { labels as calloutLabels } from './callout.js';
@@ -151,7 +151,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
 
     <section class="document-area">
       <div id="editor" class="editor-host"></div>
-      <section id="welcomeScreen" class="welcome-screen" aria-label="${t("main.welcome_to_leaf")}" data-i18n-aria-label="main.welcome_to_leaf">
+      <section id="welcomeScreen" class="welcome-screen" ${desktop && new URLSearchParams(location.search).get('document') === '1' ? 'hidden' : ''} aria-label="${t("main.welcome_to_leaf")}" data-i18n-aria-label="main.welcome_to_leaf">
         <button id="welcomeSettings" class="welcome-settings icon-control" aria-label="${t("main.settings_ui0056")}" data-i18n-aria-label="main.settings_ui0056" data-tooltip="${t("main.settings_ui0056")}" data-i18n-data-tooltip="main.settings_ui0056">${icon('appearance', 16)}</button>
         <div class="welcome-card">
           <img class="welcome-mark" src="/leaf-icon.png" alt="" aria-hidden="true" />
@@ -2007,8 +2007,9 @@ if (desktop) {
     },
     saved(content, name, path) { const changed = state.resourcePath !== path; state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); if (changed) { setMovedMissingImages(); refreshImages(); } },
     followed(content, name, path, movedImages) { state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); setMovedMissingImages(movedImages); refreshImages(); },
-  }).catch(error => setStatus(translatedMessage("main.desktop_app_initialization_failed", {"error": error}), 'error')).finally(() => {
+  }).catch(error => setStatus(translatedMessage("main.desktop_app_initialization_failed", {"error": error}), 'error')).finally(async () => {
     shell.style.pointerEvents = '';
+    await desktopRevealDocument().catch(error => console.error('Document window reveal failed', error));
     editor.setReading(state.reading);
     if (welcomeScreen.hidden && !state.reading) editor.focus();
   });
