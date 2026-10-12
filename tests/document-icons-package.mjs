@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {macLocales, serviceIdentity, serviceKey, serviceStrings} from '../scripts/sync-macos-locales.mjs';
 const app=process.argv[2];
 assert.ok(process.platform==='darwin'&&app?.endsWith('.app'),'Usage on macOS: node tests/document-icons-package.mjs path/to/Leaf.app');
 const config=JSON.parse(await readFile(new URL('../src-tauri/tauri.conf.json',import.meta.url),'utf8'));
@@ -38,8 +39,17 @@ assert.equal(plist.NSServices.length,1);
 const service=plist.NSServices[0];
 assert.equal(service.NSMessage,'leafNewMarkdown');
 assert.equal(service.NSPortName,'Leaf');
-assert.equal(service.NSMenuItem.default,'使用 Leaf 新建 Markdown 文档');
+assert.equal(service.NSMenuItem.default,serviceIdentity);
+assert.equal(plist.CFBundleDevelopmentRegion,'en');
+assert.deepEqual(plist.CFBundleLocalizations,Object.keys(macLocales));
+for(const [locale,resourceLocale] of Object.entries(macLocales)) {
+  const resources=JSON.parse(await readFile(new URL(`../src/locales/${resourceLocale}.json`,import.meta.url),'utf8'));
+  const strings=await readFile(path.join(app,'Contents/Resources',`${locale}.lproj/ServicesMenu.strings`),'utf8');
+  assert.equal(strings,serviceStrings(serviceIdentity,resources[serviceKey]));
+  const parsed=JSON.parse(execFileSync('/usr/bin/plutil',['-convert','json','-o','-',path.join(app,'Contents/Resources',`${locale}.lproj/ServicesMenu.strings`)],{encoding:'utf8'}));
+  assert.equal(parsed[serviceIdentity],resources[serviceKey]);
+}
 assert.deepEqual(service.NSSendTypes,['public.file-url']);
 assert.deepEqual(service.NSSendFileTypes,['public.item']);
 assert.equal(service.NSRequiredContext.NSApplicationIdentifier,'com.apple.finder');
-console.log('PASS macOS package: Finder new Markdown service declaration');
+console.log('PASS macOS package: Finder service declaration, three shared translations and English fallback');

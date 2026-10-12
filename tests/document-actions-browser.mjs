@@ -16,6 +16,7 @@ async function documentPage(path) {
       metadata: { currentWindow: { label: 'document-test' }, currentWebview: { label: 'document-test' } },
       transformCallback: callback => { callbacks[++id] = callback; return id; },
       invoke: async (command, args) => {
+      if (command === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
         calls.push({ command, args });
         if (command === 'initial_path') return initialPath;
         if (command === 'read_document') return '# 原文\n\n测试正文';

@@ -25,7 +25,7 @@ for(const [engine,options] of targets) {
    await image.hover();
    await page.waitForFunction(()=>!document.querySelector('#tooltip').hidden&&document.querySelector('#tooltip').textContent.includes('拖动图片'));
    assert.equal(await image.evaluate(el=>el.closest('[title]')),null,'image instructions must not also trigger a native tooltip');
-   assert.equal((await tip.textContent()).replace(/\s/g,''),'按住⌘拖动图片');
+   assert.equal((await tip.textContent()).replace(/\s/g,''),'按住(⌘)拖动图片');
    const imageBox=await image.boundingBox(),tipBox=await tip.boundingBox(),actionBox=await action.boundingBox();
    assert.ok(Math.abs(tipBox.y-actionBox.y)<1,'drag hint aligns with reveal button');
    assert.ok(Math.abs(tipBox.x+tipBox.width-(imageBox.x+imageBox.width-4))<1,'drag hint anchors to image right inset');
@@ -47,7 +47,27 @@ for(const [engine,options] of targets) {
   await page.locator('#commandsButton').hover();
   await page.waitForFunction(()=>document.querySelector('#tooltip').dataset.kind==='default');
   assert.equal(await tip.evaluate(el=>getComputedStyle(el).fontWeight),'500','image styling does not leak to unrelated controls');
+  // Use a stable viewport for language changes; narrow scrolling is covered above.
+  await page.setViewportSize({width:1100,height:900});
+  // Existing images must update without switching view modes or changing Markdown.
+  let revision=0;
+  for(const mode of ['edit','reading']) {
+   if(mode==='reading') {await page.click('#readingToggle');await page.click('[data-mode="reading"]');}
+   const selector=mode==='edit'?'.cm-editor .leaf-image-actions':'.reading-document .leaf-image-actions';
+   const existingAction=page.locator(selector);
+   await existingAction.evaluate(el=>window.originalImageAction=el);
+   for(const [language,label] of [['zh-Hant-TW','在 Finder 中顯示'],['en','Show in Finder'],['zh-Hans','在 Finder 中显示']]) {
+    await page.mouse.move(0,0);
+    await page.evaluate(({language,revision})=>emitNative('leaf-language-changed',{preference:language,language,revision}),{language,revision:++revision});
+    await page.waitForFunction(({selector,label})=>document.querySelector(selector)?.getAttribute('aria-label')===label,{selector,label});
+    assert.equal(await existingAction.getAttribute('data-tooltip'),label);
+    if(mode==='reading') assert.equal(await existingAction.evaluate(el=>el===window.originalImageAction),true,'reading mode updates the existing image action');
+    await page.locator('#editorLanguageSelect').focus();
+    await existingAction.focus();
+    await page.waitForFunction(label=>!document.querySelector('#tooltip').hidden&&document.querySelector('#tooltip').textContent===label,label,{timeout:5000}).catch(async error=>{throw new Error(JSON.stringify({mode,language,tooltip:await tip.textContent(),hidden:await tip.getAttribute('hidden')}),{cause:error});});
+   }
+  }
   assert.equal(await page.evaluate(()=>v.state.doc.toString()),source);
-  console.log(`PASS ${engine.name()}: shared image tooltip, light/dark, narrow, keyboard and unchanged source`);
+  console.log(`PASS ${engine.name()}: shared image tooltip, light/dark, narrow, keyboard, live three-language image controls in edit/read and unchanged source`);
  } finally {await browser.close();}
 }

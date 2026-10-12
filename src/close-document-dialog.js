@@ -1,14 +1,15 @@
+import { t, h, setText } from './i18n.js';
 export function confirmDocumentClose(name) {
   return new Promise(resolve => {
     const previousFocus = document.activeElement;
     const backdrop = document.createElement('div');
     backdrop.className = 'close-document-backdrop';
     backdrop.innerHTML = `<section class="close-document-dialog" role="alertdialog" aria-modal="true" aria-labelledby="close-document-title" aria-describedby="close-document-description">
-      <h2 id="close-document-title">保存修改后关闭？</h2>
+      <h2 id="close-document-title">${h("close_document_dialog.save_changes_before_closing")}</h2>
       <p id="close-document-description"></p>
-      <footer><button type="button" data-choice="discard">不保存并关闭</button><button type="button" data-choice="cancel">继续编辑</button><button type="button" data-choice="save">保存并关闭</button></footer>
+      <footer><button type="button" data-choice="discard">${h("close_document_dialog.close_without_saving")}</button><button type="button" data-choice="cancel">${h("close_document_dialog.keep_editing")}</button><button type="button" data-choice="save">${h("close_document_dialog.save_and_close")}</button></footer>
     </section>`;
-    backdrop.querySelector('p').textContent = `“${name}”有尚未保存的修改。`;
+    setText(backdrop.querySelector('p'), () => t("close_document_dialog.has_unsaved_changes", {"name": name}));
     const buttons = [...backdrop.querySelectorAll('button')];
     function finish(choice) {
       document.removeEventListener('keydown', onKey, true);

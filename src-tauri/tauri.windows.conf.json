@@ -1,8 +1,39 @@
 {
   "bundle": {
-    "targets": ["nsis"],
-    "icon": ["icons/icon.ico"],
-    "resources": { "icons/document-icon.ico": "document-icon.ico" },
-    "windows": { "nsis": { "installMode": "currentUser", "installerHooks": "windows-hooks.nsh" } }
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "icons/document-icon.ico": "document-icon.ico"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows-hooks.nsh",
+        "languages": [
+          "English",
+          "SimpChinese",
+          "TradChinese"
+        ],
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Leaf",
+        "width": 1100,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 480,
+        "visible": false
+      }
+    ]
   }
 }

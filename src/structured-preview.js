@@ -1,3 +1,4 @@
+import { resolveMessage, t, h, refreshTranslations, setText, setAttr, localizedElement, message as translatedMessage } from './i18n.js';
 import { calloutBadge } from './callout-icons.js';
 import { sourceMode } from './view-mode.js';
 import { StateEffect, StateField } from '@codemirror/state';
@@ -34,8 +35,8 @@ const el = (tag, className, text) => {
   return node;
 };
 function button(label, text, action) {
-  const b = el('button', 'leaf-block-button', text);
-  b.type = 'button'; b.title = shortcutText(label); b.setAttribute('aria-label', shortcutText(label));
+  const b = el('button', 'leaf-block-button');setText(b,()=>resolveMessage(text));
+  b.type = 'button';setAttr(b,'title',()=>shortcutText(resolveMessage(label)));setAttr(b,'aria-label',()=>shortcutText(resolveMessage(label)));
   b.addEventListener('click', action);
   return b;
 }
@@ -52,7 +53,7 @@ class DefaultTitle extends WidgetType {
     box._heightObserver = new ResizeObserver(() => { this.layout.height = box.getBoundingClientRect().height; });
     box._heightObserver.observe(box);
     const title=el('h1','',this.name.replace(/\.(md|markdown|mdown)$/i,''));
-    title.tabIndex=0;title.title='双击修改文件名';title.setAttribute('aria-label',`${this.name}，双击或按回车修改文件名`);
+    title.tabIndex=0;setAttr(title, 'title', () => t("structured_preview.double_click_to_rename_the_file"));setAttr(title, 'aria-label', () => t("structured_preview.double_click_or_press_enter_to_rename", {"name": this.name}));
     const rename=()=>document.dispatchEvent(new CustomEvent('leaf-rename-document'));
     title.ondblclick=rename;title.onkeydown=e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();e.stopPropagation();rename();}};
     box.append(title);
@@ -65,7 +66,7 @@ class DefaultTitle extends WidgetType {
 class SourceReturn extends WidgetType {
   constructor(from) { super(); this.from = from; }
   eq(other) { return this.from === other.from; }
-  toDOM(view) { return button('返回实时渲染', '返回渲染', () => {
+  toDOM(view) { return button(translatedMessage("structured_preview.return_to_live_rendering"), translatedMessage("structured_preview.return_to_rendering"), () => {
     const block = view.state.field(structuredPreview).model.blocks.find(block => block.from === this.from);
     // Do not leave the native text selection inside a source range that is
     // about to be replaced by a non-editable widget.
@@ -96,8 +97,8 @@ class PropertySource extends WidgetType {
     const root = el('div', 'leaf-widget-frame'); root._widget = this;
     const section = el('section', 'leaf-structured leaf-yaml');
     const top = el('div', 'leaf-block-top');
-    top.append(el('span', '', '文档属性 · 源码'));
-    top.append(button('返回实时渲染', '返回渲染', () => {
+    top.append(localizedElement('span', '', () => t("structured_preview.document_properties_source")));
+    top.append(button(translatedMessage("structured_preview.return_to_live_rendering"), translatedMessage("structured_preview.return_to_rendering"), () => {
       const {from, to} = root._widget;
       view.dispatch({effects: renderBlock.of(from), selection: {anchor: Math.min(view.state.doc.length, to + 1)}});
       // Keep focus on a real control when one exists, outside replaced text.
@@ -105,7 +106,7 @@ class PropertySource extends WidgetType {
       if (control) control.focus(); else view.focus();
     }));
     const input = el('textarea', 'leaf-property-source');
-    input.setAttribute('aria-label', '文档属性源码'); input.spellcheck = false;
+    setAttr(input, 'aria-label', () => t("structured_preview.document_properties_source_mo0189")); input.spellcheck = false;
     input.value = this.raw; input.rows = Math.min(10, Math.max(4, this.raw.split('\n').length));
     input.addEventListener('input', () => {
       const {from, to} = root._widget;
@@ -142,6 +143,7 @@ class StructuredBlock extends WidgetType {
     })) return false;
     if (this.block.kind === 'table' && (dom._widget.block.columns !== this.block.columns || dom._widget.block.rows.length !== this.block.rows.length)) return false;
     dom._widget = this;
+    refreshTranslations(dom);
     dom.classList.toggle('leaf-block-selected', this.selected);
     if (this.block.kind === 'callout') { dom._syncCallout?.(); return true; }
     for (const input of dom.querySelectorAll('[data-field]')) {
@@ -184,8 +186,8 @@ class StructuredBlock extends WidgetType {
     });
     root._heightObserver.observe(frame);
     const top = el('div', 'leaf-block-top');
-    top.append(el('span', '', this.block.kind === 'yaml' ? '文档属性' : this.block.kind === 'callout' ? '提示块' : '表格'));
-    top.append(button('编辑此块 Markdown 源码', '‹/›', () => {
+    top.append(el('span', '', this.block.kind === 'yaml' ? t("pdf_export.document_properties") : this.block.kind === 'callout' ? t("structured_preview.callout") : t("structured_preview.table")));
+    top.append(button(translatedMessage("structured_preview.edit_this_block_s_markdown_source"), '‹/›', () => {
       const {from, to, kind} = root._widget.block;
       view.dispatch({ effects: sourceBlock.of(from), selection: { anchor: kind === 'yaml' ? Math.min(view.state.doc.length, to + 1) : from } });
       if (kind === 'yaml') view.dom.querySelector('.leaf-property-source')?.focus();
@@ -211,7 +213,7 @@ class StructuredBlock extends WidgetType {
     else if (this.block.kind === 'yaml') this.yamlDOM(root, view);
     else this.tableDOM(root, view);
     if (this.block.kind !== 'yaml') {
-      const source = button('编辑 Markdown 源码', '', () => {
+      const source = button(translatedMessage("structured_preview.edit_markdown_source"), '', () => {
         const from = root._widget.block.from;
         view.dispatch({ effects: sourceBlock.of(from), selection: { anchor: from } });
         view.focus();
@@ -234,11 +236,11 @@ class StructuredBlock extends WidgetType {
     box.addEventListener('toggle', () => view.requestMeasure());
     const typeControl = el('span', 'leaf-callout-type-control');
     const typeIcon = el('span', 'leaf-callout-type-icon'); typeIcon.setAttribute('aria-hidden', 'true');
-    const typeMenu = el('select'); typeMenu.setAttribute('aria-label', '提示块类型'); typeMenu.title = '更改提示块类型或编辑源码';
+    const typeMenu = el('select'); setAttr(typeMenu, 'aria-label', () => t("structured_preview.callout_type")); setAttr(typeMenu, 'title', () => t("structured_preview.change_callout_type_or_edit_source"));
     for (const [value, label] of Object.entries(calloutLabels)) {
-      const option = el('option', '', label); option.value = value; typeMenu.append(option);
+      const option = localizedElement('option', '', () => calloutLabels[value]); option.value = value; typeMenu.append(option);
     }
-    const sourceOption = el('option', '', '编辑 Markdown 源码…'); sourceOption.value = '__source'; typeMenu.append(sourceOption);
+    const sourceOption = localizedElement('option', '', () => t("structured_preview.edit_markdown_source_mo0196")); sourceOption.value = '__source'; typeMenu.append(sourceOption);
     typeControl.append(typeIcon, typeMenu);
     typeControl.addEventListener('click', event => event.stopPropagation());
     typeMenu.addEventListener('change', () => {
@@ -249,11 +251,11 @@ class StructuredBlock extends WidgetType {
       edit(view, {from:b.from, to:b.to, insert:b.raw.replace(/\[![\w-]+\]/, `[!${typeMenu.value}]`)});
     });
     const controls = [];
-    for (const [field, label] of [['title', '提示块标题'], ['body', '提示块内容']]) {
+    for (const [field, label] of [['title', t("structured_preview.callout_title")], ['body', t("structured_preview.callout_content")]]) {
       const wrap = el(field === 'title' && this.block.fold ? 'summary' : 'div', `leaf-callout-edit leaf-callout-${field}`);
       const preview = el('div', 'leaf-callout-preview');
       const input = el('textarea'); input.rows = 1;
-      input.setAttribute('aria-label', label);
+      setAttr(input, 'aria-label', () => t(field === 'title' ? 'structured_preview.callout_title' : 'structured_preview.callout_content'));
       const resize = () => { input.style.height = 'auto'; input.style.height = `${Math.max(30, input.scrollHeight)}px`; view.requestMeasure(); };
       preview.addEventListener('click', event => {
         if (event.target.closest('a') || event.target.closest('summary') && field === 'body') return;
@@ -297,10 +299,10 @@ class StructuredBlock extends WidgetType {
       for (const {field, preview, input} of controls) {
         const value = field === 'title' ? b.customTitle : b.body;
         if (input.value !== value) input.value = value;
-        if (field === 'title') input.placeholder = calloutLabels[b.type];
+        if (field === 'title') setAttr(input, 'placeholder', () => calloutLabels[root._widget.block.type]);
         if (field === 'title') renderInline(preview, b.title, notes);
         else renderPrintDocument(preview, b.body, {fallbackTitle:false, expandCallouts:false, footnotes: notes});
-        if (!preview.textContent) preview.textContent = field === 'title' ? '标题' : '输入内容…';
+        if (!preview.textContent) setText(preview, () => field === 'title' ? t("structured_preview.title") : t("structured_preview.enter_content"));
       }
     };
     root._syncCallout();
@@ -310,7 +312,7 @@ class StructuredBlock extends WidgetType {
     // A freshly built widget takes the fold from state, so a region folded
     // before it scrolled away comes back folded.
     body.hidden = view.state.field(propertiesFolded);
-    root.firstChild.prepend(button('折叠或展开文档属性', '⌄', () => {
+    root.firstChild.prepend(button(translatedMessage("structured_preview.collapse_or_expand_document_properties"), '⌄', () => {
       const folded = !view.state.field(propertiesFolded);
       // The fold lives in state so it outlives this widget. Rebuilding the
       // widget lets CodeMirror measure its new height and align selections.
@@ -383,7 +385,7 @@ class StructuredBlock extends WidgetType {
         const input = el('textarea');
         input.rows = 1; input.value = (row.cells[c]?.value ?? '').replace(/<br\s*\/?\s*>/gi, '\n');
         input.dataset.row = r; input.dataset.col = c;
-        input.setAttribute('aria-label', `第 ${r + 1} 行，第 ${c + 1} 列`);
+        setAttr(input, 'aria-label', () => t("structured_preview.row_column", {"row": r + 1, "column": c + 1}));
         input.style.textAlign = this.block.align[c];
         const resize = () => { input.style.height = 'auto'; input.style.height = `${Math.max(30, input.scrollHeight)}px`; view.requestMeasure(); };
         input.addEventListener('input', event => {
@@ -438,7 +440,7 @@ class StructuredBlock extends WidgetType {
       }
     });
     tableEdgeControls(root,table,act);
-    const after = button('在表格后继续正文', '继续正文 ↓', () => leaveTable(root, view));
+    const after = button(translatedMessage("structured_preview.continue_writing_after_the_table"), translatedMessage("structured_preview.continue_writing"), () => leaveTable(root, view));
     after.classList.add('leaf-table-exit');
     root.append(after);
   }
@@ -488,7 +490,7 @@ function build(state, name, sources, remembered = [], previousLayouts = new Map(
 }
 
 export const structuredPreview = StateField.define({
-  create: state => build(state, '未命名', new Set()),
+  create: state => build(state, t("structured_preview.untitled"), new Set()),
   update(value, tr) {
     let name = value.name;
     let sources = new Set([...value.sources].map(p => tr.changes.mapPos(p)));

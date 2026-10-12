@@ -1,3 +1,4 @@
+import { t, h, aliases, languagePreference, setLanguagePreference, onLanguageChange, refreshTranslations, setText, setAttr, message as translatedMessage } from './i18n.js';
 import { calloutBadge } from './callout-icons.js';
 import { inlineRename } from './inline-rename.js';
 import { setupStatusNotices } from './status-notices.js';
@@ -13,21 +14,21 @@ import './style.css';
 import { renderPrintDocument } from './print-document.js';
 import { frontmatter } from './markdown-model.js';
 import './reading.css';
-import { desktop, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
+import { desktop, desktopRevealDocument, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
 import { invoke } from '@tauri-apps/api/core';
-import { shortcutText, renderShortcutText } from './platform-shortcuts.js';
+import { shortcutText, renderShortcutText, renderTooltipText } from './platform-shortcuts.js';
 import { labels as calloutLabels } from './callout.js';
 import { indexFootnotes, notePanelRows } from './footnotes.js';
 import { uiIcon, uiIconPaths } from './ui-icons.js';
 import {readingFolding} from './outline-folding.js';
 
-const welcome = '# Leaf\n\n轻量 Markdown 编辑器。\n';
+const welcome = t("main.leaf_a_lightweight_markdown_editor");
 const leafDev = typeof __LEAF_DESKTOP_DEV__ !== 'undefined' && __LEAF_DESKTOP_DEV__ && desktop;
 const leafName = leafDev ? 'Leaf Dev' : 'Leaf';
 
 const state = {
   fileHandle: null,
-  fileName: '未命名.md',
+  fileName: t("main.untitled_md"),
   content: welcome,
   savedContent: welcome,
   diskContent: welcome,
@@ -57,6 +58,7 @@ const state = {
 
 const iconPaths = {
   ...uiIconPaths,
+  language: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 4 6 4 9s-1 6-4 9c-3-3-4-6-4-9s1-6 4-9Z"/>',
   attach: '<path d="m9 12 6-6a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l9-9"/>',
   link: '<path d="m10 13 4-4m-6 6-2 2a3 3 0 0 1-4-4l5-5a3 3 0 0 1 4 0m2 8a3 3 0 0 0 4 0l5-5a3 3 0 0 0-4-4l-2 2"/>',
   paste: '<path d="M9 4H5v17h14V4h-4"/><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M8 11h8M8 15h6"/>',
@@ -83,184 +85,196 @@ function icon(name, size = 18) {
   return `<svg class="ui-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name]}</svg>`;
 }
 
+function languageControl(id, welcome = false) {
+  return `<button type="button" id="${id}" class="language-control quick-language-button ${welcome ? 'welcome-icon' : 'icon-control'}" data-tooltip="${t('UI0256')}" data-i18n-data-tooltip="settings.language" aria-label="${t('UI0256')}" data-i18n-aria-label="settings.language" aria-haspopup="menu" aria-controls="languagePopover" aria-expanded="false">${icon('language', 17)}</button>`;
+}
+
 document.querySelector('#app').innerHTML = shortcutText(`
   <main class="shell welcome-state${desktop && new URLSearchParams(location.search).has('document') ? ' document-loading' : ''}">
     <header class="topbar">
       <div class="brand">
         <img class="brand-mark" src="/leaf-icon.png" alt="" aria-hidden="true" />
-        <span class="brand-copy"><strong>${leafName}</strong><small>${leafDev ? '开发模式 · 使用文档副本' : 'Markdown Editor'}</small></span>
+        <span class="brand-copy"><strong>${leafName}</strong><small>${leafDev ? h('dev.subtitle') : h('main.markdown_editor')}</small></span>
       </div>
       <div class="topbar-actions">
         <div class="document-controls">
           <div class="document-primary">
-            ${desktop ? '' : `<button id="openButton" class="primary icon-control" aria-label="打开文件" data-tooltip="打开文件  ⌘O">${icon('open')}</button>`}
-            <button id="recentButton" class="icon-control" aria-label="最近打开" data-tooltip="最近打开">${icon('history')}</button>
-            <button id="documentMenuButton" class="filename" aria-label="文档操作" aria-haspopup="menu" aria-expanded="false"><span id="fileName"></span>${icon('chevron', 13)}</button>
+            ${desktop ? '' : `<button id="openButton" class="primary icon-control" aria-label="${t("main.open_file")}" data-i18n-aria-label="main.open_file" data-tooltip="${t("main.open_file_o")}" data-i18n-data-tooltip="main.open_file_o">${icon('open')}</button>`}
+            <button id="recentButton" class="icon-control" aria-label="${t("main.open_recent")}" data-i18n-aria-label="main.open_recent" data-tooltip="${t("main.open_recent")}" data-i18n-data-tooltip="main.open_recent">${icon('history')}</button>
+            <button id="documentMenuButton" class="filename" aria-label="${t("main.document_actions")}" data-i18n-aria-label="main.document_actions" aria-haspopup="menu" aria-expanded="false"><span id="fileName"></span>${icon('chevron', 13)}</button>
           </div>
-          <span id="dirty" class="dirty" aria-label="未保存"></span>
+          <span id="dirty" class="dirty" aria-label="${t("main.unsaved")}" data-i18n-aria-label="main.unsaved"></span>
         </div>
-        <button id="readingToggle" class="icon-control" aria-label="切换到阅读模式" aria-pressed="false" data-tooltip="切换到阅读模式  ⌘R">${icon('edit')}</button>
-        <button id="searchButton" class="icon-control" aria-label="查找" data-tooltip="文内查找  ⌘F">${icon('search')}</button>
-        <button id="commandsButton" class="icon-control" aria-label="命令面板" data-tooltip="命令面板  ⌘P">${icon('commands')}</button>
-        <button id="saveButton" class="icon-control" aria-label="保存" data-tooltip="保存  ⌘S">${icon('save')}</button>
-        <button id="exportMenuButton" class="icon-control" aria-label="导出" aria-haspopup="menu" aria-expanded="false" data-tooltip="导出  ⌘E">${icon('export')}</button>
-        <button id="appearanceButton" class="icon-control" aria-label="设置" aria-haspopup="dialog" aria-expanded="false" data-tooltip="设置  ⌥⌘,">${icon('appearance', 16)}</button>
+        <button id="readingToggle" class="icon-control" aria-label="${t("main.switch_to_reading_mode")}" data-i18n-aria-label="main.switch_to_reading_mode" aria-pressed="false" data-tooltip="${t("main.switch_to_reading_mode_r")}" data-i18n-data-tooltip="main.switch_to_reading_mode_r">${icon('edit')}</button>
+        <button id="searchButton" class="icon-control" aria-label="${t("main.find")}" data-i18n-aria-label="main.find" data-tooltip="${t("main.find_in_document_f")}" data-i18n-data-tooltip="main.find_in_document_f">${icon('search')}</button>
+        <button id="commandsButton" class="icon-control" aria-label="${t("main.command_palette")}" data-i18n-aria-label="main.command_palette" data-tooltip="${t("main.command_palette_p")}" data-i18n-data-tooltip="main.command_palette_p">${icon('commands')}</button>
+        <button id="saveButton" class="icon-control" aria-label="${t("main.save")}" data-i18n-aria-label="main.save" data-tooltip="${t("main.save_s")}" data-i18n-data-tooltip="main.save_s">${icon('save')}</button>
+        <button id="exportMenuButton" class="icon-control" aria-label="${t("main.export")}" data-i18n-aria-label="main.export" aria-haspopup="menu" aria-expanded="false" data-tooltip="${t("main.export_e")}" data-i18n-data-tooltip="main.export_e">${icon('export')}</button>
+        <button id="appearanceButton" class="icon-control" aria-label="${t("main.settings")}" data-i18n-aria-label="main.settings" aria-haspopup="dialog" aria-expanded="false" data-tooltip="${t("main.settings_ui0021")}" data-i18n-data-tooltip="main.settings_ui0021">${icon('appearance', 16)}</button>
+        ${languageControl('editorLanguageSelect')}
       </div>
     </header>
 
-    <nav class="format-toolbar" aria-label="格式工具栏">
-      <button id="undoButton" aria-label="撤销" data-tooltip="撤销  ⌘Z">${icon('undo')}</button>
-      <button id="redoButton" aria-label="重做" data-tooltip="重做  ⇧⌘Z">${icon('redo')}</button>
+    <nav class="format-toolbar" aria-label="${t("main.formatting_toolbar")}" data-i18n-aria-label="main.formatting_toolbar">
+      <button id="undoButton" aria-label="${t("main.undo")}" data-i18n-aria-label="main.undo" data-tooltip="${t("main.undo_z")}" data-i18n-data-tooltip="main.undo_z">${icon('undo')}</button>
+      <button id="redoButton" aria-label="${t("main.redo")}" data-i18n-aria-label="main.redo" data-tooltip="${t("main.redo_z")}" data-i18n-data-tooltip="main.redo_z">${icon('redo')}</button>
       <span class="toolbar-divider"></span>
-      <button id="headingButton" class="heading-control" aria-label="标题级别" aria-haspopup="menu" aria-expanded="false" data-tooltip="标题级别  ⌥1–6 · 正文 ⌥0"><span>H</span>${icon('chevron', 13)}</button>
+      <button id="headingButton" class="heading-control" aria-label="${t("main.heading_level")}" data-i18n-aria-label="main.heading_level" aria-haspopup="menu" aria-expanded="false" data-tooltip="${t("main.heading_level_1_6_body_text_0")}" data-i18n-data-tooltip="main.heading_level_1_6_body_text_0"><span>H</span>${icon('chevron', 13)}</button>
       <span class="toolbar-divider"></span>
-      <button data-format="bold" aria-label="粗体" data-tooltip="粗体  ⌘B"><span class="format-glyph bold">B</span></button>
-      <button data-format="italic" aria-label="斜体" data-tooltip="斜体  ⌘I"><span class="format-glyph italic">I</span></button>
-      <button data-format="strike" aria-label="删除线" data-tooltip="删除线  ⌘⇧X"><span class="format-glyph strike">S</span></button>
-      <button data-format="sup" aria-label="上标" data-tooltip="上标  ⌘."><span class="format-glyph">x<sup>2</sup></span></button>
-      <button data-format="sub" aria-label="下标" data-tooltip="下标  ⌘,"><span class="format-glyph">x<sub>2</sub></span></button>
-      <button data-format="footnote" aria-label="插入脚注" data-tooltip="插入脚注  ⇧⌘F">${icon('footnote')}</button>
+      <button data-format="bold" aria-label="${t("main.bold")}" data-i18n-aria-label="main.bold" data-tooltip="${t("main.bold_b")}" data-i18n-data-tooltip="main.bold_b"><span class="format-glyph bold">B</span></button>
+      <button data-format="italic" aria-label="${t("main.italic")}" data-i18n-aria-label="main.italic" data-tooltip="${t("main.italic_i")}" data-i18n-data-tooltip="main.italic_i"><span class="format-glyph italic">I</span></button>
+      <button data-format="strike" aria-label="${t("main.strikethrough")}" data-i18n-aria-label="main.strikethrough" data-tooltip="${t("main.strikethrough_x")}" data-i18n-data-tooltip="main.strikethrough_x"><span class="format-glyph strike">S</span></button>
+      <button data-format="sup" aria-label="${t("main.superscript")}" data-i18n-aria-label="main.superscript" data-tooltip="${t("main.superscript_ui0036")}" data-i18n-data-tooltip="main.superscript_ui0036"><span class="format-glyph">x<sup>2</sup></span></button>
+      <button data-format="sub" aria-label="${t("main.subscript")}" data-i18n-aria-label="main.subscript" data-tooltip="${t("main.subscript_ui0038")}" data-i18n-data-tooltip="main.subscript_ui0038"><span class="format-glyph">x<sub>2</sub></span></button>
+      <button data-format="footnote" aria-label="${t("main.insert_footnote")}" data-i18n-aria-label="main.insert_footnote" data-tooltip="${t("main.insert_footnote_f")}" data-i18n-data-tooltip="main.insert_footnote_f">${icon('footnote')}</button>
       <span class="toolbar-divider"></span>
-      <button data-format="quote" aria-label="引用" data-tooltip="引用">${icon('quote')}</button>
-      <button data-format="bullet" aria-label="无序列表" data-tooltip="无序列表  ⌘⇧8">${icon('list')}</button>
-      <button data-format="ordered" aria-label="有序列表" data-tooltip="有序列表  ⌘⇧7">${icon('ordered')}</button>
+      <button data-format="quote" aria-label="${t("main.blockquote")}" data-i18n-aria-label="main.blockquote" data-tooltip="${t("main.blockquote")}" data-i18n-data-tooltip="main.blockquote">${icon('quote')}</button>
+      <button data-format="bullet" aria-label="${t("main.bulleted_list")}" data-i18n-aria-label="main.bulleted_list" data-tooltip="${t("main.bulleted_list_8")}" data-i18n-data-tooltip="main.bulleted_list_8">${icon('list')}</button>
+      <button data-format="ordered" aria-label="${t("main.numbered_list")}" data-i18n-aria-label="main.numbered_list" data-tooltip="${t("main.numbered_list_7")}" data-i18n-data-tooltip="main.numbered_list_7">${icon('ordered')}</button>
       <span class="toolbar-divider"></span>
-      <button data-format="code" aria-label="行内代码" data-tooltip="行内代码">${icon('code')}</button>
-      <button data-format="codeblock" aria-label="代码块" data-tooltip="代码块">${icon('codeblock')}</button>
-      <button data-format="table" aria-label="插入表格" data-tooltip="插入表格">${icon('table')}</button>
-      <span class="toolbar-narrow-break" aria-hidden="true"></span><button id="calloutButton" aria-label="插入提示块" data-tooltip="插入提示块" aria-haspopup="dialog" aria-expanded="false">${icon('callout')}</button>
+      <button data-format="code" aria-label="${t("main.inline_code")}" data-i18n-aria-label="main.inline_code" data-tooltip="${t("main.inline_code")}" data-i18n-data-tooltip="main.inline_code">${icon('code')}</button>
+      <button data-format="codeblock" aria-label="${t("main.code_block")}" data-i18n-aria-label="main.code_block" data-tooltip="${t("main.code_block")}" data-i18n-data-tooltip="main.code_block">${icon('codeblock')}</button>
+      <button data-format="table" aria-label="${t("main.insert_table")}" data-i18n-aria-label="main.insert_table" data-tooltip="${t("main.insert_table")}" data-i18n-data-tooltip="main.insert_table">${icon('table')}</button>
+      <span class="toolbar-narrow-break" aria-hidden="true"></span><button id="calloutButton" aria-label="${t("main.insert_callout")}" data-i18n-aria-label="main.insert_callout" data-tooltip="${t("main.insert_callout")}" data-i18n-data-tooltip="main.insert_callout" aria-haspopup="dialog" aria-expanded="false">${icon('callout')}</button>
       <span class="toolbar-spacer"></span>
-      <button id="tidyBlankLines" aria-label="整理段落空行" data-tooltip="整理段落空行  ⌥⌘\\">${icon('tidy')}</button>
-      <button id="displayButton" aria-label="显示" aria-haspopup="dialog" aria-expanded="false" data-tooltip="显示">${icon('eye')}</button>
+      <button id="tidyBlankLines" aria-label="${t("main.tidy_paragraph_spacing")}" data-i18n-aria-label="main.tidy_paragraph_spacing" data-tooltip="${t("UI0051")}" data-i18n-data-tooltip="main.tidy_paragraph_spacing_ui0051">${icon('tidy')}</button>
+      <button id="displayButton" aria-label="${t("main.display")}" data-i18n-aria-label="main.display" aria-haspopup="dialog" aria-expanded="false" data-tooltip="${t("main.display")}" data-i18n-data-tooltip="main.display">${icon('eye')}</button>
     </nav>
 
     <div id="statusNotice" class="status-notice" hidden>
       <span id="saveStatus" class="save-status" hidden></span>
-      <button id="recoveryNotice" class="recovery-notice" hidden>发现恢复记录 · 查看</button>
+      <button id="recoveryNotice" class="recovery-notice" hidden>${h("main.recovery_available_view")}</button>
       <span id="statusActions" class="status-actions" hidden></span>
-      <button id="dismissStatus" class="dismiss-status" aria-label="关闭提示" data-tooltip="关闭提示">${icon('close', 14)}</button>
+      <button id="dismissStatus" class="dismiss-status" aria-label="${t("main.dismiss_notice")}" data-i18n-aria-label="main.dismiss_notice" data-tooltip="${t("main.dismiss_notice")}" data-i18n-data-tooltip="main.dismiss_notice">${icon('close', 14)}</button>
     </div>
     <span id="statusAnnouncement" class="status-announcement" role="status" aria-live="polite" aria-atomic="true"></span>
 
     <section class="document-area">
       <div id="editor" class="editor-host"></div>
-      <section id="welcomeScreen" class="welcome-screen" aria-label="欢迎使用 Leaf">
-        <button id="welcomeSettings" class="welcome-settings icon-control" aria-label="设置" data-tooltip="设置">${icon('appearance', 16)}</button>
+      <section id="welcomeScreen" class="welcome-screen" ${desktop && new URLSearchParams(location.search).get('document') === '1' ? 'hidden' : ''} aria-label="${t("main.welcome_to_leaf")}" data-i18n-aria-label="main.welcome_to_leaf">
+        <button id="welcomeSettings" class="welcome-settings icon-control" aria-label="${t("main.settings_ui0056")}" data-i18n-aria-label="main.settings_ui0056" data-tooltip="${t("main.settings_ui0056")}" data-i18n-data-tooltip="main.settings_ui0056">${icon('appearance', 16)}</button>
         <div class="welcome-card">
           <img class="welcome-mark" src="/leaf-icon.png" alt="" aria-hidden="true" />
-          <h1 class="welcome-title"><span class="welcome-name">${leafName}</span><span class="welcome-description">${leafDev ? "开发模式 · 使用文档副本" : "轻量 Markdown 编辑器"}</span></h1>
+          <h1 class="welcome-title"><span class="welcome-name">${leafName}</span><span class="welcome-description">${leafDev ? h('dev.subtitle') : h('main.lightweight_markdown_editor')}</span></h1>
           <div class="welcome-actions">
-            <button id="welcomeNewButton" class="welcome-primary">${icon('newfile', 17)}<span>新建文档</span></button>
-            <button id="welcomeOpenButton" class="welcome-primary">${icon('open', 17)}<span>打开文件</span></button>
-            <button id="welcomeRecentButton" class="welcome-icon" aria-label="最近打开" data-tooltip="最近打开">${icon('history', 17)}</button>
+            <button id="welcomeNewButton" class="welcome-primary">${icon('newfile', 17)}<span>${h("main.new_document")}</span></button>
+            <button id="welcomeOpenButton" class="welcome-primary">${icon('open', 17)}<span>${h("main.open_file_ui0060")}</span></button>
+            <button id="welcomeRecentButton" class="welcome-icon" aria-label="${t("main.open_recent_ui0061")}" data-i18n-aria-label="main.open_recent_ui0061" data-tooltip="${t("main.open_recent_ui0061")}" data-i18n-data-tooltip="main.open_recent_ui0061">${icon('history', 17)}</button>
+            ${languageControl('welcomeLanguageSelect', true)}
           </div>
         </div>
-        <p class="welcome-drop-hint">拖入 Markdown 文件即可打开</p>
+        <p class="welcome-drop-hint">${h("main.drop_a_markdown_file_to_open_it")}</p>
       </section>
-      <section id="readingPane" class="reading-pane" aria-label="阅读模式" tabindex="0" hidden><article class="reading-document"></article></section>
-      <button id="outlineButton" class="sidebar-rail sidebar-rail-left" aria-label="展开大纲" aria-controls="outlineDrawer" aria-expanded="false" data-tooltip="展开大纲">${icon('outline')}</button>
-      <aside id="outlineDrawer" class="outline-drawer" aria-label="文档大纲">
-        <div class="outline-resizer" role="separator" aria-label="调整大纲宽度" aria-orientation="vertical" tabindex="0" title="拖动调整宽度 · 双击恢复默认 · 方向键微调"></div>
-        <div class="drawer-header"><strong>大纲</strong><button data-close="outline" class="icon-control" aria-label="收起大纲" data-tooltip="收起大纲" aria-controls="outlineDrawer" aria-expanded="true">${icon('outline')}</button></div>
+      <section id="readingPane" class="reading-pane" aria-label="${t("main.reading_mode")}" data-i18n-aria-label="main.reading_mode" tabindex="0" hidden><article class="reading-document"></article></section>
+      <button id="outlineButton" class="sidebar-rail sidebar-rail-left" aria-label="${t("main.expand_outline")}" data-i18n-aria-label="main.expand_outline" aria-controls="outlineDrawer" aria-expanded="false" data-tooltip="${t("main.expand_outline")}" data-i18n-data-tooltip="main.expand_outline">${icon('outline')}</button>
+      <aside id="outlineDrawer" class="outline-drawer" aria-label="${t("main.document_outline")}" data-i18n-aria-label="main.document_outline">
+        <div class="outline-resizer" role="separator" aria-label="${t("main.resize_outline")}" data-i18n-aria-label="main.resize_outline" aria-orientation="vertical" tabindex="0" title="${t("main.drag_to_resize_double_click_to_reset")}" data-i18n-title="main.drag_to_resize_double_click_to_reset"></div>
+        <div class="drawer-header"><strong>${h("main.outline")}</strong><button data-close="outline" class="icon-control" aria-label="${t("main.collapse_outline")}" data-i18n-aria-label="main.collapse_outline" data-tooltip="${t("main.collapse_outline")}" data-i18n-data-tooltip="main.collapse_outline" aria-controls="outlineDrawer" aria-expanded="true">${icon('outline')}</button></div>
         <div id="outlineList" class="outline-list"></div>
       </aside>
-      <aside id="notesDrawer" class="notes-drawer" aria-label="注释">
-        <div class="notes-resizer" role="separator" aria-label="调整注释宽度" aria-orientation="vertical" tabindex="0" title="拖动调整宽度 · 双击恢复默认 · 方向键微调"></div>
-        <div class="drawer-header"><strong>注释<span id="notesCount" class="drawer-count"></span></strong><button data-close="notes" class="icon-control" aria-label="收起注释" data-tooltip="收起注释" aria-controls="notesDrawer" aria-expanded="true">${icon('notes')}</button></div>
+      <aside id="notesDrawer" class="notes-drawer" aria-label="${t("main.footnotes")}" data-i18n-aria-label="main.footnotes">
+        <div class="notes-resizer" role="separator" aria-label="${t("main.resize_footnotes_panel")}" data-i18n-aria-label="main.resize_footnotes_panel" aria-orientation="vertical" tabindex="0" title="${t("main.drag_to_resize_double_click_to_reset")}" data-i18n-title="main.drag_to_resize_double_click_to_reset"></div>
+        <div class="drawer-header"><strong>${h("main.footnotes")}<span id="notesCount" class="drawer-count"></span></strong><button data-close="notes" class="icon-control" aria-label="${t("main.collapse_footnotes")}" data-i18n-aria-label="main.collapse_footnotes" data-tooltip="${t("main.collapse_footnotes")}" data-i18n-data-tooltip="main.collapse_footnotes" aria-controls="notesDrawer" aria-expanded="true">${icon('notes')}</button></div>
         <div id="notesList" class="notes-list"></div>
       </aside>
-      <button id="notesButton" class="sidebar-rail sidebar-rail-right" aria-label="展开注释" aria-controls="notesDrawer" aria-expanded="false" aria-pressed="false" data-tooltip="展开注释">${icon('notes')}</button>
+      <button id="notesButton" class="sidebar-rail sidebar-rail-right" aria-label="${t("main.expand_footnotes")}" data-i18n-aria-label="main.expand_footnotes" aria-controls="notesDrawer" aria-expanded="false" aria-pressed="false" data-tooltip="${t("main.expand_footnotes")}" data-i18n-data-tooltip="main.expand_footnotes">${icon('notes')}</button>
     </section>
 
     <footer class="statusbar">
-      <span id="cursorStatus">第 1 行，第 1 列</span>
+      <span class="cursor-and-save"><span id="cursorStatus">${h("main.line_1_column_1")}</span><span id="saveIndicator" role="status"></span></span>
       <span id="stats"></span>
-      <button id="focusButton" class="status-button icon-control" aria-label="专注模式" data-tooltip="专注模式  Esc 退出">${icon('focus', 15)}</button>
+      <button id="focusButton" class="status-button icon-control" aria-label="${t("main.focus_mode")}" data-i18n-aria-label="main.focus_mode" data-tooltip="${t("main.focus_mode_press_esc_to_exit")}" data-i18n-data-tooltip="main.focus_mode_press_esc_to_exit">${icon('focus', 15)}</button>
     </footer>
 
-    <div id="dropOverlay" class="drop-overlay">松开以打开 Markdown 文件</div>
+    <div id="dropOverlay" class="drop-overlay">${h("main.drop_to_open_a_markdown_file")}</div>
 
-    <section id="appearancePopover" class="popover appearance-popover" role="dialog" aria-label="设置" tabindex="-1" hidden>
-      <div class="settings-heading"><h2>设置</h2><button id="settingsClose" aria-label="关闭设置">${icon('close')}</button></div>
-      <div class="settings-tabs" role="tablist" aria-label="设置分类">
-        <button id="settingsTab-appearance" role="tab" data-settings-tab="appearance" aria-controls="settingsPanel-appearance">外观与排版</button>
-        <button id="settingsTab-recovery" role="tab" data-settings-tab="recovery" aria-controls="settingsPanel-recovery">保存与恢复</button>
+    <section id="appearancePopover" class="popover appearance-popover" role="dialog" aria-label="${t("main.settings_ui0078")}" data-i18n-aria-label="main.settings_ui0078" tabindex="-1" hidden>
+      <div class="settings-heading"><h2>${h("main.settings_ui0078")}</h2><button id="settingsClose" aria-label="${t("main.close_settings")}" data-i18n-aria-label="main.close_settings">${icon('close')}</button></div>
+      <div class="settings-tabs" role="tablist" aria-label="${t("main.settings_categories")}" data-i18n-aria-label="main.settings_categories">
+        <button id="settingsTab-appearance" role="tab" data-settings-tab="appearance" aria-controls="settingsPanel-appearance">${h("main.appearance_typography")}</button>
+        <button id="settingsTab-recovery" role="tab" data-settings-tab="recovery" aria-controls="settingsPanel-recovery">${h("main.saving_recovery")}</button>
       </div>
       <div class="appearance-scroll" tabindex="-1">
       <section id="settingsPanel-appearance" role="tabpanel" aria-labelledby="settingsTab-appearance" data-settings-panel="appearance">
-      <fieldset class="appearance-group" aria-label="主题">
-      <label class="setting-row"><span>主题</span>
-        <span class="ui-select"><select id="themeSelect"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select>${icon('chevron', 16)}</span>
+      <fieldset class="appearance-group" aria-label="${t("main.theme")}" data-i18n-aria-label="main.theme">
+      <label class="setting-row"><span>${h("main.theme")}</span>
+        <span class="ui-select"><select id="themeSelect"><option value="system" data-i18n="main.system_default">${t("main.system_default")}</option><option value="light" data-i18n="main.light">${t("main.light")}</option><option value="dark" data-i18n="main.dark">${t("main.dark")}</option></select>${icon('chevron', 16)}</span>
       </label>
       </fieldset>
-      <fieldset class="appearance-group" aria-label="正文排版">
-      <label class="setting-row"><span>正文字体</span>
-        <span class="ui-select"><select id="fontFamilySelect"><option value="serif">宋体</option><option value="sans">系统黑体</option><option value="mono">等宽</option></select>${icon('chevron', 16)}</span>
+      <fieldset class="appearance-group" aria-label="${t("main.body_typography")}" data-i18n-aria-label="main.body_typography">
+      <label class="setting-row"><span>${h("main.body_font")}</span>
+        <span class="ui-select"><select id="fontFamilySelect"><option value="serif" data-i18n="main.serif">${t("main.serif")}</option><option value="sans" data-i18n="main.system_sans_serif">${t("main.system_sans_serif")}</option><option value="mono" data-i18n="main.monospace">${t("main.monospace")}</option></select>${icon('chevron', 16)}</span>
       </label>
-      <label class="setting-slider"><span>正文字号</span><span class="slider-control"><input id="fontSizeInput" type="range" min="14" max="24" step="1" /><output id="fontSizeValue"></output></span></label>
-      <label class="setting-slider"><span>正文最大宽度</span><span class="slider-control"><input id="contentWidthInput" type="range" min="600" max="1100" step="20" /><output id="contentWidthValue"></output></span></label>
+      <label class="setting-slider"><span>${h("main.body_font_size")}</span><span class="slider-control"><input id="fontSizeInput" type="range" min="14" max="24" step="1" /><output id="fontSizeValue"></output></span></label>
+      <label class="setting-slider"><span>${h("main.maximum_body_width")}</span><span class="slider-control"><input id="contentWidthInput" type="range" min="600" max="1100" step="20" /><output id="contentWidthValue"></output></span></label>
       </fieldset>
       </section>
       <section id="settingsPanel-recovery" role="tabpanel" aria-labelledby="settingsTab-recovery" data-settings-panel="recovery" hidden>
-      ${desktop ? `<fieldset class="appearance-group" aria-label="恢复记录"><label class="setting-row"><span>历史版本与草稿保留时间</span><span class="ui-select"><select id="recoveryRetentionSelect" aria-label="历史版本与草稿保留时间" disabled><option value="7">7 天</option><option value="30" selected>30 天</option><option value="90">90 天</option></select>${icon('chevron',16)}</span></label></fieldset>` : ''}
-      <div class="settings-recovery-action"><button id="settingsRecovery" class="settings-action">${desktop ? '查看可恢复草稿' : '恢复最近一次保存前版本'}</button></div>
-      ${desktop ? '' : '<p class="setting-hint">恢复将替换当前内容，可撤销。检查后请保存。</p>'}
+      ${desktop ? `<fieldset class="appearance-group" aria-label="${t("main.recovery_records")}" data-i18n-aria-label="main.recovery_records"><label class="setting-row"><span>${h("main.version_draft_retention")}</span><span class="ui-select"><select id="recoveryRetentionSelect" aria-label="${t("main.version_draft_retention")}" data-i18n-aria-label="main.version_draft_retention" disabled><option value="7" data-i18n="main.7_days">${t("main.7_days")}</option><option value="30" selected data-i18n="main.30_days">${t("main.30_days")}</option><option value="90" data-i18n="main.90_days">${t("main.90_days")}</option></select>${icon('chevron',16)}</span></label></fieldset>` : ''}
+      <div class="settings-recovery-action"><button id="settingsRecovery" class="settings-action">${h(desktop ? "main.view_recoverable_drafts" : "main.restore_version_before_last_save")}</button></div>
+      ${desktop ? '' : `<p class="setting-hint">${h("main.restoring_replaces_the_current_editor_content_and")}</p>`}
       </section>
       </div>
-      <div class="appearance-scroll-hint" hidden aria-hidden="true">向下滚动查看更多</div>
-      <p class="settings-about"><strong id="settingsVersion">Leaf</strong><span id="settingsBuild" hidden></span></p>
+      <div class="appearance-scroll-hint" hidden aria-hidden="true">${h("main.scroll_down_for_more")}</div>
+      <p class="settings-about"><strong id="settingsVersion">${h("main.leaf")}</strong><span id="settingsBuild" hidden></span></p>
     </section>
 
-    <section id="documentPopover" class="popover action-popover" role="menu" aria-label="当前文档操作" hidden>
-      ${desktop ? '<button id="documentReveal" role="menuitem">在文件管理器中显示</button><button id="documentRename" role="menuitem">重命名…</button>' : ''}
-      <button id="documentHistory" role="menuitem">${desktop ? '历史版本与草稿…' : '恢复最近一次保存前版本'}</button>
+    <section id="languagePopover" class="popover action-popover" role="menu" aria-label="${t('UI0256')}" data-i18n-aria-label="settings.language" hidden>
+      <button type="button" role="menuitemradio" data-language="system" aria-checked="false">${h('settings.system_default')}</button>
+      <button type="button" role="menuitemradio" data-language="zh-Hans" aria-checked="false">简体中文</button>
+      <button type="button" role="menuitemradio" data-language="zh-Hant-TW" aria-checked="false">繁體中文（台灣）</button>
+      <button type="button" role="menuitemradio" data-language="en" aria-checked="false">English</button>
+    </section>
+    <section id="documentPopover" class="popover action-popover" role="menu" aria-label="${t("main.current_document_actions")}" data-i18n-aria-label="main.current_document_actions" hidden>
+      ${desktop ? `<button id="documentReveal" role="menuitem">${h("main.show_in_file_manager")}</button><button id="documentRename" role="menuitem">${h("main.rename")}</button>` : ''}
+      <button id="documentHistory" role="menuitem">${h(desktop ? "main.versions_drafts" : "main.restore_version_before_last_save_ui0107")}</button>
     </section>
 
-    <section id="exportPopover" class="popover action-popover" role="menu" aria-label="导出" hidden>
-      <button id="exportButton" role="menuitem">导出 PDF<kbd>⌘E</kbd></button>
-      <button id="exportBundleButton" role="menuitem" ${desktop ? '' : 'hidden'}>导出文档与附件…</button>
+    <section id="exportPopover" class="popover action-popover" role="menu" aria-label="${t("main.export_ui0108")}" data-i18n-aria-label="main.export_ui0108" hidden>
+      <button id="exportButton" role="menuitem">${h("main.export_pdf")}<kbd>⌘E</kbd></button>
+      <button id="exportBundleButton" role="menuitem" ${desktop ? '' : 'hidden'}>${h("main.export_document_attachments")}</button>
     </section>
 
-    <section id="displayPopover" class="popover action-popover display-popover" role="dialog" aria-label="显示" hidden>
-      <div class="popover-title">显示</div>
-      <label class="setting-check"><input id="documentPropertiesToggle" type="checkbox" /><span>文档属性</span></label>
-      <label class="setting-check"><input id="fileNameTitleToggle" type="checkbox" /><span>正文上方的文件名</span></label>
-      <label class="setting-check"><input id="lineNumberToggle" type="checkbox" /><span>源码行号</span></label>
-      <label class="setting-check"><input id="blankMarkerToggle" type="checkbox" /><span class="setting-label">编辑标记<small class="setting-inline-hint">¶ 段落结束　↵ 换行</small></span></label>
-      <label class="setting-check"><input id="headingNumberSetting" type="checkbox" /><span class="setting-label">标题多级编号<small class="setting-inline-hint">仅影响显示，不修改原文</small></span></label>
+    <section id="displayPopover" class="popover action-popover display-popover" role="dialog" aria-label="${t("main.display_ui0111")}" data-i18n-aria-label="main.display_ui0111" hidden>
+      <div class="popover-title">${h("main.display_ui0111")}</div>
+      <label class="setting-check"><input id="documentPropertiesToggle" type="checkbox" /><span>${h("main.document_properties")}</span></label>
+      <label class="setting-check"><input id="fileNameTitleToggle" type="checkbox" /><span>${h("main.show_file_name_above_text")}</span></label>
+      <label class="setting-check"><input id="lineNumberToggle" type="checkbox" /><span>${h("main.source_line_numbers")}</span></label>
+      <label class="setting-check"><input id="blankMarkerToggle" type="checkbox" /><span class="setting-label">${h("main.formatting_marks")}<small class="setting-inline-hint">${h("main.paragraph_end_line_break")}</small></span></label>
+      <label class="setting-check"><input id="headingNumberSetting" type="checkbox" /><span class="setting-label">${h("main.multilevel_heading_numbering")}<small class="setting-inline-hint">${h("main.display_only_original_text_unchanged")}</small></span></label>
       <p id="markerModeHint" class="setting-hint"></p>
-      <button id="markerEditMode" class="settings-action" hidden>切换到编辑模式查看</button>
+      <button id="markerEditMode" class="settings-action" hidden>${h("main.switch_to_edit_mode_to_view_formatting")}</button>
     </section>
 
     <section id="recentPopover" class="popover recent-popover" hidden>
-      <div class="popover-title">最近打开</div>
-      <div id="recentList" class="recent-list"><span class="empty-hint">暂无最近打开的文件</span></div>
+      <div class="popover-title">${h("main.open_recent_ui0120")}</div>
+      <div id="recentList" class="recent-list"><span class="empty-hint">${h("main.no_recent_files")}</span></div>
     </section>
 
     <section id="headingPopover" class="popover heading-popover" hidden>
       <div class="heading-grid">
-        <button data-format="heading0" aria-label="正文" data-tooltip="恢复正文  ⌥0">¶</button>
-        <button data-format="heading1" aria-label="一级标题" data-tooltip="一级标题  ⌥1">H1</button>
-        <button data-format="heading2" aria-label="二级标题" data-tooltip="二级标题  ⌥2">H2</button>
-        <button data-format="heading3" aria-label="三级标题" data-tooltip="三级标题  ⌥3">H3</button>
-        <button data-format="heading4" aria-label="四级标题" data-tooltip="四级标题  ⌥4">H4</button>
-        <button data-format="heading5" aria-label="五级标题" data-tooltip="五级标题  ⌥5">H5</button>
-        <button data-format="heading6" aria-label="六级标题" data-tooltip="六级标题  ⌥6">H6</button>
+        <button data-format="heading0" aria-label="${t("main.body_text")}" data-i18n-aria-label="main.body_text" data-tooltip="${t("main.set_to_body_text_0")}" data-i18n-data-tooltip="main.set_to_body_text_0">¶</button>
+        <button data-format="heading1" aria-label="${t("main.heading_1")}" data-i18n-aria-label="main.heading_1" data-tooltip="${t("main.heading_1_1")}" data-i18n-data-tooltip="main.heading_1_1">H1</button>
+        <button data-format="heading2" aria-label="${t("main.heading_2")}" data-i18n-aria-label="main.heading_2" data-tooltip="${t("main.heading_2_2")}" data-i18n-data-tooltip="main.heading_2_2">H2</button>
+        <button data-format="heading3" aria-label="${t("main.heading_3")}" data-i18n-aria-label="main.heading_3" data-tooltip="${t("main.heading_3_3")}" data-i18n-data-tooltip="main.heading_3_3">H3</button>
+        <button data-format="heading4" aria-label="${t("main.heading_4")}" data-i18n-aria-label="main.heading_4" data-tooltip="${t("main.heading_4_4")}" data-i18n-data-tooltip="main.heading_4_4">H4</button>
+        <button data-format="heading5" aria-label="${t("main.heading_5")}" data-i18n-aria-label="main.heading_5" data-tooltip="${t("main.heading_5_5")}" data-i18n-data-tooltip="main.heading_5_5">H5</button>
+        <button data-format="heading6" aria-label="${t("main.heading_6")}" data-i18n-aria-label="main.heading_6" data-tooltip="${t("main.heading_6_6")}" data-i18n-data-tooltip="main.heading_6_6">H6</button>
       </div>
     </section>
 
     <div id="palette" class="modal-backdrop" hidden>
-      <section class="command-palette" role="dialog" aria-modal="true" aria-label="命令面板">
-        <input id="paletteInput" type="search" placeholder="搜索命令…" aria-label="搜索命令" role="combobox" aria-autocomplete="list" aria-controls="paletteList" aria-expanded="false" autocomplete="off" />
-        <div id="paletteList" class="palette-list" role="listbox" aria-label="命令结果"></div>
-        <div id="paletteEmpty" class="palette-empty" role="status" hidden>没有匹配的命令，试试其他关键词。</div>
-        <div class="palette-help">↑ ↓ 选择　Enter 执行　Esc 关闭</div>
+      <section class="command-palette" role="dialog" aria-modal="true" aria-label="${t("main.command_palette_ui0136")}" data-i18n-aria-label="main.command_palette_ui0136">
+        <input id="paletteInput" type="search" placeholder="${t("main.search_commands")}" data-i18n-placeholder="main.search_commands" aria-label="${t("main.search_commands_ui0138")}" data-i18n-aria-label="main.search_commands_ui0138" role="combobox" aria-autocomplete="list" aria-controls="paletteList" aria-expanded="false" autocomplete="off" />
+        <div id="paletteList" class="palette-list" role="listbox" aria-label="${t("main.command_results")}" data-i18n-aria-label="main.command_results"></div>
+        <div id="paletteEmpty" class="palette-empty" role="status" hidden>${h("main.no_matching_commands_try_another_keyword")}</div>
+        <div class="palette-help">${h("main.select_enter_run_esc_close")}</div>
       </section>
     </div>
     <div id="tooltip" class="ui-tooltip" role="tooltip" hidden></div>
-    <section id="calloutPopover" class="popover callout-popover" role="dialog" aria-label="提示块类型" hidden>
-      <div class="popover-title">插入提示块</div>
-      <div class="callout-types">${Object.entries(calloutLabels).map(([key,label])=>`<button data-format="callout-${key}">${calloutBadge(key)}<span>${label}</span></button>`).join('')}</div>
+    <section id="calloutPopover" class="popover callout-popover" role="dialog" aria-label="${t("main.callout_type")}" data-i18n-aria-label="main.callout_type" hidden>
+      <div class="popover-title">${h("main.insert_callout")}</div>
+      <div class="callout-types">${Object.entries(calloutLabels).map(([key,label])=>`<button data-format="callout-${key}">${calloutBadge(key)}<span data-callout-label="${key}">${label}</span></button>`).join('')}</div>
     </section>
   </main>
 `);
@@ -282,7 +296,7 @@ const leafVersion = typeof __LEAF_VERSION__ === 'string' ? __LEAF_VERSION__ : ''
 const leafBuild = typeof __LEAF_BUILD__ === 'string' ? __LEAF_BUILD__ : '';
 document.querySelector('#settingsVersion').textContent = `${leafName} ${leafVersion}`.trim();
 const settingsBuild = document.querySelector('#settingsBuild');
-settingsBuild.textContent = leafBuild ? `构建 ${leafBuild}` : '';
+setText(settingsBuild, () => leafBuild ? t("main.build", {"build": leafBuild}) : '');
 settingsBuild.hidden = !leafBuild;
 const appearancePopover = document.querySelector('#appearancePopover');
 const recentPopover = document.querySelector('#recentPopover');
@@ -290,6 +304,7 @@ const headingPopover = document.querySelector('#headingPopover');
 const calloutPopover = document.querySelector('#calloutPopover');
 const documentPopover = document.querySelector('#documentPopover');
 const exportPopover = document.querySelector('#exportPopover');
+const languagePopover = document.querySelector('#languagePopover');
 const displayPopover = document.querySelector('#displayPopover');
 const displayButton = document.querySelector('#displayButton');
 const palette = document.querySelector('#palette');
@@ -306,6 +321,7 @@ const statusNotices = setupStatusNotices({
   actions: document.querySelector('#statusActions'),
   dismiss: document.querySelector('#dismissStatus'),
   announcement: document.querySelector('#statusAnnouncement'),
+  saveIndicator: document.querySelector('#saveIndicator'),
   format: shortcutText,
 });
 const setStatus = statusNotices.show;
@@ -318,7 +334,7 @@ function renameCurrentDocument(){
   const anchor=(state.reading?reader.querySelector('.leaf-file-name-title'):document.querySelector('.leaf-default-title h1'))
     || document.querySelector('#documentMenuButton');
   inlineRename({anchor,value:stem,apply:async name=>{
-    if(!desktop)throw new Error('请在桌面版中修改磁盘文件名');
+    if(!desktop)throw new Error(t("main.to_rename_the_file_on_disk_use"));
     await desktopRename(name+extension);
     if(state.reading)renderReading();
   }});
@@ -332,9 +348,9 @@ function updateDocumentChrome() {
   dirtyElement.textContent = changed ? '●' : '';
   dirtyElement.hidden = !changed;
   document.title = shell.classList.contains('welcome-state')
-    ? `${leafName} — Markdown Editor`
+    ? t('main.app_title', { app: leafName })
     : `${changed ? '• ' : ''}${state.fileName} — ${leafName}`;
-  statsElement.textContent = `${state.content.length} 字符 · ${state.content.split(/\s+/).filter(Boolean).length} 词`;
+  setText(statsElement, () => `${t('main.characters', { count: state.content.length })} · ${t('main.words', { count: state.content.split(/\s+/).filter(Boolean).length })}`);
   desktopTitle(document.title);
   editor.setFileName(state.fileName);
 }
@@ -390,7 +406,7 @@ function scheduleOutlineCurrent() {
     for (const button of outlineList.querySelectorAll('.outline-item')) {
       if (Number(button.dataset.line) === current?.line) button.setAttribute('aria-current', 'location');
       else button.removeAttribute('aria-current');
-      button.title = `${button.textContent}\n${state.reading ? '单击跳转' : '单击跳转 · 双击修改标题'}`;
+      setAttr(button, 'title', () => t(state.reading ? 'UI0147' : 'UI0148', { heading: button.textContent }));
     }
   });
 }
@@ -403,7 +419,7 @@ function renderOutline(markdown = state.content) {
   state.outline = outline;
   outlineList.replaceChildren();
   if (!state.outline.length) {
-    outlineList.innerHTML = '<span class="empty-hint">此文档没有标题</span>';
+    outlineList.innerHTML = `<span class="empty-hint">${h("main.no_headings_in_this_document")}</span>`;
     return;
   }
   const root = document.createElement('ul');
@@ -435,7 +451,7 @@ function renderOutline(markdown = state.content) {
         const open = !collapsedOutline.has(key);
         children.hidden = !open;
         toggle.setAttribute('aria-expanded', String(open));
-        toggle.setAttribute('aria-label', `${open ? '收起' : '展开'}大纲子项：${item.text}`);
+        setAttr(toggle, 'aria-label', () => t(!collapsedOutline.has(key) ? 'UI0150' : 'UI0151', { heading: item.text }));
       };
       toggle.addEventListener('click', () => {
         if (collapsedOutline.has(key)) collapsedOutline.delete(key);
@@ -458,7 +474,7 @@ function renderOutline(markdown = state.content) {
     button.dataset.level = item.level;
     button.style.setProperty('--level', item.level);
     button.textContent = item.text;
-    button.title='单击跳转 · 双击修改标题';
+    setAttr(button, 'title', () => t("main.click_to_jump_double_click_to_rename_ui0152"));
     button.addEventListener('click', () => {
       if(state.reading) reader.querySelector(`[data-source-line="${item.line}"]`)?.scrollIntoView({block:'start'});
       else editor.goToLine(item.line);
@@ -468,13 +484,13 @@ function renderOutline(markdown = state.content) {
       const original=editor.view.state.doc.line(item.line).text;
       const input=document.createElement('input');
       input.className='outline-rename';input.value=item.text;
-      input.setAttribute('aria-label','修改标题');
+      setAttr(input, 'aria-label', () => t("main.rename_heading"));
       button.replaceWith(input);input.focus();input.select();
       let finished=false;
       const finish=save=>{
         if(finished)return;finished=true;
         if(save && input.value.trim()!==item.text && !editor.renameHeading(item.line,original,input.value))
-          setStatus('标题为空或原文已变化，未修改','info');
+          setStatus(translatedMessage("main.heading_is_empty_or_the_original_text"),'info');
         if(input.isConnected)input.replaceWith(button);
       };
       input.addEventListener('blur',()=>finish(true));
@@ -546,9 +562,9 @@ function renderNotes() {
       card.dataset.state = row.state;
       const number = card.querySelector('.note-number');
       number.textContent = row.number ?? `[${row.label}]`;
-      number.setAttribute('aria-label', `跳转到注释 ${row.number ?? row.label}`);
+      setAttr(number, 'aria-label', () => t("main.jump_to_footnote", {"note": row.number ?? row.label}));
       const body = card.querySelector('.note-body');
-      body.setAttribute('aria-label', `注释 ${row.number ?? row.label} 的内容`);
+      setAttr(body, 'aria-label', () => t("main.content_of_footnote", {"note": row.number ?? row.label}));
       if (body !== document.activeElement && body.value !== row.body) { body.value = row.body; fitNoteBody(body); }
       if (row.state === 'complete') card.querySelector('.note-card-head')?.remove();
     }
@@ -575,7 +591,7 @@ function renderNotes() {
   notesCount.textContent = numbered ? `${numbered}` : '';
   notesList.replaceChildren();
   if (!rows.length) {
-    notesList.innerHTML = '<span class="empty-hint">此文档没有注释</span>';
+    notesList.innerHTML = `<span class="empty-hint">${h("main.no_footnotes_in_this_document")}</span>`;
     return;
   }
   const measure = [];
@@ -605,13 +621,13 @@ function noteCard(row, measure) {
   // A note that has no definition yet has no number either, so the row is named
   // by the label as it is written in the file.
   number.textContent = row.number === null ? `[${row.label}]` : String(row.number);
-  number.title = '跳转到正文中的角标';
-  number.setAttribute('aria-label', `跳转到注释 ${row.number ?? row.label}`);
+  setAttr(number, 'title', () => t("main.jump_to_footnote_marker_in_body"));
+  setAttr(number, 'aria-label', () => t("main.jump_to_footnote", {"note": row.number ?? row.label}));
   number.addEventListener('click', () => gotoNote(row));
-  if (row.state === 'unreferenced') head.append(statusNote('正文里已没有它的角标'));
+  if (row.state === 'unreferenced') head.append(statusNote(t("main.footnote_marker_no_longer_in_body")));
   if (row.state === 'undefined') {
-    const hint = statusNote('缺少脚注定义');
-    hint.title = `找不到 [^${row.label}]: 对应的定义，请检查定义行末尾的冒号。此引用暂不参与显示编号。`;
+    const hint = statusNote(t("main.missing_footnote_definition"));
+    setAttr(hint, 'title', () => t("main.no_definition_found_for_footnote_check_for", {"label": row.label}));
     head.append(hint);
   }
 
@@ -620,8 +636,8 @@ function noteCard(row, measure) {
   body.rows = 1;
   body.spellcheck = false;
   body.value = row.body;
-  body.placeholder = '输入注释内容';
-  body.setAttribute('aria-label', `注释 ${row.number ?? row.label} 的内容`);
+  setAttr(body, 'placeholder', () => t("main.enter_footnote_content"));
+  setAttr(body, 'aria-label', () => t("main.content_of_footnote", {"note": row.number ?? row.label}));
   // The reading view shows the notes the way they will print, and an edit made
   // there would be dropped on the floor, so the panel stops offering one.
   body.readOnly = state.reading;
@@ -650,8 +666,8 @@ function noteCard(row, measure) {
     remove.type = 'button';
     remove.className = 'note-delete';
     remove.innerHTML = uiIcon('trash', 15);
-    remove.setAttribute('aria-label', '删除脚注');
-    remove.title = '删除这条脚注及其全部引用（可撤销）';
+    setAttr(remove, 'aria-label', () => t("main.delete_footnote"));
+    setAttr(remove, 'title', () => t("main.delete_this_footnote_and_all_its_references"));
     remove.addEventListener('mousedown', event => event.preventDefault());
     remove.addEventListener('click', () => editor.deleteFootnote(card._noteRow.label));
     card.append(remove);
@@ -717,22 +733,22 @@ function scheduleSave() {
   clearTimeout(state.saveTimer);
   if (desktop) {
     desktopEdited();
-    if (desktopRecoveryPaused()) { setStatus('恢复后自动保存暂停 · 检查后请手动保存', 'manual'); return; }
+    if (desktopRecoveryPaused()) { setStatus(translatedMessage("main.autosave_paused_after_recovery_review_and_save"), 'manual'); return; }
     if (desktopHasPath()) {
-      setStatus('等待自动保存…', 'pending');
+      setStatus(translatedMessage("main.waiting_to_autosave"), 'pending');
       state.saveTimer = setTimeout(() => desktopSave(false, false), 800);
-    } else setStatus('⌘S 选择保存位置', 'manual');
+    } else setStatus(translatedMessage("main.press_s_to_choose_where_to_save"), 'manual');
     return;
   }
   if (!state.fileHandle) {
-    setStatus('⌘S 选择保存位置', 'manual');
+    setStatus(translatedMessage("main.press_s_to_choose_where_to_save"), 'manual');
     return;
   }
   if (state.conflict) {
-    setStatus('外部文件已修改 · 自动保存暂停，请另存为以保留当前内容', 'error');
+    setStatus(translatedMessage("main.file_changed_externally_autosave_paused_save_as"), 'error');
     return;
   }
-  setStatus('等待自动保存…', 'pending');
+  setStatus(translatedMessage("main.waiting_to_autosave"), 'pending');
   state.saveTimer = setTimeout(() => saveToHandle(true), 800);
 }
 
@@ -741,10 +757,10 @@ const redoButton = document.querySelector('#redoButton');
 
 function updateHeadingControl(level) {
   const button = document.querySelector('#headingButton');
-  const label = level === null ? '混合级别' : level === 0 ? '正文' : `${level} 级标题`;
+  const label = level === null ? t("main.mixed_levels") : level === 0 ? t("main.body_text_ui0170") : t(['UI0122','UI0124','UI0126','UI0128','UI0130','UI0132','UI0134'][level]);
   button.querySelector('span').textContent = level === null ? 'H' : level === 0 ? '¶' : `H${level}`;
-  button.setAttribute('aria-label', `标题级别：${label}`);
-  button.dataset.tooltip = shortcutText(`标题级别：${label}  ⌥1–6 · 正文 ⌥0`);
+  setAttr(button, 'aria-label', () => t("main.heading_level_ui0172", {"label": label}));
+  setAttr(button, 'data-tooltip', () => shortcutText(t("main.heading_level_1_6_body_text_0_ui0173", {"label": label})));
   for (const item of document.querySelectorAll('.heading-grid button')) {
     item.setAttribute('aria-pressed', String(level !== null && Number(item.dataset.format.at(-1)) === level));
   }
@@ -771,7 +787,7 @@ const editor = createLeafEditor({
   onCursor(position) {
     outlineCursorLine = position.line;
     scheduleOutlineCurrent();
-    cursorStatus.textContent = `第 ${position.line} 行，第 ${position.column} 列`;
+    setText(cursorStatus, () => t("main.line_column", {"line": position.line, "column": position.column}));
     updateHeadingControl(position.headingLevel);
   },
   onOutlineChange: renderOutline,
@@ -817,10 +833,10 @@ new ResizeObserver(scheduleOutlineCurrent).observe(reader);
 function renderReading() {
   scheduleOutlineCurrent();
   renderPrintDocument(reader,state.content,{name:state.fileName,numbered:state.showHeadingNumbers,properties:true,expandCallouts:false,fallbackTitle:false,fileNameTitle:state.showFileNameTitle,sourcePositions:true});
-  const title=reader.querySelector('.leaf-file-name-title');if(title){title.tabIndex=0;title.title='双击修改文件名';title.setAttribute('aria-label',`${state.fileName}，双击或按回车修改文件名`);}
+  const title=reader.querySelector('.leaf-file-name-title');if(title){title.tabIndex=0;setAttr(title, 'title', () => t("main.double_click_to_rename_the_file"));setAttr(title, 'aria-label', () => t("main.double_click_or_press_enter_to_rename", {"fileName": state.fileName}));}
   for (const table of reader.querySelectorAll('table')) {
     const wrap = document.createElement('div'); wrap.className = 'reading-table-scroll';
-    wrap.tabIndex = 0; wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', '表格，可横向滚动');
+    wrap.tabIndex = 0; wrap.setAttribute('role', 'region'); setAttr(wrap, 'aria-label', () => t("main.horizontally_scrollable_table"));
     table.before(wrap); wrap.append(table);
   }
   for (const pre of reader.querySelectorAll('pre[data-language]')) {
@@ -851,17 +867,17 @@ function toggleReading() {
   renderNotes();
 }
 const modePopover=document.createElement('section');
-modePopover.className='popover mode-popover';modePopover.hidden=true;modePopover.setAttribute('role','menu');modePopover.setAttribute('aria-label','视图模式');
-const modes=[['edit','编辑','edit'],['reading','阅读','read'],['source','源码','code']];
+modePopover.className='popover mode-popover';modePopover.hidden=true;modePopover.setAttribute('role','menu');setAttr(modePopover, 'aria-label', () => t("main.view_mode"));
+const modes=[['edit','main.edit','edit'],['reading','main.read','read'],['source','main.source','code']];
 for(const [mode,label,glyph] of modes){
- const button=document.createElement('button');button.type='button';button.dataset.mode=mode;button.setAttribute('role','menuitemradio');button.innerHTML=icon(glyph)+`<span>${label}</span>`;
+ const button=document.createElement('button');button.type='button';button.dataset.mode=mode;button.setAttribute('role','menuitemradio');button.innerHTML=icon(glyph)+`<span>${h(label)}</span>`;
  button.onclick=()=>setMode(mode);modePopover.append(button);
 }
 document.body.append(modePopover);
 function updateModeControl(){
  const mode=state.reading?'reading':state.source?'source':'edit';
  const [,label,glyph]=modes.find(m=>m[0]===mode),button=document.querySelector('#readingToggle');
- button.innerHTML=icon(glyph)+`<span>${label}</span>`;button.setAttribute('aria-label',`视图模式：${label}`);button.removeAttribute('aria-pressed');button.setAttribute('aria-haspopup','menu');button.setAttribute('aria-expanded',String(!modePopover.hidden));button.dataset.tooltip=shortcutText('选择编辑、源码或阅读模式  ⌘R');
+ button.innerHTML=icon(glyph)+`<span>${h(label)}</span>`;setAttr(button, 'aria-label', () => t("main.view_mode_ui0182", {"label": t(label)}));button.removeAttribute('aria-pressed');button.setAttribute('aria-haspopup','menu');button.setAttribute('aria-expanded',String(!modePopover.hidden));setAttr(button, 'data-tooltip', () => shortcutText(t("main.choose_edit_source_or_reading_mode_r")));
  for(const item of modePopover.children)item.setAttribute('aria-checked',String(item.dataset.mode===mode));
 }
 function readingBlocks() {
@@ -1020,7 +1036,7 @@ async function renderRecentFiles() {
   let files = [];
   try { files = await readRecentFiles(); } catch { /* ignored */ }
   if (!files.length) {
-    list.innerHTML = '<span class="empty-hint">暂无最近打开的文件</span>';
+    list.innerHTML = `<span class="empty-hint">${h("main.no_recent_files_ui0184")}</span>`;
     return;
   }
   for (const item of files) {
@@ -1050,7 +1066,7 @@ async function renderRecentFiles() {
           recentOpenError = '';
         }
         catch (reason) {
-          recentOpenError = `无法打开最近文件：${reason}。文件可能已移动、删除或被替换；可清理失效记录或手动打开。`;
+          recentOpenError = t("main.could_not_open_recent_file_it_may", {"reason": reason});
           setStatus(recentOpenError, 'error');
         }
         return;
@@ -1064,7 +1080,7 @@ async function renderRecentFiles() {
   }
   if (desktop) {
     const clear = document.createElement('button');
-    clear.textContent = '清理失效记录';
+    setText(clear, () => t("main.clear_unavailable_entries"));
     clear.addEventListener('click', async () => {
       try {
         await invoke('recent_clear_missing');
@@ -1072,7 +1088,7 @@ async function renderRecentFiles() {
         statusNotices.clear(recentOpenError);
         recentOpenError = '';
       }
-      catch (error) { setStatus(`清理最近记录失败：${error}`, 'error'); }
+      catch (error) { setStatus(translatedMessage("main.could_not_clear_unavailable_recent_entries", {"error": error}), 'error'); }
     });
     list.append(clear);
   }
@@ -1101,8 +1117,8 @@ async function setDocument(content, name, handle = null, file = null) {
   renderOutline(content);
   renderNotes();
   const hasSaveLocation = desktop ? desktopHasPath() : !!handle;
-  if (hasSaveLocation) showSaveNotice('已开启自动保存');
-  else setStatus('⌘S 选择保存位置', 'manual');
+  if (hasSaveLocation) showSaveNotice(translatedMessage("main.autosave_enabled"));
+  else setStatus(translatedMessage("main.press_s_to_choose_where_to_save"), 'manual');
   if(state.reading)readingPane.focus(); else editor.focus();
   if (handle) await rememberFile(handle);
 }
@@ -1113,7 +1129,7 @@ async function loadHandle(handle) {
 }
 
 async function openFile() {
-  if (desktop) return desktopOpen().catch(error => setStatus(`打开失败：${error}`, 'error'));
+  if (desktop) return desktopOpen().catch(error => setStatus(translatedMessage("main.could_not_open_file", {"error": error}), 'error'));
   if ('showOpenFilePicker' in window) {
     try {
       const [handle] = await window.showOpenFilePicker({
@@ -1122,7 +1138,7 @@ async function openFile() {
       });
       await loadHandle(handle);
     } catch (error) {
-      if (error.name !== 'AbortError') setStatus(`打开失败：${error.message}`, 'error');
+      if (error.name !== 'AbortError') setStatus(translatedMessage("main.could_not_open_file", {"error": error.message}), 'error');
     }
     return;
   }
@@ -1155,15 +1171,15 @@ async function saveToHandle(isAutoSave = false, force = false) {
   try {
     if (!force && await hasExternalConflict()) {
       if (isAutoSave) {
-        setStatus('外部文件已修改 · 自动保存暂停，请另存为以保留当前内容', 'error');
+        setStatus(translatedMessage("main.file_changed_externally_autosave_paused_save_as"), 'error');
         return false;
       }
-      if (!window.confirm('此文件已被其他程序修改。继续保存会覆盖外部版本，是否继续？')) {
-        setStatus('未覆盖外部修改', 'error');
+      if (!window.confirm(t("main.another_app_has_modified_this_file_saving"))) {
+        setStatus(translatedMessage("main.external_changes_not_overwritten"), 'error');
         return false;
       }
     }
-    setStatus('正在保存…', 'pending');
+    setStatus(translatedMessage("main.saving"), 'pending');
     saveSnapshot(state.diskContent);
     const writable = await state.fileHandle.createWritable();
     await writable.write(state.content);
@@ -1174,10 +1190,10 @@ async function saveToHandle(isAutoSave = false, force = false) {
     state.lastModified = file.lastModified;
     state.conflict = false;
     updateDocumentChrome();
-    setStatus(isAutoSave ? '已自动保存' : '已保存', 'saved');
+    setStatus(translatedMessage(isAutoSave ? "main.autosaved" : "main.saved"), 'saved');
     return true;
   } catch (error) {
-    setStatus(`修改尚未保存。请重试或另存为。详情：${error.message}`, 'error');
+    setStatus(translatedMessage("main.your_changes_have_not_been_saved_try", {"error": error.message}), 'error');
     return false;
   } finally {
     state.saving = false;
@@ -1203,7 +1219,7 @@ async function saveFile() {
       await saveToHandle(false, true);
       await rememberFile(handle);
     } catch (error) {
-      if (error.name !== 'AbortError') setStatus(`修改尚未保存。请重试或另存为。详情：${error.message}`, 'error');
+      if (error.name !== 'AbortError') setStatus(translatedMessage("main.your_changes_have_not_been_saved_try", {"error": error.message}), 'error');
     }
     return;
   }
@@ -1213,7 +1229,7 @@ async function saveFile() {
   URL.revokeObjectURL(url);
   state.savedContent = state.content;
   updateDocumentChrome();
-  setStatus('已下载保存副本', 'saved');
+  setStatus(translatedMessage("main.document_copy_downloaded"), 'saved');
 }
 
 async function checkExternalChanges() {
@@ -1228,10 +1244,10 @@ async function checkExternalChanges() {
     }
     if (state.content === state.savedContent) {
       await setDocument(content, file.name, state.fileHandle, file);
-      setStatus('已载入外部修改', 'saved');
+      setStatus(translatedMessage("main.external_changes_loaded"), 'saved');
     } else {
       state.conflict = true;
-      setStatus('外部文件已修改 · 自动保存暂停，请另存为以保留当前内容', 'error');
+      setStatus(translatedMessage("main.file_changed_externally_autosave_paused_save_as"), 'error');
     }
   } catch {
     // File permission can disappear when the browser restarts; manual save will surface it.
@@ -1239,10 +1255,11 @@ async function checkExternalChanges() {
 }
 
 function closePopovers(except = null) {
-  for (const popover of [appearancePopover, recentPopover, headingPopover, calloutPopover, modePopover, documentPopover, exportPopover, displayPopover]) {
+  for (const popover of [appearancePopover, recentPopover, headingPopover, calloutPopover, modePopover, documentPopover, exportPopover, displayPopover, languagePopover]) {
     if (popover !== except) popover.hidden = true;
     if (popover===modePopover && popover.hidden) document.querySelector('#readingToggle').setAttribute('aria-expanded','false');
   }
+  for (const control of document.querySelectorAll('.quick-language-button')) control.setAttribute('aria-expanded', String(!languagePopover.hidden && languagePopover.dataset.trigger === control.id));
   document.querySelector('#appearanceButton').setAttribute('aria-expanded', String(except === appearancePopover && !appearancePopover.hidden));
   document.querySelector('#headingButton').setAttribute('aria-expanded', String(except === headingPopover && !headingPopover.hidden));
   document.querySelector('#calloutButton').setAttribute('aria-expanded', String(except === calloutPopover && !calloutPopover.hidden));
@@ -1266,8 +1283,8 @@ async function exportBundle() {
   closePopovers();
   try {
     const path=await desktopExportBundle();
-    if(path)setStatus(`已导出文档与附件：${path}`,'saved');
-  } catch(error) { setStatus(`导出失败：${error}`,'error'); }
+    if(path)setStatus(translatedMessage("main.document_and_attachments_exported", {"path": path}),'saved');
+  } catch(error) { setStatus(translatedMessage("main.export_failed", {"error": error}),'error'); }
 }
 async function exportPdf() {
   if (!welcomeScreen.hidden) return;
@@ -1279,51 +1296,51 @@ async function exportPdf() {
       sessionStorage.setItem(key, JSON.stringify(snapshot));
       const preview = window.open(`?export=${key}`, '_blank');
       sessionStorage.removeItem(key);
-      if (!preview) throw new Error('请允许打开导出预览窗口');
+      if (!preview) throw new Error(t("main.allow_the_export_preview_window_to_open"));
     }
-  } catch (error) { setStatus(`导出失败：${error}`, 'error'); }
+  } catch (error) { setStatus(translatedMessage("main.export_failed", {"error": error}), 'error'); }
 }
 
 const commands = [
-  { name: '外观与排版', action: () => openSettings('appearance') },
-  { name: '显示选项', action: () => document.querySelector('#displayButton').click() },
-  { name: '保存与恢复', action: () => openSettings('recovery') },
-  { name: '复制为富文本', shortcut: '⇧⌘C', action: () => writing.copyRich() },
-  { name: '粘贴为纯文本', shortcut: '⌘T', action: () => writing.pastePlain() },
-  { name: '插入图片', action: () => writing.attachments(null, true) },
-  { name: '插入附件', action: () => writing.attachments(null, false) },
-  { name: '撤销', shortcut: '⌘Z', action: () => editor.undo() },
-  { name: '重做', shortcut: '⇧⌘Z', action: () => editor.redo() },
-  { name: '导出 PDF', shortcut: '⌘E', action: exportPdf },
-  { name: '打开文件', shortcut: '⌘O', action: openFile },
-  { name: '显示或隐藏编辑标记', shortcut: '⌘⇧\\', action: toggleBlankLineMarkers },
-  { name: '整理段落空行', shortcut: '⌘⌥\\', action: tidyBlankLines },
-  { name: '保存文件', shortcut: '⌘S', action: saveFile },
-  { name: '切换视图模式', shortcut: '⌘R', action: cycleMode },
-  { name: '文档属性', action: openDocumentProperties },
-  { name: '在文档中查找', shortcut: '⌘F', action: openDocumentSearch },
-  { name: '按引用顺序重新编号脚注', action: () => editor.renumberFootnotes() },
-  { name: '显示或隐藏大纲', action: () => setOutlineDrawer(!outlineDrawer.classList.contains('visible')) },
-  { name: '显示或隐藏注释', action: toggleNotesDrawer },
-  { name: '显示或隐藏源码行号', action: () => setLineNumbers(!state.showLineNumbers) },
-  { name: '切换专注模式', action: toggleFocusMode },
-  { name: '切换深浅主题', action: cycleTheme },
-  { name: '设为一级标题', shortcut: '⌥1', action: () => editor.format('heading1') },
-  { name: '粗体', shortcut: '⌘B', action: () => editor.format('bold') },
-  { name: '斜体', shortcut: '⌘I', action: () => editor.format('italic') },
-  { name: '引用', action: () => editor.format('quote') },
-  { name: '插入脚注', shortcut: '⇧⌘F', action: () => editor.format('footnote') },
-  { name: '插入提示块', aliases: ['Callout'], action: () => {if(state.reading)toggleReading();editor.format('callout-note');} },
-  { name: '无序列表', shortcut: '⇧⌘8', action: () => editor.format('bullet') },
-  { name: '插入表格', action: () => editor.format('table') },
+  { id: 'main.appearance_typography_ui0202', get name() { return t('main.appearance_typography_ui0202'); }, action: () => openSettings('appearance') },
+  { id: 'main.display_options', get name() { return t('main.display_options'); }, action: () => document.querySelector('#displayButton').click() },
+  { id: 'main.saving_recovery_ui0204', get name() { return t('main.saving_recovery_ui0204'); }, action: () => openSettings('recovery') },
+  { id: 'main.copy_as_rich_text', get name() { return t('main.copy_as_rich_text'); }, shortcut: '⇧⌘C', action: () => writing.copyRich() },
+  { id: 'main.paste_as_plain_text', get name() { return t('main.paste_as_plain_text'); }, shortcut: '⌘T', action: () => writing.pastePlain() },
+  { id: 'main.insert_image', get name() { return t('main.insert_image'); }, action: () => writing.attachments(null, true) },
+  { id: 'main.insert_attachment', get name() { return t('main.insert_attachment'); }, action: () => writing.attachments(null, false) },
+  { id: 'main.undo_ui0209', get name() { return t('main.undo_ui0209'); }, shortcut: '⌘Z', action: () => editor.undo() },
+  { id: 'main.redo_ui0210', get name() { return t('main.redo_ui0210'); }, shortcut: '⇧⌘Z', action: () => editor.redo() },
+  { id: 'main.export_pdf_ui0211', get name() { return t('main.export_pdf_ui0211'); }, shortcut: '⌘E', action: exportPdf },
+  { id: 'main.open_file_ui0212', get name() { return t('main.open_file_ui0212'); }, shortcut: '⌘O', action: openFile },
+  { id: 'main.show_or_hide_editing_marks', get name() { return t('main.show_or_hide_editing_marks'); }, shortcut: '⌘⇧\\', action: toggleBlankLineMarkers },
+  { id: 'main.clean_up_blank_lines', get name() { return t('main.clean_up_blank_lines'); }, shortcut: '⌘⌥\\', action: tidyBlankLines },
+  { id: 'main.save_file', get name() { return t('main.save_file'); }, shortcut: '⌘S', action: saveFile },
+  { id: 'main.cycle_view_mode', get name() { return t('main.cycle_view_mode'); }, shortcut: '⌘R', action: cycleMode },
+  { id: 'main.document_properties_ui0217', get name() { return t('main.document_properties_ui0217'); }, action: openDocumentProperties },
+  { id: 'main.find_in_document', get name() { return t('main.find_in_document'); }, shortcut: '⌘F', action: openDocumentSearch },
+  { id: 'main.renumber_footnotes_in_reference_order', get name() { return t('main.renumber_footnotes_in_reference_order'); }, action: () => editor.renumberFootnotes() },
+  { id: 'main.show_or_hide_outline', get name() { return t('main.show_or_hide_outline'); }, action: () => setOutlineDrawer(!outlineDrawer.classList.contains('visible')) },
+  { id: 'main.show_or_hide_footnotes', get name() { return t('main.show_or_hide_footnotes'); }, action: toggleNotesDrawer },
+  { id: 'main.show_or_hide_source_line_numbers', get name() { return t('main.show_or_hide_source_line_numbers'); }, action: () => setLineNumbers(!state.showLineNumbers) },
+  { id: 'main.toggle_focus_mode', get name() { return t('main.toggle_focus_mode'); }, action: toggleFocusMode },
+  { id: 'main.toggle_light_dark_theme', get name() { return t('main.toggle_light_dark_theme'); }, action: cycleTheme },
+  { id: 'main.set_to_heading_1', get name() { return t('main.set_to_heading_1'); }, shortcut: '⌥1', action: () => editor.format('heading1') },
+  { id: 'main.bold_ui0226', get name() { return t('main.bold_ui0226'); }, shortcut: '⌘B', action: () => editor.format('bold') },
+  { id: 'main.italic_ui0227', get name() { return t('main.italic_ui0227'); }, shortcut: '⌘I', action: () => editor.format('italic') },
+  { id: 'main.blockquote_ui0228', get name() { return t('main.blockquote_ui0228'); }, action: () => editor.format('quote') },
+  { id: 'main.insert_footnote_ui0229', get name() { return t('main.insert_footnote_ui0229'); }, shortcut: '⇧⌘F', action: () => editor.format('footnote') },
+  { id: 'main.insert_callout_ui0230', get name() { return t('main.insert_callout_ui0230'); }, aliases: ['Callout'], action: () => {if(state.reading)toggleReading();editor.format('callout-note');} },
+  { id: 'main.bulleted_list_ui0232', get name() { return t('main.bulleted_list_ui0232'); }, shortcut: '⇧⌘8', action: () => editor.format('bullet') },
+  { id: 'main.insert_table_ui0233', get name() { return t('main.insert_table_ui0233'); }, action: () => editor.format('table') },
   ...(desktop ? [
-    { name: '历史版本与草稿', action: () => showRecovery({ invoke, restore: desktopRestore }) },
-    { name: '恢复未保存草稿', action: () => showRecovery({ invoke, drafts: true }) },
+    { id: 'main.versions_drafts_ui0234', get name() { return t('main.versions_drafts_ui0234'); }, action: () => showRecovery({ invoke, restore: desktopRestore }) },
+    { id: 'main.recover_unsaved_drafts', get name() { return t('main.recover_unsaved_drafts'); }, action: () => showRecovery({ invoke, drafts: true }) },
   ] : [{
-    name: '恢复最近一次保存前版本',
+    id: 'main.restore_version_before_last_save_ui0236', get name() { return t('main.restore_version_before_last_save_ui0236'); },
     action() {
       const snapshot = latestSnapshot();
-      if (!snapshot) return setStatus('没有可恢复的版本', 'info');
+      if (!snapshot) return setStatus(translatedMessage('main.no_recoverable_versions'), 'info');
       editor.restoreValue(snapshot.content);
       state.content = snapshot.content;
       updateDocumentChrome();
@@ -1334,12 +1351,12 @@ const commands = [
 ];
 
 const commandGroups = [
-  ['设置', ['外观与排版', '保存与恢复']],
-  ['文件', ['打开文件', '保存文件', '导出 PDF', '文档属性']],
-  ['编辑', ['撤销', '重做', '复制为富文本', '粘贴为纯文本', '在文档中查找', '整理段落空行', '按引用顺序重新编号脚注']],
-  ['插入与格式', ['插入图片', '插入附件', '设为一级标题', '粗体', '斜体', '引用', '插入脚注', '插入提示块', '无序列表', '插入表格']],
-  ['视图', ['显示选项', '切换视图模式', '显示或隐藏编辑标记', '显示或隐藏大纲', '显示或隐藏注释', '显示或隐藏源码行号', '切换专注模式', '切换深浅主题']],
-  ['恢复', ['历史版本与草稿', '恢复未保存草稿', '恢复最近一次保存前版本']],
+  ['main.settings_ui0238', ['main.appearance_typography_ui0202', 'main.saving_recovery_ui0204']],
+  ['main.file', ['main.open_file_ui0212', 'main.save_file', 'main.export_pdf_ui0211', 'main.document_properties_ui0217']],
+  ['main.edit_ui0240', ['main.undo_ui0209', 'main.redo_ui0210', 'main.copy_as_rich_text', 'main.paste_as_plain_text', 'main.find_in_document', 'main.clean_up_blank_lines', 'main.renumber_footnotes_in_reference_order']],
+  ['main.insert_format', ['main.insert_image', 'main.insert_attachment', 'main.set_to_heading_1', 'main.bold_ui0226', 'main.italic_ui0227', 'main.blockquote_ui0228', 'main.insert_footnote_ui0229', 'main.insert_callout_ui0230', 'main.bulleted_list_ui0232', 'main.insert_table_ui0233']],
+  ['main.view', ['main.display_options', 'main.cycle_view_mode', 'main.show_or_hide_editing_marks', 'main.show_or_hide_outline', 'main.show_or_hide_footnotes', 'main.show_or_hide_source_line_numbers', 'main.toggle_focus_mode', 'main.toggle_light_dark_theme']],
+  ['main.recovery', ['main.versions_drafts_ui0234', 'main.recover_unsaved_drafts', 'main.restore_version_before_last_save_ui0236']],
 ];
 function selectPaletteItem(button) {
   for (const item of paletteList.querySelectorAll('button')) {
@@ -1354,8 +1371,9 @@ function renderPalette(query = '') {
   paletteList.replaceChildren();
   const normalized = query.trim();
   let count = 0;
-  for (const [group, names] of commandGroups) {
-    const matches = commands.filter(command => names.includes(command.name) && fuzzyMatch(`${command.name} ${group} ${(command.aliases || []).join(' ')}`, normalized));
+  for (const [groupKey, names] of commandGroups) {
+    const group = t(groupKey);
+    const matches = commands.filter(command => names.includes(command.id) && fuzzyMatch(`${aliases(command.id).join(' ')} ${aliases(groupKey).join(' ')} ${(command.aliases || []).join(' ')}`, normalized));
     if (!matches.length) continue;
     let parent = paletteList;
     if (!normalized) {
@@ -1423,9 +1441,12 @@ function cycleTheme() {
 }
 
 function toggleFocusMode() {
+  closePopovers();
   state.focusMode = !state.focusMode;
   shell.classList.toggle('focus-mode', state.focusMode);
-  if (!state.focusMode) editor.focus();
+  // Visually hidden chrome must also leave keyboard and accessibility navigation.
+  for (const region of shell.querySelectorAll('.topbar, .format-toolbar, .statusbar')) region.inert = state.focusMode;
+  if (state.reading) readingPane.focus(); else editor.focus();
 }
 
 document.querySelector('#openButton')?.addEventListener('click', openFile);
@@ -1529,7 +1550,7 @@ for (const button of appearancePopover.querySelectorAll('[data-settings-tab]')) 
   button.onclick = () => selectSettingsTab(button.dataset.settingsTab);
   button.onkeydown = event => {
     const tabs = [...appearancePopover.querySelectorAll('[data-settings-tab]')], i = tabs.indexOf(button);
-    const next = {ArrowRight:(i+1)%2, ArrowLeft:(i+2)%2, Home:0, End:1}[event.key];
+    const next = {ArrowRight:(i+1)%tabs.length, ArrowLeft:(i-1+tabs.length)%tabs.length, Home:0, End:tabs.length-1}[event.key];
     if (next !== undefined) { event.preventDefault(); tabs[next].click(); tabs[next].focus(); }
   };
 }
@@ -1539,14 +1560,14 @@ document.querySelector('#markerEditMode').onclick = () => setMode('edit');
 function openRecoveryRecords(current = false) {
   closePopovers();
   if (desktop) return showRecovery({invoke, restore:desktopRestore, drafts:!current});
-  commands.find(c => c.name === '恢复最近一次保存前版本')?.action();
+  commands.find(c => c.name === t("main.restore_version_before_last_save_ui0244"))?.action();
 }
 document.querySelector('#settingsRecovery').onclick = () => openRecoveryRecords();
 document.querySelector('#documentHistory').onclick = () => openRecoveryRecords(true);
 if (desktop) {
   document.querySelector('#documentReveal').onclick = async () => {
     try { await invoke('reveal_document'); }
-    catch (error) { setStatus(`无法在文件管理器中显示：${error}`, 'error'); }
+    catch (error) { setStatus(translatedMessage("main.could_not_show_the_file_in_the", {"error": error}), 'error'); }
   };
   document.querySelector('#documentRename').onclick = renameCurrentDocument;
 }
@@ -1561,7 +1582,7 @@ function syncDisplayPopover() {
   // editor rows at all, so there is nothing either could fold.
   propertiesToggle.disabled = state.source || state.reading;
   propertiesToggle.checked = editor.propertiesExpanded();
-  displayPopover.querySelector('#markerModeHint').textContent = state.reading ? '阅读模式不显示编辑标记。' : state.source ? '源码模式仅显示换行标记 ↵。' : '';
+  setText(displayPopover.querySelector('#markerModeHint'), () => state.reading ? t("main.editing_marks_are_hidden_in_reading_mode") : state.source ? t("main.source_mode_shows_only_line_break_marks") : '');
   displayPopover.querySelector('#markerEditMode').hidden = !state.reading;
 }
 displayButton.addEventListener('mousedown', event => event.preventDefault());
@@ -1583,8 +1604,21 @@ displayButton.addEventListener('click', () => {
 // the menu loop, which closes on any button press.
 displayPopover.addEventListener('keydown', event => {
   if (event.key === 'Escape') { event.preventDefault(); closePopovers(); displayButton.focus(); }
-  if (event.key === 'Tab') { closePopovers(); displayButton.focus(); }
 });
+// These non-modal panels allow native Tab order within the panel. Once focus
+// leaves via Tab, dismiss it without covering the next keyboard target. A
+// mouse click can blur native macOS checkboxes before their click fires; never
+// close the panel in that interval. Outside clicks are handled separately.
+for (const [panel, trigger] of [[appearancePopover, document.querySelector('#appearanceButton')], [displayPopover, displayButton]]) {
+  panel.addEventListener('keydown', event => {
+    if (event.key !== 'Tab') return;
+    requestAnimationFrame(() => {
+    if (panel.hidden || panel.contains(document.activeElement)) return;
+    panel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    });
+  });
+}
 displayPopover.querySelector('#documentPropertiesToggle').addEventListener('change', event => {
   // A document with no properties has no rows to unfold, and creating the
   // region is what showing them means there.
@@ -1605,7 +1639,7 @@ for (const [id, popup] of [['documentMenuButton', documentPopover], ['exportMenu
       for (const id of ['documentReveal', 'documentRename']) {
         const item = document.getElementById(id);
         item.disabled = unavailable;
-        item.title = unavailable ? '请先保存文档' : '';
+        setAttr(item, 'title', () => unavailable ? t("main.save_the_document_first") : '');
       }
     }
     popup.hidden = false;
@@ -1670,9 +1704,9 @@ document.querySelector('#welcomeOpenButton').addEventListener('click', openFile)
 document.querySelector('#welcomeRecentButton').addEventListener('click', toggleRecentFiles);
 document.querySelector('#welcomeNewButton').addEventListener('click', () => {
   if (desktop) {
-    void desktopNew().catch(error => setStatus(`新建失败：${error}`, 'error'));
+    void desktopNew().catch(error => setStatus(translatedMessage("main.could_not_create_the_document", {"error": error}), 'error'));
   } else {
-    void setDocument('', '未命名.md');
+    void setDocument('', t("main.untitled_md"));
   }
 });
 
@@ -1719,8 +1753,8 @@ document.addEventListener('leaf-retention-days',event=>{
 });
 document.querySelector('#recoveryRetentionSelect')?.addEventListener('change',async event=>{
  const select=event.target;select.disabled=true;
- try {recoveryDays=await invoke('recovery_retention',{days:Number(select.value)});await invoke('recovery_expire');setStatus(`恢复记录保留 ${recoveryDays} 天`,'saved');}
- catch(error){setStatus(`恢复设置或清理失败：${error}`,'error');}
+ try {recoveryDays=await invoke('recovery_retention',{days:Number(select.value)});await invoke('recovery_expire');setStatus(translatedMessage("main.recovery_records_are_kept_for_days", {"days": recoveryDays}),'saved');}
+ catch(error){setStatus(translatedMessage("main.could_not_update_the_recovery_retention_period", {"error": error}),'error');}
  finally{select.value=String(recoveryDays);select.disabled=false;}
 });
 document.querySelector('#fileNameTitleToggle').addEventListener('change',event=>{
@@ -1743,6 +1777,7 @@ paletteInput.addEventListener('input', event => { if (!event.isComposing) render
 paletteInput.addEventListener('compositionend', () => renderPalette(paletteInput.value));
 paletteInput.addEventListener('keydown', (event) => {
   if (event.isComposing || event.keyCode === 229) return;
+  if (event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); return; }
   const buttons = [...paletteList.querySelectorAll('button')];
   let index = buttons.findIndex((button) => button.classList.contains('selected'));
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -1770,7 +1805,7 @@ palette.addEventListener('mousedown', (event) => {
 });
 
 document.addEventListener('mousedown', (event) => {
-    if (!event.target.closest('.popover') && !event.target.closest('#readingToggle') && !event.target.closest('#appearanceButton') && !event.target.closest('#welcomeSettings') && !event.target.closest('#recentButton') && !event.target.closest('#welcomeRecentButton') && !event.target.closest('#headingButton') && !event.target.closest('#documentMenuButton') && !event.target.closest('#exportMenuButton') && !event.target.closest('#displayButton')) closePopovers();
+    if (!event.target.closest('.quick-language-button') && !event.target.closest('.popover') && !event.target.closest('#readingToggle') && !event.target.closest('#appearanceButton') && !event.target.closest('#welcomeSettings') && !event.target.closest('#recentButton') && !event.target.closest('#welcomeRecentButton') && !event.target.closest('#headingButton') && !event.target.closest('#documentMenuButton') && !event.target.closest('#exportMenuButton') && !event.target.closest('#displayButton')) closePopovers();
 });
 
 let tooltipTimer = null;
@@ -1795,7 +1830,7 @@ function showTooltip(target) {
     if (imageRect.width <= 38) { hideTooltip(); return; }
     tooltip.style.maxWidth = `${Math.min(window.innerWidth - 16, imageRect.width - 34)}px`;
   }
-  renderShortcutText(tooltip, target.dataset.tooltip);
+  renderTooltipText(tooltip, target.dataset.tooltip);
   tooltip.hidden = false;
   const targetRect = target.getBoundingClientRect();
   const tooltipRect = tooltip.getBoundingClientRect();
@@ -1871,7 +1906,7 @@ function updateBlankMarkerButton() {
 function tidyBlankLines() {
   const count=editor.tidyBlankLines();
   if (count) editor.focus();
-  setStatus(count ? '已整理段落空行 · ⌘Z 撤销' : '无需整理','info');
+  setStatus(translatedMessage(count ? "main.blank_lines_cleaned_up_z_to_undo" : "main.no_changes_needed"),'info');
 }
 document.querySelector('#blankMarkerToggle').addEventListener('change',toggleBlankLineMarkers);
 document.addEventListener('keydown', event => {
@@ -1911,7 +1946,7 @@ setInterval(checkExternalChanges, 3000);
 // A placeholder that cannot reach its file reports here: the status line is the
 // one place a persistent message belongs, and it keeps the reason visible.
 document.addEventListener('leaf-image-reveal-failed', event => {
-  setStatus(`无法在文件管理器中显示：${event.detail}`, 'error');
+  setStatus(translatedMessage("main.could_not_show_the_file_in_the", {"error": event.detail}), 'error');
 });
 
 updateAppearance();
@@ -1972,9 +2007,66 @@ if (desktop) {
     },
     saved(content, name, path) { const changed = state.resourcePath !== path; state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); if (changed) { setMovedMissingImages(); refreshImages(); } },
     followed(content, name, path, movedImages) { state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); setMovedMissingImages(movedImages); refreshImages(); },
-  }).catch(error => setStatus(`桌面初始化失败：${error}`, 'error')).finally(() => {
+  }).catch(error => setStatus(translatedMessage("main.desktop_app_initialization_failed", {"error": error}), 'error')).finally(async () => {
     shell.style.pointerEvents = '';
+    await desktopRevealDocument().catch(error => console.error('Document window reveal failed', error));
     editor.setReading(state.reading);
     if (welcomeScreen.hidden && !state.reading) editor.focus();
   });
 }
+
+const languageSelects = [...document.querySelectorAll('.quick-language-button')];
+let languageReturnFocus;
+function syncLanguageControls() {
+  languageSelects.forEach(control => { control.value = languagePreference(); });
+  for (const item of languagePopover.querySelectorAll('[data-language]')) item.setAttribute('aria-checked', String(item.dataset.language === languagePreference()));
+}
+async function chooseLanguage(value) {
+  languageSelects.forEach(control => { control.disabled = true; });
+  try { await setLanguagePreference(value); }
+  catch { setStatus(translatedMessage('UI0261'), 'error'); }
+  finally { syncLanguageControls(); languageSelects.forEach(control => { control.disabled = false; }); }
+}
+for (const control of languageSelects) {
+  control.value = languagePreference();
+  control.addEventListener('click', () => {
+    const opening = languagePopover.hidden || languagePopover.dataset.trigger !== control.id;
+    closePopovers();
+    if (!opening) return;
+    hideTooltip();
+    languageReturnFocus = control;
+    languagePopover.dataset.trigger = control.id;
+    languagePopover.hidden = false;
+    syncLanguageControls();
+    control.setAttribute('aria-expanded', 'true');
+    positionMenu(languagePopover, control.getBoundingClientRect());
+    languagePopover.querySelector('[aria-checked="true"]').focus({preventScroll: true});
+  });
+}
+for (const item of languagePopover.querySelectorAll('[data-language]')) {
+  item.addEventListener('click', async () => {
+    closePopovers();
+    await chooseLanguage(item.dataset.language);
+    languageReturnFocus?.focus({preventScroll: true});
+  });
+}
+languagePopover.addEventListener('keydown', event => {
+  const items = [...languagePopover.querySelectorAll('[data-language]')];
+  const index = items.indexOf(document.activeElement);
+  const next = event.key === 'ArrowDown' ? (index + 1) % items.length
+    : event.key === 'ArrowUp' ? (index + items.length - 1) % items.length
+    : event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : undefined;
+  if (next !== undefined) { event.preventDefault(); items[next].focus(); }
+  if (event.key === 'Escape' || event.key === 'Tab') {
+    event.preventDefault(); closePopovers(); languageReturnFocus?.focus({preventScroll: true});
+  }
+});
+syncLanguageControls();
+onLanguageChange(() => {
+  syncLanguageControls();
+  updateDocumentChrome(); updateModeControl(); updateHeadingControl(editor.headingLevel());
+  if (!palette.hidden) renderPalette(paletteInput.value);
+  for (const el of document.querySelectorAll('[data-callout-label]')) el.textContent = calloutLabels[el.dataset.calloutLabel];
+  statusNotices.refresh();
+  refreshTranslations();
+});

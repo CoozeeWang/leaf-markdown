@@ -1,3 +1,4 @@
+import { t, h, onLanguageChange, setText } from './i18n.js';
 import { setResourceReader, waitForImages } from './resources.js';
 import { isTauri, invoke } from '@tauri-apps/api/core';
 import { renderPrintDocument } from './print-document.js';
@@ -5,6 +6,19 @@ import './pdf-export.css';
 import './callout.css';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+
+// Theme affects export controls only; the paper has its own light palette.
+const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+function updateExportTheme() {
+  const preference = localStorage.getItem('leaf-theme') || 'system';
+  document.documentElement.dataset.exportTheme = preference === 'dark' || (preference !== 'light' && systemTheme.matches) ? 'dark' : 'light';
+}
+updateExportTheme();
+systemTheme.addEventListener('change', updateExportTheme);
+window.addEventListener('storage', event => {
+  if (event.key === 'leaf-theme' || event.key === null) updateExportTheme();
+});
+window.addEventListener('focus', updateExportTheme);
 
 async function init() {
   const native = isTauri();
@@ -19,15 +33,16 @@ async function init() {
   const key = new URLSearchParams(location.search).get('export');
   const snapshot = native ? await invoke('export_snapshot') : JSON.parse(sessionStorage.getItem(key));
   if (!native) sessionStorage.removeItem(key);
-  if (!snapshot) throw new Error('导出快照已失效，请从文档重新导出。');
+  if (!snapshot) throw new Error(t("pdf_export.this_export_preview_is_no_longer_available"));
   document.title = snapshot.name.replace(/\.(md|markdown|mdown)$/i, '');
-  document.querySelector('#app').innerHTML = `<header class="export-toolbar"><div><strong>导出 PDF</strong><small>当前文档快照 · 不影响原文编辑</small></div><label><input id="properties" type="checkbox">文档属性</label><label><input id="numbered" type="checkbox">标题编号</label><button id="print">保存为 PDF…</button></header><p class="export-help">点击保存，在系统打印窗口中选择「PDF → 存储为 PDF」。可调整纸张和方向。预览不显示实际分页。</p><article class="print-document"></article><p id="export-error" role="alert"></p>`;
+  document.querySelector('#app').innerHTML = `<header class="export-toolbar"><div><strong>${h("pdf_export.export_pdf")}</strong><small>${h("pdf_export.export_preview_of_the_current_document_editing")}</small></div><label><input id="properties" type="checkbox">${h("pdf_export.document_properties")}</label><label><input id="numbered" type="checkbox">${h("pdf_export.heading_numbering")}</label><button id="print">${h("pdf_export.save_as_pdf")}</button></header><p class="export-help">${h(/win/i.test(navigator.platform) ? 'MO0254' : 'pdf_export.click_save_then_choose_pdf_save_as')}</p><article class="print-document"></article><p id="export-error" role="alert"></p>`;
   document.querySelector('#numbered').checked = snapshot.numbered;
   const render = () => renderPrintDocument(document.querySelector('article'), snapshot.source, {
     name: snapshot.name, numbered: document.querySelector('#numbered').checked, properties: document.querySelector('#properties').checked,
   });
   for (const input of document.querySelectorAll('input')) input.addEventListener('change', render);
   render();
+  onLanguageChange(render);
   let printing = false;
   const print = async () => {
     if (printing) return;
@@ -35,9 +50,9 @@ async function init() {
     try {
       document.querySelector('#export-error').textContent = '';
       await document.fonts.ready;
-      await waitForImages(document.querySelector("article"));
+      await waitForImages(document.querySelector("article"), { allowPlaceholders: true });
       if (native) await invoke('print_export'); else window.print();
-    } catch (error) { document.querySelector('#export-error').textContent = `无法打开打印窗口：${error}`; }
+    } catch (error) { setText(document.querySelector('#export-error'), () => t("pdf_export.could_not_open_the_print_dialog", {"error": error})); }
     finally { printing = false; }
   };
   document.querySelector('#print').addEventListener('click', print);
@@ -45,4 +60,4 @@ async function init() {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') { e.preventDefault(); void print(); }
   });
 }
-init().catch(error => { document.querySelector('#app').textContent = `导出失败：${error}`; });
+init().catch(error => { setText(document.querySelector('#app'), () => t("pdf_export.export_failed", {"error": error})); });

@@ -8,7 +8,7 @@ try {
  await page.getByRole('textbox',{name:'新属性名',exact:true}).waitFor();
  await page.keyboard.press('ControlOrMeta+z');
  const editIcon=await page.locator('#readingToggle').innerHTML();
- const source='---\nversion: v1\n---\n\n# 标题\n\n**重点** 和 ==高亮==\n\n| 列一 | 列二 |\n| --- | --- |\n| A<br>B | C |\n\n> [!note] 提示\n> 内容\n\n## 子标题\n\n正文';
+ const source='---\nversion: v1\n---\n\n# 标题\n\n**重点** 和 ==高亮==\n\n| 列一 | 列二 |\n| --- | --- |\n| A<br>B | C |\n\n> [!note] 提示\n> 内容\n\n## 子标题\n\n正文\n\n### 三级\n\n#### 四级\n\n##### 五级\n\n###### 六级';
  await page.locator('.cm-content').fill(source);
  await page.click('#commandsButton');await page.fill('#paletteInput','文档属性');await page.getByRole('option',{name:'文档属性',exact:true}).click();
  assert.ok(await page.locator('.leaf-property-body').isVisible());
@@ -37,6 +37,24 @@ try {
  assert.equal(await getSource(),source);
  await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();
  assert.equal(await getSource(),source);
+ // Heading fonts stay identical across modes, independently of body preference.
+ for (const font of ['serif','sans','mono']) {
+  await page.click('#appearanceButton');
+  await page.selectOption('#fontFamilySelect',font);
+  await page.click('#settingsClose');
+  const editFonts=await page.locator('.cm-line.cm-leaf-heading').evaluateAll(els=>els.map(e=>getComputedStyle(e).fontFamily));
+  assert.equal(editFonts.length,6);
+  await page.click('#readingToggle');await page.click('[data-mode="reading"]');
+  const readingFonts=await page.locator('.reading-document :is(h1,h2,h3,h4,h5,h6)[data-source-line]').evaluateAll(els=>els.map(e=>getComputedStyle(e).fontFamily));
+  assert.deepEqual(readingFonts,editFonts,`${font}: heading fonts match`);
+  const bodyFont=await page.locator('.reading-document > p').first().evaluate(e=>getComputedStyle(e).fontFamily);
+  if (font==='serif') assert.match(bodyFont,/Georgia/);
+  if (font==='mono') assert.match(bodyFont,/monospace/);
+  if (font==='sans') assert.equal(bodyFont,editFonts[0]);
+  if (font!=='sans') assert.notEqual(bodyFont,readingFonts[0]);
+  await page.click('#readingToggle');await page.click('[data-mode="edit"]');
+  assert.equal(await getSource(),source);
+ }
  await page.keyboard.press('ControlOrMeta+z');
  assert.notEqual(await getSource(),source);
  assert.deepEqual(errors,[]);

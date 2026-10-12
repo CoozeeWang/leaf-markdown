@@ -1,0 +1,73 @@
+# Real installer checks on a disposable hosted runner, never a user's PC.
+param([Parameter(Mandatory=$true)][string]$Installer)
+$ErrorActionPreference = 'Stop'
+if ($env:GITHUB_ACTIONS -ne 'true' -or !$env:RUNNER_TEMP) { throw 'Requires an isolated GitHub Actions runner' }
+$config = Get-Content "$PSScriptRoot/../src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+$manufacturer = if ($config.bundle.publisher) { $config.bundle.publisher } else { $config.identifier.Split('.')[1] }
+$installerKey = "HKCU:\Software\$manufacturer\$($config.productName)"
+$appData = Join-Path $env:APPDATA $config.identifier
+$preference = Join-Path $appData 'language-v1.json'
+$menuKeys = @('HKCU:\Software\Classes\Directory\shell\Leaf.NewMarkdown', 'HKCU:\Software\Classes\Directory\Background\shell\Leaf.NewMarkdown')
+if ((Test-Path $installerKey) -or (Test-Path $appData)) { throw 'Runner already has Leaf data; refusing to overwrite' }
+foreach ($key in $menuKeys) { if (Test-Path $key) { throw 'Runner already has Leaf folder actions' } }
+$installDir = Join-Path $env:RUNNER_TEMP 'Leaf i18n install'
+$exe = Join-Path $installDir 'leaf.exe'
+$sampleDir = Join-Path $env:RUNNER_TEMP 'Leaf i18n synthetic 中文 folder'
+New-Item -ItemType Directory -Path $appData, $sampleDir | Out-Null
+# Deliberately differ from the Chinese installer languages; installing must preserve it.
+[IO.File]::WriteAllText($preference, '{"preference":"en"}', [Text.UTF8Encoding]::new($false))
+$preferenceHash = (Get-FileHash $preference).Hash
+function Stop-TestLeaf {
+  Get-Process leaf -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
+}
+function Install-Language([int]$Id, [string]$Locale) {
+  # MUI2 restores the installer language from its own registry value even in /S.
+  # This tests compiled language tables without inventing an unsupported /LANG flag.
+  New-Item -Path $installerKey -Force | Out-Null
+  New-ItemProperty -Path $installerKey -Name 'Installer Language' -Value "$Id" -PropertyType String -Force | Out-Null
+  $process = Start-Process -FilePath (Resolve-Path $Installer) -ArgumentList @('/S', '/NS', "/D=$installDir") -Wait -PassThru
+  if ($process.ExitCode -ne 0) { throw "Installer exit: $($process.ExitCode)" }
+  if (!(Test-Path $exe)) { throw 'Missing installed executable' }
+  $catalog = Get-Content "$PSScriptRoot/../src/locales/$Locale.json" -Raw -Encoding utf8 | ConvertFrom-Json
+  foreach ($key in $menuKeys) {
+    if ((Get-Item $key).GetValue('') -cne $catalog.'Info.create_a_markdown_document_with_leaf') { throw "Wrong installed shell language: $Locale" }
+  }
+  if ((Get-FileHash $preference).Hash -ne $preferenceHash) { throw 'Installer overwrote application language preference' }
+}
+function Uninstall-TestLeaf {
+  Stop-TestLeaf
+  $uninstaller = Join-Path $installDir 'uninstall.exe'
+  if (Test-Path $uninstaller) {
+    $process = Start-Process -FilePath $uninstaller -ArgumentList @('/S', "_?=$installDir") -Wait -PassThru
+    if ($process.ExitCode -ne 0) { throw "Uninstaller exit: $($process.ExitCode)" }
+    foreach ($key in $menuKeys) { if (Test-Path $key) { throw 'Uninstaller left a Leaf shell entry' } }
+  }
+}
+try {
+  foreach ($language in @(@{Id=1033;Locale='en'}, @{Id=2052;Locale='zh-Hans'}, @{Id=1028;Locale='zh-Hant-TW'})) {
+    Install-Language $language.Id $language.Locale
+    Write-Output "PASS installed shell language and preference preservation: $($language.Locale)"
+    Uninstall-TestLeaf
+  }
+  Install-Language 1033 'en'
+  Install-Language 1028 'zh-Hant-TW'
+  Write-Output 'PASS reinstall updates shell language independently of application preference'
+  # The app's saved English preference owns new names, despite Traditional Chinese installation.
+  $original = Join-Path $sampleDir 'Untitled.md'
+  Set-Content $original '# Preserve synthetic original' -Encoding utf8
+  $originalHash = (Get-FileHash $original).Hash
+  foreach ($number in @(2,3)) {
+    Start-Process -FilePath $exe -ArgumentList @('--new-in', ('"' + $sampleDir + '\."')) | Out-Null
+    $created = Join-Path $sampleDir "Untitled $number.md"
+    $deadline = (Get-Date).AddSeconds(45)
+    while (!(Test-Path $created) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+    if (!(Test-Path $created) -or (Get-Item $created).Length -ne 0) { throw 'App language did not control the new filename' }
+  }
+  if ((Get-FileHash $original).Hash -ne $originalHash) { throw 'New document action overwrote original' }
+  if ((Get-FileHash $preference).Hash -ne $preferenceHash) { throw 'App preference changed during installer checks' }
+  Write-Output 'PASS cold/warm new-file language and collision preservation'
+} finally {
+  Uninstall-TestLeaf
+  Remove-Item $appData -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item $sampleDir -Recurse -Force -ErrorAction SilentlyContinue
+}

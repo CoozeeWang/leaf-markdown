@@ -82,6 +82,7 @@ try {
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
    transformCallback:()=>1,
    invoke:async(command,args)=>{
+      if (command === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
     window.nativeCalls.push({command,args});
     if(command==='recent_import'){window.nativeRecent=args.items;return;}
     if(command==='recent_list')return window.nativeRecent;

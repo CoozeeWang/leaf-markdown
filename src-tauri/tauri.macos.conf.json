@@ -1,6 +1,14 @@
 {
+  "build": {
+    "beforeBuildCommand": "node scripts/sync-macos-locales.mjs --check && npm run build"
+  },
   "bundle": {
     "targets": ["app", "dmg"],
-    "resources": { "icons/document-icon.icns": "document-icon.icns" }
+    "resources": {
+      "icons/document-icon.icns": "document-icon.icns",
+      "locales/en.lproj/ServicesMenu.strings": "en.lproj/ServicesMenu.strings",
+      "locales/zh-Hans.lproj/ServicesMenu.strings": "zh-Hans.lproj/ServicesMenu.strings",
+      "locales/zh-Hant.lproj/ServicesMenu.strings": "zh-Hant.lproj/ServicesMenu.strings"
+    }
   }
 }

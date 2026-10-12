@@ -101,9 +101,35 @@ macOS 在 Finder 选中单个文件夹或文件，右键「服务 → 使用 Lea
 
 Windows 安装包通过 `windows-hooks.nsh` 注册当前用户的文件夹／文件夹背景右键菜单；Windows 11 可能需要展开「显示更多选项」。`--new-in` 参数在冷启动和已有实例中走同一路径，卸载时仅移除仍指向本安装位置的 Leaf 菜单。
 
-两平台均原子创建 `未命名.md`，重名依次使用 `未命名 2.md` 等，随后打开 Leaf。可用现有标题改名；失败显示原生错误提示，已创建但打开失败的文件保留并告知位置。Rust 测试覆盖并发、重名、无效目录和 Finder 专用粘贴板输入；Mac 原生粘贴板测试需要可访问系统粘贴板服务的会话。安装包检查还覆盖服务声明、Windows 实际安装／冷启动／已有实例创建和卸载，不代替 Finder／Explorer 菜单的安装版人工操作。
+两平台均原子创建空白 Markdown，默认文件名按 Leaf 当前有效语言生成：`未命名.md`、`未命名.md` 或 `Untitled.md`；重名加空格与递增数字，随后打开 Leaf。可用现有标题改名；失败显示原生错误提示，已创建但打开失败的文件保留并告知位置。Rust 测试覆盖并发、重名、无效目录和 Finder 专用粘贴板输入；Mac 原生粘贴板测试需要可访问系统粘贴板服务的会话。安装包检查还覆盖服务声明、Windows 实际安装／冷启动／已有实例创建和卸载，不代替 Finder／Explorer 菜单的安装版人工操作。
 
 
 图片定位图标与悬浮说明的交互回归使用 `image-reveal-browser.mjs`；通过 `LEAF_IMAGE_PLATFORM=MacIntel`／`Win32` 核对平台文案，`LEAF_IMAGE_REVEAL_ENGINE=webkit` 核对 WebKit。原生最近文件菜单标签由 Rust 回归验证，同名文档只补最短可区分目录。Finder 启用“显示图标预览”时可用内容缩略图代替应用图标；诊断应分别核对默认应用、系统返回的文件图标与 Finder 预览状态，不替用户关闭显示偏好。
 
 图片说明与定位按钮的统一提示由 `image-tooltips-browser.mjs` 在完整应用中验证，覆盖浅色／深色、窄窗、键盘与单一提示；默认 Chromium，设置 `LEAF_IMAGE_TOOLTIP_ENGINE=webkit` 可单独检查 WebKit。浏览器引擎进程异常退出应记为环境阻塞，不能当作应用已通过或已失败。
+
+## 三语资源与维护 / Localization
+
+应用使用 i18next 的普通 JavaScript 接口，资源位于 `src/locales/`：`zh-Hans.json`、`zh-Hant-TW.json`、`en.json`。`copy-keys.json` 将固定文案编号映射到语义键；新增文案分配新编号，不复用旧编号。个人审阅稿和基线快照放在公开仓库外，产品只保留语言资源、编号映射和正式检查。
+
+`src/i18n.js` 在导入界面之前初始化；桌面配置 `language-v1.json` 保存到各自应用的数据目录，Leaf Dev 与日用 Leaf 隔离。Rust 复用同一份 JSON，菜单只改标签，错误传递稳定码与参数。浏览器偏好使用本地存储，桌面通过命令与事件同步；启动、新窗口与重新获得焦点重新读取语言。不要用译文判断命令、状态或操作身份。
+
+界面文字使用显式绑定，动态句使用命名参数；`h` 用于经过转义的 HTML，`setText` 和 `setAttr` 用于文字与属性。不要扫描或替换用户内容。英文数量资源提供 `_one`、`_other`；机器语法、Markdown、路径、用户输入和系统诊断保持原文。添加或修改三语资源时，对照现行审阅基线，记录新增、变更、删除及变量/场景变化；未变条目沿用已审阅结果。
+
+`npm run check` 检查资源、插值、系统匹配、数量、稳定错误以及已有源码回归。`npm run test:browser -- i18n-browser.mjs` 检查切换、历史/选区、组合输入、持久保存失败、跨窗口同步与导出选项；相关编辑、附件、恢复用例仍需运行。浏览器检查不代替原生菜单、系统文件窗口或安装版验收。
+
+Finder 服务文字由 macOS 选择语言，不随 Leaf 内语言切换。`src-tauri/locales/` 的 `en`、`zh-Hans`、`zh-Hant` 三种 `ServicesMenu.strings` 从共享语言资源生成；繁中采用台湾用语，英文为包默认语言。修改共享服务文案后运行 `node scripts/sync-macos-locales.mjs`；Mac 构建前检查资源漂移，实际包检查核对三语资源和服务声明。系统服务列表可能缓存旧名称；覆盖安装后如未更新，先退出并重新打开 Finder，必要时注销再登录，不修改系统语言来测试，也不清空全局服务设置。
+
+Windows 安装器与右键入口仍待完成三语打包集成和平台验收；资源中已有这些文案不表示安装器已启用三语。系统对话框和系统注入菜单由操作系统决定语言。
+
+Mac 服务的原始 `NSMenuItem.default` 用作稳定标识，不随翻译改变；实际显示文本由三种 `ServicesMenu.strings` 提供，英文仍为包回退语言。先安装 Leaf 主菜单，再初始化 AppKit Services menu 和已就绪的提供者。实际安装版可显式运行 `node tests/finder-service-native.mjs '使用 Leaf 新建 Markdown 文档' '未命名.md'`（按系统菜单名称与当前 Leaf 语言调整参数）。检查使用临时合成文件夹／文件，确认服务接受请求后确实创建新文件并保留已有样本；生成的文档窗口留供观察。此 API 检查不代替 Finder 点击、冷启动或用户验收。
+
+## Windows 安装器三语
+
+NSIS 配置启用 English、SimpChinese、TradChinese 和语言选择器，直接复用 Tauri 官方语言包；不维护标准安装器文案的副本。英文为不支持系统的回退，官方安装器会记住此前安装语言。Leaf 右键菜单文案从正式语言资源生成：`node scripts/sync-windows-locales.mjs`；漂移检查随 `npm test` 执行。
+
+文件夹及文件夹空白处的右键入口按安装器选择语言写入。应用内换语言不刷新 Windows 右键文字，重新运行安装器选择新语言后更新；安装语言不覆盖应用内偏好。标准 Windows/NSIS 系统文字由官方资源控制，Leaf 定稿只控制自己的入口。当前用户安装、文件关联和 UserChoice 保护沿用。
+
+`Internal test packages` 的 Windows 作业在一次性 runner 中运行 `tests/windows-i18n-installer.ps1`，检查实际 EXE 的三语注册、重装更新、应用语言偏好保护及新文件名，然后运行文件图标/关联/卸载检查。脚本拒绝运行于用户电脑；静默安装使用 MUI2 保存的安装语言驱动，不能代替语言选择器界面实机验收。D 仍需在 Windows 检查选择器、系统匹配/回退、应用三语布局与真实右键操作。
+
+已安装 NSIS 的开发机可运行 `node tests/windows-i18n-nsis.mjs` 编译无操作的合成夹具，检查钩子和三语资源语法。生成 EXE 位于忽略提交的 `test-results`，不执行钩子、不安装 Leaf；不算正式 Windows 包。macOS 编译子进程使用 `en_US.UTF-8`，避免不支持的 locale 造成中文编码错误。

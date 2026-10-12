@@ -1,3 +1,4 @@
+import { t, h, onLanguageChange, setAttr } from './i18n.js';
 import { leafSelection } from './selection.js';
 import { sourceMode, setSourceMode } from './view-mode.js';
 import { unfoldAll } from '@codemirror/language';
@@ -67,6 +68,7 @@ const blankMarkers = StateField.define({
 });
 
 const lineNumberCompartment = new Compartment();
+const languageChanged = StateEffect.define();
 const toggleHeadingNumbers = StateEffect.define();
 const headingNumbers = StateField.define({
   create: () => false,
@@ -148,7 +150,7 @@ class TaskCheckbox extends WidgetType {
   toDOM(view) {
     const input = document.createElement('input');
     input.type = 'checkbox'; input.checked = this.checked;
-    input.className = 'leaf-task-checkbox'; input.setAttribute('aria-label', '完成任务');
+    input.className = 'leaf-task-checkbox'; setAttr(input, 'aria-label', () => t("editor.complete_task"));
     input.addEventListener('change', () => view.dispatch({ changes: { from: this.from + 1, to: this.from + 2, insert: input.checked ? 'x' : ' ' }, userEvent: 'input' }));
     return input;
   }
@@ -412,7 +414,7 @@ function livePreviewDecorations(view) {
         const signature = citationSignature(raw, noteNumbers);
         // A citation is not a link you can open, so it must not keep offering
         // "click to edit link" -- that promises an action the marker has not got.
-        const title = node.name === 'Image' ? `按住 ${shortcutText('⌘').replace(/\+$/, '')} 拖动图片` : node.name === 'Link' && signature !== null ? '' : '点击编辑链接';
+        const title = node.name === 'Image' ? t("editor.hold_to_drag_the_image", {"shortcut": shortcutText('⌘').replace(/\+$/, '')}) : node.name === 'Link' && signature !== null ? '' : t("editor.click_to_edit_link");
         const note = node.name === 'Link' ? citationLabel(raw, noteNumbers) : null;
         ranges.push(Decoration.replace({ widget: new InlinePreview(node.from, raw, { rule: node.name === 'HorizontalRule', title, footnotes, signature: signature ?? '', note }) }).range(node.from, node.to));
         return false;
@@ -485,7 +487,7 @@ const livePreview = ViewPlugin.fromClass(
     }
 
     update(update) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged || update.startState.field(sourceMode) !== update.state.field(sourceMode) || update.startState.field(blankMarkers) !== update.state.field(blankMarkers) || update.startState.field(headingNumbers) !== update.state.field(headingNumbers)) {
+      if (update.transactions.some(tr => tr.effects.some(effect => effect.is(languageChanged))) || update.docChanged || update.selectionSet || update.viewportChanged || update.startState.field(sourceMode) !== update.state.field(sourceMode) || update.startState.field(blankMarkers) !== update.state.field(blankMarkers) || update.startState.field(headingNumbers) !== update.state.field(headingNumbers)) {
         this.decorations = livePreviewDecorations(update.view);
       }
     }
@@ -572,7 +574,7 @@ function focusNewProperty(view) {
     if (body) {
       setPropertiesFolded(view, false);
       // Unfolding may replace the widget so CodeMirror can measure its height.
-      view.dom.querySelector('.leaf-property-body [aria-label="添加文档属性"]')?.click();
+      view.dom.querySelector('.leaf-property-body [data-action="add-property"]')?.click();
     }
   });
 }
@@ -844,7 +846,7 @@ function openFootnotePopup(view, label, pos, anchor = null) {
   const box = document.createElement('div');
   box.className = 'footnote-box';
   const input = document.createElement('textarea');
-  input.rows = 1; input.placeholder = '输入注释内容'; input.setAttribute('aria-label', '脚注内容');
+  input.rows = 1; setAttr(input, 'placeholder', () => t("editor.enter_footnote_content")); setAttr(input, 'aria-label', () => t("editor.footnote_content"));
   input.value = note?.def?.body ?? '';
   box.append(input);
   document.body.append(box);
@@ -910,7 +912,7 @@ function formatEditor(view, type) {
     const first=doc.lineAt(range.from),last=doc.lineAt(range.to>range.from&&doc.lineAt(range.to).from===range.to?range.to-1:range.to);
     const from=range.empty?first.to:first.from,to=range.empty?from:last.to;
     // Whole selected lines retain their Markdown (including nested lists/code).
-    const content=range.empty?'内容':doc.sliceString(from,to);
+    const content=range.empty?t("editor.content"):doc.sliceString(from,to);
     const prefix=from>0?'\n\n':'';
     const header=`> [!${kind}]`,insert=prefix+header+'\n'+content.split('\n').map(line=>'> '+line).join('\n')+'\n\n';
     const start=from+prefix.length;
@@ -947,7 +949,7 @@ function formatEditor(view, type) {
   }
   if (type === 'table') {
     const range = view.state.selection.main;
-    const table = '| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |';
+    const table = t("editor.column_1_column_2_content_content");
     view.dispatch({
       changes: { from: range.from, to: range.to, insert: table },
       selection: EditorSelection.cursor(range.from + table.length),
@@ -976,6 +978,20 @@ function selectionHeadingLevel(state) {
 
 export function createLeafEditor(options) {
   const historyCompartment = new Compartment();
+  const languageCompartment = new Compartment();
+  const phrases = () => EditorState.phrases.of({
+        Find: t("editor.find"),
+        Replace: t("editor.replace_with"),
+        next: t("editor.next_match"),
+        previous: t("editor.previous_match"),
+        all: t("editor.select_all_matches"),
+        'match case': t("editor.match_case"),
+        regexp: t("editor.regex"),
+        'by word': t("editor.whole_words"),
+        replace: t("editor.replace"),
+        'replace all': t("editor.replace_all"),
+        close: t("editor.close"),
+      });
   const setLineEnding = StateEffect.define();
   const endingOf = value => /\r\n/.test(value) ? '\r\n' : '\n';
   const lineEnding = StateField.define({
@@ -1056,6 +1072,7 @@ export function createLeafEditor(options) {
   };
 
   const appKeymap = keymap.of([
+    { key: 'Mod-Shift-z', run: redo },
     { key: 'Mod-e', run: () => (options.onExport?.(), true) },
     { key: 'Mod-Shift-s', run: () => (options.onSaveAs?.(), true) },
     { key: 'Mod-s', run: () => (options.onSave?.(), true) },
@@ -1118,19 +1135,7 @@ export function createLeafEditor(options) {
       blankMarkers.init(() => !!options.showBlankMarkers),
       headingNumbers.init(() => !!options.showHeadingNumbers),
       search({ top: true, createPanel: view => new LeafSearchPanel(view) }),
-      EditorState.phrases.of({
-        Find: '查找',
-        Replace: '替换为',
-        next: '下一处',
-        previous: '上一处',
-        all: '全选',
-        'match case': '大小写',
-        regexp: '正则',
-        'by word': '整词',
-        replace: '替换',
-        'replace all': '全部替换',
-        close: '关闭',
-      }),
+      languageCompartment.of(phrases()),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       syntaxHighlighting(leafHighlightStyle),
       // macOS Option+number produces symbols (e.g. ¡), not event.key "1".
@@ -1228,6 +1233,10 @@ export function createLeafEditor(options) {
     });
   }
 
+
+  onLanguageChange(language => {
+    if (view.dom.isConnected) view.dispatch({ effects: [languageCompartment.reconfigure(phrases()), languageChanged.of(language)] });
+  });
 
   return {
     view,
@@ -1330,6 +1339,7 @@ export function createLeafEditor(options) {
     setBlankMarkers(show) { view.dispatch({effects:toggleBlankMarkers.of(show)}); },
     tidyBlankLines() {
       const changes=paragraphBlankLineChanges(view.state.doc.toString());
+      if (changes.length && view.state.changes(changes).apply(view.state.doc).eq(view.state.doc)) return 0;
       if (changes.length) view.dispatch({changes, userEvent:'input', annotations:isolateHistory.of('full')});
       return changes.length;
     },

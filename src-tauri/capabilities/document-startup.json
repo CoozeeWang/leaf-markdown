@@ -1,0 +1,11 @@
+{
+  "identifier": "document-startup",
+  "description": "Show and focus a local document window after its initial content has loaded.",
+  "windows": [
+    "document-*"
+  ],
+  "permissions": [
+    "core:window:allow-show",
+    "core:window:allow-set-focus"
+  ]
+}

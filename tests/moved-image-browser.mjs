@@ -27,11 +27,11 @@ try {
   });
   await page.locator('.leaf-image-status[data-kind="moved-missing"]').waitFor();
   assert.equal(await page.locator('.leaf-image-status-head').textContent(), '找不到图片：photo.png');
-  assert.equal(await page.locator('.leaf-image-status-note').textContent(), '文档已移动，图片仍在原文件夹。请将图片也移到新位置。');
+  assert.equal(await page.locator('.leaf-image-status-note').textContent(), '文档已移动，图片仍在原文件夹。请将图片移至新文档文件夹下的对应相对路径。');
 
   await page.evaluate(() => { resources.setMovedMissingImages(); resources.refreshImages(); });
   await page.locator('.leaf-image-status[data-kind="missing"]').waitFor();
-  assert.equal(await page.locator('.leaf-image-status-note').textContent(), '文件可能已被移动、重命名或删除');
+  assert.equal(await page.locator('.leaf-image-status-note').textContent(), '图片文件可能已被移动、重命名或删除。');
 
   await page.evaluate(() => {
     window.imageAvailable = false;

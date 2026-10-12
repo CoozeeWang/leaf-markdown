@@ -1,13 +1,14 @@
+import { t, setText, setAttr } from './i18n.js';
 import {shortcutText} from './platform-shortcuts.js';
 import {uiIcon} from './ui-icons.js';
 // Controls live outside the scrolling table; they never take layout space.
 export function tableEdgeControls(root, table, act) {
-  const control=(label,text)=>{
+  const control=(key,text)=>{
     const b=document.createElement('button'); b.type='button'; b.className='leaf-table-edge';
-    b.setAttribute('aria-label',label); b.title=label; b.textContent=text; b.hidden=true;
+    setAttr(b, 'aria-label', () => t(key)); setAttr(b, 'title', () => t(key)); b.textContent=text; b.hidden=true;
     b.addEventListener('mousedown',e=>e.preventDefault()); root.append(b); return b;
   };
-  const insert=control('插入行或列','+'), row=control('行操作','⋯'), col=control('列操作','⋯');
+  const insert=control("table_edge_controls.insert_row_or_column",'+'), row=control("table_edge_controls.row_actions",'⋯'), col=control("table_edge_controls.column_actions",'⋯');
   insert.innerHTML=uiIcon('plus',14);
   const guide=document.createElement('div');guide.className='leaf-table-insert-guide';guide.hidden=true;root.append(guide);
   const menu=document.createElement('div'); menu.className='leaf-table-menu'; menu.hidden=true; root.append(menu);
@@ -39,7 +40,7 @@ export function tableEdgeControls(root, table, act) {
       ['row',currentRow,Math.abs(e.clientY-r.top),x+r.width/2,y],['row',currentRow+1,Math.abs(e.clientY-r.bottom),x+r.width/2,y+r.height]]
       .filter(([axis,i])=>axis!=='row'||i>0).sort((a,b)=>a[2]-b[2]);
     target=edges[0];
-    if(target[2]<10){position(insert,target[3],target[4]);insert.setAttribute('aria-label',target[0]==='row'?'在此插入行':'在此插入列');insert.title=insert.getAttribute('aria-label');
+    if(target[2]<10){position(insert,target[3],target[4]);setAttr(insert, 'aria-label', () => target[0]==='row'?t("table_edge_controls.insert_row_here"):t("table_edge_controls.insert_column_here"));insert.title=insert.getAttribute('aria-label');
       guide.hidden=false;guide.style.cssText=target[0]==='row'?`left:0;right:0;top:${target[4]}px;height:2px`:`top:0;bottom:0;left:${target[3]}px;width:2px`;
     }
     else guide.hidden=insert.hidden=true;
@@ -50,11 +51,11 @@ export function tableEdgeControls(root, table, act) {
     menu.classList.toggle('pointer-open',pointer);
     const index=axis==='row'?currentRow:currentCol;
     menu.replaceChildren();
-    const actions=axis==='row' ? [['删除此行','row',index,true],['左侧添加列','col',0,false]]
-      : [['删除此列','col',index,true],['上方添加行','row',1,false]];
+    const actions=axis==='row' ? [["table_edge_controls.delete_this_row",'row',index,true],["table_edge_controls.add_column_on_the_left",'col',0,false]]
+      : [["table_edge_controls.delete_this_column",'col',index,true],["table_edge_controls.add_row_above",'row',1,false]];
     for(const [label,actionAxis,i,remove] of actions){
-      const b=document.createElement('button');b.type='button';b.textContent=label;
-      b.title=remove?shortcutText(`${label}（⌘Z 撤销）`):label;
+      const b=document.createElement('button');b.type='button';setText(b,()=>t(label));
+      setAttr(b, 'title', () => remove?shortcutText(t("table_edge_controls.z_to_undo", {"label": t(label)})):t(label));
       b.disabled=remove&&(actionAxis==='row'&&i===0 || actionAxis==='col'&&table.rows[0].cells.length===1);
       b.onclick=()=>{close();act(actionAxis,i,remove,currentRow,currentCol);};menu.append(b);
     }

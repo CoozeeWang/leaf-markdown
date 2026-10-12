@@ -48,12 +48,12 @@ pub struct Store { root: PathBuf }
 impl Store {
     pub fn new(root: PathBuf) -> Self { Self { root } }
     fn path(&self, key: &str) -> Result<PathBuf, String> {
-        if key.is_empty() || key.len() > 120 || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') { return Err("无效的恢复记录".into()); }
+        if key.is_empty() || key.len() > 120 || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') { return Err(crate::i18n::error("recovery.invalid_recovery_record", serde_json::json!({})).into()); }
         Ok(self.root.join(format!("{key}.json")))
     }
     pub fn read(&self, key: &str) -> Result<Record, String> {
         match fs::read(self.path(key)?) {
-            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("恢复记录损坏，原记录已保留：{e}")),
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| crate::i18n::error("recovery.the_recovery_record_is_damaged_the_original", serde_json::json!({"error": (e).to_string()}))),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Record::default()),
             Err(e) => Err(e.to_string()),
         }
@@ -85,7 +85,7 @@ impl Store {
         self.write(new,&record)
     }
     pub fn checkpoint(&self, key: &str, source: Option<String>, content: &str, owner: &str, preserve: bool) -> Result<(), String> {
-        if content.len() > MAX_BYTES { return Err("文档超过 32 MB，无法建立恢复草稿；请手动保存。".into()); }
+        if content.len() > MAX_BYTES { return Err(crate::i18n::error("recovery.the_document_exceeds_32_mb_so_a", serde_json::json!({})).into()); }
         let mut record = self.read(key)?;
         if !preserve && record.draft_session.as_deref() == Some(owner) && record.draft.as_ref().is_some_and(|v| v.content == content) { return Ok(()); }
         // Preserve the previous checkpoint as a version before replacing it.
@@ -106,7 +106,7 @@ impl Store {
         let mut record = self.read(key)?;
         record.source = Some(source);
         if let Some(content) = content {
-            if content.len() > MAX_BYTES { return Err("旧版本超过 32 MB，无法安全建立历史版本。".into()); }
+            if content.len() > MAX_BYTES { return Err(crate::i18n::error("recovery.the_previous_version_exceeds_32_mb_and", serde_json::json!({})).into()); }
             if record.versions.first().is_none_or(|v| v.content != content) {
                 record.versions.insert(0, Version::new(content, "saved"));
                 record.versions.truncate(MAX_VERSIONS);
@@ -132,7 +132,7 @@ impl Store {
         for file in files {
             let path = file.map_err(|e| e.to_string())?.path();
             if path.extension().and_then(|v| v.to_str()) != Some("json") { continue; }
-            let key = path.file_stem().and_then(|v| v.to_str()).ok_or("无效恢复文件名")?;
+            let key = path.file_stem().and_then(|v| v.to_str()).ok_or(crate::i18n::error("recovery.invalid_recovery_file_name", serde_json::json!({})))?;
             let record = self.read(key)?;
             if let Some(ref version) = record.draft { entries.push(entry(key, &record, version)); }
         }
@@ -141,12 +141,12 @@ impl Store {
     }
     pub fn content(&self, key: &str, id: &str) -> Result<String, String> {
         let record = self.read(key)?;
-        record.draft.iter().chain(record.versions.iter()).find(|v| v.id == id).map(|v| v.content.clone()).ok_or("版本已清理，请刷新列表".into())
+        record.draft.iter().chain(record.versions.iter()).find(|v| v.id == id).map(|v| v.content.clone()).ok_or(crate::i18n::error("recovery.this_version_has_been_removed_refresh_the", serde_json::json!({})).into())
     }
     // Expiry uses the timestamp inside each record, never the file mtime.
     // Open-document drafts and unreadable records are retained.
     pub fn expire(&self, days: u32, now: u64, active: &[String]) -> Result<usize, String> {
-        if ![7,30,90].contains(&days) { return Err("恢复记录保留时限无效".into()); }
+        if ![7,30,90].contains(&days) { return Err(crate::i18n::error("main.invalid_recovery_retention_period", serde_json::json!({})).into()); }
         let cutoff=now.saturating_sub(u64::from(days)*24*60*60*1000);
         let files=match fs::read_dir(&self.root) { Ok(files)=>files, Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(0), Err(e)=>return Err(e.to_string()) };
         let mut removed=0;
@@ -176,7 +176,7 @@ impl Store {
         } else if let Some(index) = record.versions.iter().position(|version| version.id == id) {
             record.versions.remove(index);
         } else {
-            return Err("该记录已变化或已删除，请重新打开恢复窗口".into());
+            return Err(crate::i18n::error("recovery.this_record_has_changed_or_been_deleted", serde_json::json!({})).into());
         }
         self.write(key, &record)
     }

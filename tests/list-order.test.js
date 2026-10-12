@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {orderedListNumberChanges} from '../src/list-order.js';
+import { EditorState } from '@codemirror/state';
+import {orderedListRenumber,orderedListNumberChanges} from '../src/list-order.js';
 
 test('a gap left by a deleted item is closed from the first marker down',()=>{
  assert.deepEqual(orderedListNumberChanges('1. 一\n3. 三\n4. 四'),[
@@ -74,4 +75,16 @@ test('without touched ranges every list is planned; with them only the reached o
  const at=source.indexOf('3. 另三');
  const second=orderedListNumberChanges(source,[{from:source.indexOf('另一'),to:source.length}]);
  assert.deepEqual(second,[{from:at,to:at+1,insert:'2'}]);
+});
+
+// Exercise real position mapping rather than an identity-map test stub.
+test('deleting the first item beside prose preserves list structure and start',()=>{
+ for(const before of ['正文\n1. 一\n2. 二\n3. 三','正文\n\n5. 五\n6. 六\n7. 七','1. 一\n2. 二\n3. 三']) {
+  const state=EditorState.create({doc:before,extensions:[orderedListRenumber]});
+  const from=before.indexOf(before.includes('5. 五')?'5. 五':'1. 一');
+  const to=before.indexOf('\n',from)+1;
+  const tr=state.update({changes:{from,to},userEvent:'delete.selection'});
+  const after=tr.newDoc.toString();
+  assert.ok(after.includes(before.includes('5. 五')?'5. 六\n6. 七':'1. 二\n2. 三'),after);
+ }
 });

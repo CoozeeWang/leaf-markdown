@@ -24,7 +24,7 @@ try {
  await open();
  assert.ok(await switchboard.isVisible());
  assert.deepEqual(await switchboard.locator('.setting-check').allInnerTexts(),
-   ['文档属性','正文上方的文件名','源码行号','编辑标记\n¶ 段落结束　↵ 换行','标题多级编号\n仅影响显示，不修改原文']);
+   ['文档属性','正文上方的文件名','源码行号','格式标记\n¶ 段落结束　↵ 换行','标题多级编号\n仅影响显示，不修改原文']);
  assert.equal(await propertiesSwitch.isChecked(),true,'the switch reports the region as shown');
  await page.screenshot({path:artifactPath('display-switchboard.png')});
 

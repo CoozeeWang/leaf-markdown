@@ -14,6 +14,7 @@ try{
   window.ed=createLeafEditor({parent:document.querySelector('#editor'),doc:source});
   window.statuses=[];
   window.writing=setupWriting({editor:ed,desktop:true,icon:()=>'',status:s=>statuses.push(s),editable:()=>true,choose:async()=>[],save:async()=>true,serialized:async f=>f(),invoke:async(cmd,args)=>{
+      if (cmd === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
     if(cmd==='import_attachment')return 'assets/'+args.name;
     throw Error('missing');
   }});
@@ -80,7 +81,7 @@ try{
  assert.ok(dropped.startsWith('---\nversion: v1\n---\n'),`dropping on the block keeps it a property block: ${dropped}`);
  assert.ok(dropped.includes('![photo](assets/photo.png)')&&dropped.indexOf('![photo]')>dropped.indexOf('---\nversion'),
    `the dropped file goes into the body: ${dropped}`);
- assert.ok(await page.evaluate(()=>statuses.some(s=>s.includes('正文开头'))),'a relocated drop says where the file went');
+ assert.ok(await page.evaluate(()=>statuses.some(s=>String(s).includes('正文开头'))),'a relocated drop says where the file went');
  // The same drop over ordinary body text stays where it was aimed.
  await page.evaluate(p=>writing.attachments(['/source/second.png'],true,p),
    await page.evaluate(()=>{const r=ed.view.coordsAtPos(ed.view.state.doc.length-1);return {x:r.left,y:r.top+4};}));
@@ -153,6 +154,7 @@ try{
    metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},
    transformCallback:fn=>{callbacks.set(++id,fn);return id;},
    invoke:async(command,args)=>{
+      if (command === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
     if(command==='plugin:event|listen'){listeners.set(args.event,args.handler);return args.handler;}
     if(command==='initial_path')return '/fixture/document.md';
     if(command==='observe_document')return {path:'/fixture/document.md',content:doc};

@@ -10,7 +10,7 @@
 
 ---
 
-**Beta 开发中。** Leaf 用于编辑和阅读本地 Markdown 文档，提供大纲、表格、脚注、提示块、查找、恢复与 PDF 导出等功能。目前的安装包仍是内部测试构建；对外发布状态以 GitHub Releases 为准。
+**Beta 开发中。** Leaf 用于编辑和阅读本地 Markdown 文档，提供大纲、表格、脚注、提示块、查找、恢复与 PDF 导出等功能。安装包与版本说明见 [GitHub Releases](https://github.com/CoozeeWang/leaf-markdown/releases)。当前 Beta 支持简体中文、繁体中文与 English；试用前请阅读[安装说明](docs/INSTALL.md)。
 
 “整理段落空行”的规则、例外和使用示例见[空行整理说明](docs/BLANK-LINES.md)。
 
