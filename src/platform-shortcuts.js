@@ -62,3 +62,9 @@ export function renderTooltipText(container, text) {
     container.append(span);
   }
 }
+
+// WebView2 can consume a native menu accelerator while its content has focus.
+// Keep this fallback Windows-only; macOS retains its native menu routing.
+export function isWindowsNewShortcut(event, platform = globalThis.navigator?.userAgentData?.platform || globalThis.navigator?.platform || '') {
+  return /win/i.test(platform) && !event.isComposing && !event.repeat && event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (event.code === 'KeyN' || event.key?.toLowerCase() === 'n');
+}

@@ -53,8 +53,8 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #1d211d;
-  --surface: #242824;
-  --surface-strong: #2a2f2a;
+  --surface: #292e29;
+  --surface-strong: #303630;
   --canvas: #202420;
   --text: #e7e9e2;
   --heading-primary: #97c3a3;
@@ -70,9 +70,9 @@
   --highlight-bg: #48412c;
   --link: #8dc5c8;
   --quote-bg: #282f29;
-  --muted: #a0a69c;
+  --muted: #b1b8ad;
   --faint: #747b72;
-  --line: #3a413a;
+  --line: #485048;
   --accent: #9bbca0;
   --accent-strong: #b3d0b7;
   --accent-soft: #334638;

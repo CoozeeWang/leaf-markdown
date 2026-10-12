@@ -151,6 +151,16 @@ fn hide_launcher(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn show_windows_launcher_if_empty(app: &tauri::AppHandle) {
+    if document_window(app).is_none() {
+        if let Some(window) = app.get_webview_window(LAUNCHER) {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+}
+
 fn document_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
     app.webview_windows().into_values().find(|window| window.label().starts_with("document-"))
 }
@@ -173,16 +183,20 @@ fn create_from_file_manager(app: tauri::AppHandle, target: impl FnOnce() -> Resu
             open_document(app.clone(), Some(path.to_string_lossy().into_owned()))
                 .map_err(|error| crate::i18n::error("main.the_document_was_created_but_could_not", serde_json::json!({"path": (path.display()).to_string(), "error": (error).to_string()})))
         });
-        if let Err(error) = result { app.dialog().message(i18n::app_error(&app, &error)).title(i18n::app_text(&app, "NA0003")).show(|_| {}); }
+        if let Err(error) = result {
+            #[cfg(target_os = "windows")]
+            show_windows_launcher_if_empty(&app);
+            app.dialog().message(i18n::app_error(&app, &error)).title(i18n::app_text(&app, "NA0003")).show(|_| {});
+        }
     });
 }
 
 #[cfg(target_os = "windows")]
-fn open_windows_arguments(app: &tauri::AppHandle, args: Vec<String>, cwd: &str) {
+fn open_windows_arguments(app: &tauri::AppHandle, args: Vec<String>, cwd: &str) -> bool {
     use tauri_plugin_dialog::DialogExt;
     if let Some(folder) = new_markdown::argument(&args, std::path::Path::new(cwd)) {
         create_from_file_manager(app.clone(), move || folder);
-        return;
+        return true;
     }
     let paths = document_arguments(args, std::path::Path::new(cwd));
     if paths.is_empty() {
@@ -191,6 +205,7 @@ fn open_windows_arguments(app: &tauri::AppHandle, args: Vec<String>, cwd: &str) 
             let _ = window.set_focus();
         }
     }
+    let opening = !paths.is_empty();
     // Ready and single-instance callbacks run on the event loop. Command
     // attributes do not affect direct Rust calls, so dispatch explicitly.
     let app = app.clone();
@@ -200,7 +215,9 @@ fn open_windows_arguments(app: &tauri::AppHandle, args: Vec<String>, cwd: &str) 
                 app.dialog().message(i18n::app_error(&app, &error)).title("Leaf").show(|_| {});
             }
         }
+        if opening { show_windows_launcher_if_empty(&app); }
     });
+    opening
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -1052,7 +1069,15 @@ fn main() {
             let settings = MenuItem::with_id(handle, "settings", "设置…", true, Some("CmdOrCtrl+Alt+,"))?;
             let copy_rich = MenuItem::with_id(handle, "copy-rich", "复制为富文本", true, Some("CmdOrCtrl+Shift+C"))?;
             let paste_plain = MenuItem::with_id(handle, "paste-plain", "粘贴为纯文本", true, Some("CmdOrCtrl+T"))?;
-            let app_menu = Submenu::with_items(handle, "Leaf", true, &[&PredefinedMenuItem::about(handle, Some("关于 Leaf"), None)?, &settings, &quit])?;
+            // Windows' predefined About does nothing when metadata is absent.
+            #[cfg(target_os = "windows")]
+            let about_metadata = Some(tauri::menu::AboutMetadata {
+                name: Some("Leaf".into()), version: Some(env!("CARGO_PKG_VERSION").into()),
+                ..Default::default()
+            });
+            #[cfg(not(target_os = "windows"))]
+            let about_metadata = None;
+            let app_menu = Submenu::with_items(handle, "Leaf", true, &[&PredefinedMenuItem::about(handle, Some("关于 Leaf"), about_metadata)?, &settings, &quit])?;
             let recent_menu = Submenu::new(handle, "最近打开", true)?;
             let file = Submenu::with_items(handle, "文件", true, &[&new, &open, &recent_menu, &save, &save_as, &recovery_menu, &export, &PredefinedMenuItem::close_window(handle, Some("关闭窗口"))?])?;
             // Undo and redo are deliberately not PredefinedMenuItem: on macOS
@@ -1153,7 +1178,7 @@ fn main() {
                 #[cfg(target_os = "macos")]
                 if app.state::<OpenRequests>().mark_ready() { drain_open_requests(app.clone()); }
                 #[cfg(target_os = "windows")]
-                open_windows_arguments(app, std::env::args().collect(), &std::env::current_dir().unwrap_or_default().to_string_lossy());
+                let opening_document = open_windows_arguments(app, std::env::args().collect(), &std::env::current_dir().unwrap_or_default().to_string_lossy());
                 // macOS can deliver a document before Tauri creates its configured
                 // welcome window. Do not let that later window cover the document:
                 // hide the launcher, exactly as opening a file from it does.
@@ -1164,10 +1189,7 @@ fn main() {
                 }
                 else {
                     #[cfg(target_os = "windows")]
-                    if let Some(window) = app.get_webview_window(LAUNCHER) {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+                    if !opening_document { show_windows_launcher_if_empty(app); }
                 }
             }
             #[cfg(target_os = "macos")]

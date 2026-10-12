@@ -25,7 +25,9 @@ function buildStamp() {
   const time = `${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
   const commit = git('rev-parse', '--short=8', 'HEAD');
   if (!commit) return time;
-  return `${commit}${git('status', '--porcelain') ? '+' : ''} · ${time}`;
+  const changes = git('status', '--porcelain');
+  if (changes) console.warn(`[Leaf build] Working-tree changes at build time:\n${changes}`);
+  return `${commit}${changes ? '+' : ''} · ${time}`;
 }
 
 export default defineConfig({

@@ -2,6 +2,7 @@ import { t, message as translatedMessage } from './i18n.js';
 import { createDocumentSession } from './document-session.js';
 import {localResourcePaths} from './resource-paths.js';
 import { fileNameFromPath } from './file-path.js';
+import { isWindowsNewShortcut } from './platform-shortcuts.js';
 import { nativeDropPoint } from './native-drop-point.js';
 import { isTauri, invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -84,6 +85,11 @@ async function closeDocument() {
 
 export async function initDesktop(callbacks) {
   hooks = callbacks;
+  globalThis.window.addEventListener('keydown', event => {
+    if (!isWindowsNewShortcut(event)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    void desktopNew().catch(error => hooks.status(translatedMessage("desktop.could_not_create_the_document", {error}), 'error'));
+  }, true);
   // Import the former per-WebView list once. Keep the old copy as a migration
   // fallback because development and installed WebViews can share storage.
   try {
