@@ -811,6 +811,7 @@ document.addEventListener('leaf-heading-link', event => {
   if (state.reading) reader.querySelector(`[data-source-line="${event.detail}"]`)?.scrollIntoView({block:'start'});
   else editor.goToLine(event.detail);
 });
+setAttr(document.querySelector('[data-format="code"]'), 'data-tooltip', () => shortcutText(`${t('main.inline_code')}  ⌘⌥C`));
 
 // History lives in the editor state, so ask the editor rather than track edits
 // separately: opening a file, undoing back to the start and redoing all move
@@ -1328,6 +1329,8 @@ const commands = [
   { id: 'main.set_to_heading_1', get name() { return t('main.set_to_heading_1'); }, shortcut: '⌥1', action: () => editor.format('heading1') },
   { id: 'main.bold_ui0226', get name() { return t('main.bold_ui0226'); }, shortcut: '⌘B', action: () => editor.format('bold') },
   { id: 'main.italic_ui0227', get name() { return t('main.italic_ui0227'); }, shortcut: '⌘I', action: () => editor.format('italic') },
+  { id: 'main.highlight', get name() { return t('main.highlight'); }, shortcut: '⌘=', action: () => editor.format('highlight') },
+  { id: 'main.inline_code', get name() { return t('main.inline_code'); }, shortcut: '⌘⌥C', action: () => editor.format('code') },
   { id: 'main.blockquote_ui0228', get name() { return t('main.blockquote_ui0228'); }, action: () => editor.format('quote') },
   { id: 'main.insert_footnote_ui0229', get name() { return t('main.insert_footnote_ui0229'); }, shortcut: '⇧⌘F', action: () => editor.format('footnote') },
   { id: 'main.insert_callout_ui0230', get name() { return t('main.insert_callout_ui0230'); }, aliases: ['Callout'], action: () => {if(state.reading)toggleReading();editor.format('callout-note');} },
@@ -1354,7 +1357,7 @@ const commandGroups = [
   ['main.settings_ui0238', ['main.appearance_typography_ui0202', 'main.saving_recovery_ui0204']],
   ['main.file', ['main.open_file_ui0212', 'main.save_file', 'main.export_pdf_ui0211', 'main.document_properties_ui0217']],
   ['main.edit_ui0240', ['main.undo_ui0209', 'main.redo_ui0210', 'main.copy_as_rich_text', 'main.paste_as_plain_text', 'main.find_in_document', 'main.clean_up_blank_lines', 'main.renumber_footnotes_in_reference_order']],
-  ['main.insert_format', ['main.insert_image', 'main.insert_attachment', 'main.set_to_heading_1', 'main.bold_ui0226', 'main.italic_ui0227', 'main.blockquote_ui0228', 'main.insert_footnote_ui0229', 'main.insert_callout_ui0230', 'main.bulleted_list_ui0232', 'main.insert_table_ui0233']],
+  ['main.insert_format', ['main.insert_image', 'main.insert_attachment', 'main.set_to_heading_1', 'main.bold_ui0226', 'main.italic_ui0227', 'main.highlight', 'main.inline_code', 'main.blockquote_ui0228', 'main.insert_footnote_ui0229', 'main.insert_callout_ui0230', 'main.bulleted_list_ui0232', 'main.insert_table_ui0233']],
   ['main.view', ['main.display_options', 'main.cycle_view_mode', 'main.show_or_hide_editing_marks', 'main.show_or_hide_outline', 'main.show_or_hide_footnotes', 'main.show_or_hide_source_line_numbers', 'main.toggle_focus_mode', 'main.toggle_light_dark_theme']],
   ['main.recovery', ['main.versions_drafts_ui0234', 'main.recover_unsaved_drafts', 'main.restore_version_before_last_save_ui0236']],
 ];

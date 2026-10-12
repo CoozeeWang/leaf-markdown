@@ -626,6 +626,7 @@ function wrapMark(view, left, right = left) {
     changes: { from: range.from, to: range.to, insert },
     selection: EditorSelection.cursor(anchor),
     userEvent: 'input',
+    annotations: isolateHistory.of('full'),
   });
   view.focus();
 }
@@ -930,6 +931,7 @@ function formatEditor(view, type) {
     bold: ['**', '**'],
     italic: ['*', '*'],
     strike: ['~~', '~~'],
+    highlight: ['==', '=='],
     code: ['`', '`'],
     codeblock: ['```\n', '\n```'],
     // Obsidian renders superscript/subscript from HTML tags, not ^x^ / ~x~.
@@ -1081,6 +1083,8 @@ export function createLeafEditor(options) {
     { key: 'Mod-f', run: openSearchPanel },
     { key: 'Mod-b', run: (view) => (formatEditor(view, 'bold'), true) },
     { key: 'Mod-i', run: (view) => (formatEditor(view, 'italic'), true) },
+    { key: 'Mod-=', run: (view) => (formatEditor(view, 'highlight'), true) },
+    { key: 'Mod-Alt-c', run: (view) => (formatEditor(view, 'code'), true) },
     { key: 'Mod-Shift-x', run: (view) => (formatEditor(view, 'strike'), true) },
     { key: 'Mod-.', run: (view) => (formatEditor(view, 'sup'), true) },
     { key: 'Mod-,', run: (view) => (formatEditor(view, 'sub'), true) },
