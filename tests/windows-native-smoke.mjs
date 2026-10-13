@@ -107,6 +107,11 @@ try {
   const preview = await until(async () => pages().find(p => p.url().includes('export=1')), 'export window');
   await preview.locator('.print-document').waitFor();
   assert.match(await preview.locator('.print-document').innerText(), /Windows export smoke/);
+  // CDP can inspect and screenshot a hidden WebView. Check the native window,
+  // not only DOM visibility, so an invisible export preview cannot pass.
+  assert.equal(await invoke(preview, 'plugin:window|is_visible', {
+    label: await preview.evaluate(() => window.__TAURI_INTERNALS__.metadata.currentWindow.label),
+  }), true, 'PDF export preview must be visible to the user');
   await preview.screenshot({ path: 'test-results/windows-export.png' });
   // Unsaved content must prompt, cancellation must keep the window usable.
   before = pages();

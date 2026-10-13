@@ -238,9 +238,7 @@ fn open_export(app: tauri::AppHandle, window: tauri::WebviewWindow, mut snapshot
     let builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html?export=1".into()))
         .title(i18n::app_text(&app, "NA0004")).inner_size(950., 800.).min_inner_size(720., 480.);
     let builder = development_window(&app, builder);
-    // The frontend reveals Windows document windows only after initial loading.
-    #[cfg(target_os = "windows")]
-    let builder = builder.visible(false);
+    // Export pages have no document-startup reveal step; keep their window visible.
     #[cfg(not(target_os = "macos"))]
     let builder = if let Some(menu) = app.menu() { builder.menu(menu) } else { builder };
     #[cfg(all(target_os = "windows", feature = "native-smoke"))]
