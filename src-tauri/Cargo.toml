@@ -3,6 +3,7 @@ name = "leaf"
 version = "0.4.0-beta.3"
 edition = "2021"
 license = "MIT"
+default-run = "leaf"
 
 [features]
 # Enables a local CDP connection only in native CI probe builds.
@@ -25,6 +26,8 @@ sys-locale = "0.3.2"
 rmcp = { version = "=3.5.1", default-features = false, features = ["server", "macros", "transport-io", "transport-streamable-http-server", "client", "transport-streamable-http-client-reqwest", "reqwest"] }
 tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "io-std", "io-util"] }
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio"] }
+keyring = { version = "=4.2.0", default-features = false, features = ["v1"] }
+getrandom = "=0.3.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

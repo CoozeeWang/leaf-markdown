@@ -6,6 +6,9 @@ use serde_json::{Value,json};
 use sha2::{Digest,Sha256};
 use tauri::{Manager,Emitter};
 use tokio::sync::{Mutex as AsyncMutex,oneshot};
+#[path = "ai_credentials.rs"]
+pub mod ai_credentials;
+use ai_credentials::{AiClientProfileStore, AiClientProfile, OsKeyring};
 
 static IDS:AtomicU64=AtomicU64::new(1);
 fn id(prefix:&str)->String { format!("{prefix}-{}-{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),IDS.fetch_add(1,Ordering::Relaxed)) }
@@ -47,12 +50,59 @@ impl MutationLedger {
 }
 #[derive(Clone)]
 pub struct LeafMcpBroker {pub inner:Arc<BrokerState>}
-pub struct BrokerState {pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,pub credentials:Mutex<HashMap<String,String>>,pub results:Mutex<HashMap<String,(String,Value)>>,pub ledger:MutationLedger}
+pub struct BrokerState {pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,pub credentials:Mutex<HashMap<String,String>>,pub profiles:Mutex<Option<AiClientProfileStore>>,pub results:Mutex<HashMap<String,(String,Value)>>,pub ledger:MutationLedger}
 impl Default for LeafMcpBroker {
-    fn default()->Self {Self{inner:Arc::new(BrokerState{registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),credentials:Mutex::new(HashMap::new()),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default()})}}
+    fn default()->Self {Self{inner:Arc::new(BrokerState{registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default()})}}
 }
 impl LeafMcpBroker {
-    pub fn initialize(&self,app:&tauri::AppHandle)->Result<(),String>{self.inner.ledger.initialize(super::application_data(app).map_err(|_|"ledger directory")?.join("mcp-mutations-v1.json"))}
+    pub fn initialize(&self,app:&tauri::AppHandle)->Result<(),String>{
+        let directory=super::application_data(app).map_err(|_|"ledger directory")?;
+        self.inner.ledger.initialize(directory.join("mcp-mutations-v1.json"))?;
+        *self.inner.profiles.lock().unwrap()=Some(AiClientProfileStore::new(format!("{}.mcp",app.config().identifier),Some(directory.join("mcp-profiles-v1.json")))?);Ok(())
+    }
+    pub fn client_profiles(&self)->Result<Vec<AiClientProfile>,String> {Ok(self.inner.profiles.lock().unwrap().as_ref().ok_or("profiles_unavailable")?.list())}
+    pub async fn configure_client(&self,app:&tauri::AppHandle,client:&str,secret:String,operation:&str,expected:u64)->Result<AiClientProfile,String> {
+        let _serial=self.inner.queue.lock().await;
+        // Validate before any revocation, including conflicting operation retries.
+        let repeated=self.inner.profiles.lock().unwrap().as_ref().ok_or("profiles_unavailable")?.validate_configure(client,&secret,operation,expected)?;
+        if repeated {return self.inner.profiles.lock().unwrap().as_ref().unwrap().status(client);}
+        self.invalidate_client(app,client).await;
+        let broker=self.clone();let client=client.to_owned();let operation=operation.to_owned();
+        tauri::async_runtime::spawn_blocking(move||broker.inner.profiles.lock().unwrap().as_mut().ok_or("profiles_unavailable")?.configure(&client,&secret,&operation,expected,&OsKeyring)).await.map_err(|_|"credential_unavailable")?
+    }
+    pub async fn enable_client(&self,client:&str,operation:&str,expected:u64)->Result<AiClientProfile,String> {
+        let _serial=self.inner.queue.lock().await;
+        let broker=self.clone();let client=client.to_owned();let operation=operation.to_owned();
+        tauri::async_runtime::spawn_blocking(move||{
+            let mut guard=broker.inner.profiles.lock().unwrap();let store=guard.as_mut().ok_or("profiles_unavailable")?;
+            let result=store.enable(&client,&operation,expected,&OsKeyring)?;
+            if result.enabled {broker.inner.credentials.lock().unwrap().insert(client.clone(),store.token(&client,&OsKeyring)?);}Ok(result)
+        }).await.map_err(|_|"credential_unavailable")?
+    }
+    async fn invalidate_client(&self,app:&tauri::AppHandle,client:&str) {
+        self.inner.credentials.lock().unwrap().remove(client);
+        let documents:Vec<_>=self.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(client)).cloned().collect();
+        for mut d in documents {
+            if let Some(task)=&d.task {let _=self.bridge(app,&d.label,"finish",task.clone()).await;}
+            d.task=None;d.client=None;d.scope=None;d.authorization_epoch+=1;
+            self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d);
+        }
+    }
+    pub async fn revoke_client(&self,app:&tauri::AppHandle,client:&str,clear:bool,operation:&str)->Result<AiClientProfile,String> {
+        let _serial=self.inner.queue.lock().await;
+        self.inner.profiles.lock().unwrap().as_ref().ok_or("profiles_unavailable")?.validate_revoke(client,clear,operation)?;
+        self.invalidate_client(app,client).await;
+        let broker=self.clone();let client=client.to_owned();let operation=operation.to_owned();
+        tauri::async_runtime::spawn_blocking(move||broker.inner.profiles.lock().unwrap().as_mut().ok_or("profiles_unavailable")?.revoke(&client,clear,&operation,&OsKeyring)).await.map_err(|_|"credential_unavailable")?
+    }
+    pub async fn set_enabled(&self,app:&tauri::AppHandle,enabled:bool)->Result<(),String> {
+        let _serial=self.inner.queue.lock().await;
+        if !enabled {
+            *self.inner.enabled.lock().unwrap()=false;
+            let clients:Vec<_>=self.inner.credentials.lock().unwrap().keys().cloned().collect();
+            for client in clients {self.invalidate_client(app,&client).await;}
+        } else {*self.inner.enabled.lock().unwrap()=true;}Ok(())
+    }
     pub fn register(&self,label:&str)->OpenedDocument {
         let mut registry=self.inner.registry.lock().unwrap();
         registry.documents.retain(|_,d|d.label!=label);
@@ -91,6 +141,7 @@ impl LeafMcpBroker {
     }
     pub async fn call(&self,app:&tauri::AppHandle,client:&str,name:&str,args:Value)->Result<Value,String> {
         let _serial=self.inner.queue.lock().await;
+        if !self.inner.credentials.lock().unwrap().contains_key(client) {return Err("client_disabled".into());}
         if name=="list_documents" {
             if !*self.inner.enabled.lock().unwrap(){return Err("connection_disabled".into());}
             let mut docs:Vec<_>=self.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(client)).cloned().collect();docs.sort_by(|a,b|a.session_id.cmp(&b.session_id));return Ok(json!({"documents":docs}));
