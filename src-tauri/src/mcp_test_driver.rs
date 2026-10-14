@@ -75,6 +75,7 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     let _=broker.bridge(app,label,"test",json!({"action":"reset","content":""})).await?;
     let original=broker.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).cloned().ok_or("renderer registration absent")?;
     ensure(original.client.is_none(),"default authorization must be closed")?;
+    if mode=="chatgpt-tunnel-tracer" || mode=="chatgpt-tunnel-dev-bundle" {return tunnel_tracer(app,label,broker,mode).await;}
     let token=super::mcp::digest(&json!(std::env::var("LEAF_MCP_TEST_DIR").unwrap()));
     broker.inner.credentials.lock().unwrap().insert("synthetic-client".into(),token.clone());
     *broker.inner.enabled.lock().unwrap()=true;
@@ -141,6 +142,48 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     broker.unregister(label);
     ensure(tool(&client,"read_document",binding).await.is_err(),"closed session must fail")?;
     let _=client.cancel().await;Ok(())
+}
+
+async fn tunnel_tracer(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,_mode:&str)->Result<(),String>{
+    use super::mcp::ai_credentials::{BrokerDescriptor,BoundCredential,CredentialRef,SecretStore,OsKeyring,random_token};
+    use super::chatgpt_tunnel::TunnelLaunchSpec;
+    let directory=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
+    let profile_path=directory.join("transient-tunnel.json");let evidence=directory.join("tunnel-evidence.json");
+    let formal=directory.join("mcp-profiles-v1.json");let before=std::fs::read(&formal).ok();
+    let source="Synthetic live Tunnel buffer";
+    broker.bridge(app,label,"test",json!({"action":"reset","content":source})).await?;
+    let session=broker.window_binding(label).ok_or("test document")?.session_id;
+    let token=random_token()?;
+    *broker.inner.enabled.lock().unwrap()=true;broker.inner.credentials.lock().unwrap().insert("chatgpt".into(),token.clone());
+    let port=broker.serve_http(app.clone(),"chatgpt".into(),token.clone()).await?;
+    let d=broker.authorize(app,label,&session,"chatgpt",json!({"from":0,"to":source.encode_utf16().count()})).await?;
+    let reference=CredentialRef{service:format!("{}.mcp",app.config().identifier),account:format!("chatgpt-{}",random_token()?)};
+    let instance=random_token()?;
+    let descriptor=BrokerDescriptor{uri:format!("http://127.0.0.1:{port}/mcp"),client:"chatgpt".into(),generation:1,instance:instance.clone(),credential_ref:reference.clone()};
+    let payload=BoundCredential{token,uri:descriptor.uri.clone(),instance,generation:1,external_secret:None};
+    let r=reference.clone();
+    tauri::async_runtime::spawn_blocking(move||OsKeyring.set(&r,&serde_json::to_string(&payload).unwrap())).await.map_err(|_|"test keyring")??;
+    let outcome:Result<(),String>=async {
+        let descriptor_path=directory.join("chatgpt.json");
+        std::fs::write(&descriptor_path,serde_json::to_vec(&descriptor).unwrap()).map_err(|_|"test descriptor")?;
+        std::fs::write(&profile_path,serde_json::to_vec(&json!({"descriptor":descriptor_path,"binding":{"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch},"evidence":evidence})).unwrap()).map_err(|_|"test profile")?;
+        let spec=TunnelLaunchSpec{executable:std::env::current_exe().map_err(|_|"test executable")?,profile:profile_path,generation:1,synthetic:true};
+        let status=broker.inner.tunnel.lock().unwrap().start(&spec,"synthetic-tunnel-key-sentinel")?;
+        for _ in 0..600 {
+            if evidence.exists(){break;}
+            if !broker.inner.tunnel.lock().unwrap().status().process{return Err("synthetic_connector_exited".into());}
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let proof:Value=serde_json::from_slice(&std::fs::read(&evidence).map_err(|_|"tunnel evidence missing")?).map_err(|_|"tunnel evidence invalid")?;
+        ensure(proof["adapter_stdio"]==true&&proof["live_buffer"]==true,"actual sibling adapter read the current authorized buffer")?;
+        ensure(broker.inner.tunnel.lock().unwrap().local_ready(1,status.epoch),"only current generation may become locally ready")?;
+        ensure(!broker.inner.tunnel.lock().unwrap().status().host_verified,"local ready never proves the remote host")?;
+        ensure(std::fs::read(&formal).ok()==before,"transient tracer does not persist formal profiles")?;
+        Ok(())
+    }.await;
+    let stopped=broker.inner.tunnel.lock().unwrap().stop();
+    let _=tauri::async_runtime::spawn_blocking(move||OsKeyring.delete(&reference)).await;
+    outcome?;stopped?;Ok(())
 }
 
 async fn footnotes_tables_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{

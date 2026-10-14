@@ -4,6 +4,7 @@ import {tmpdir, homedir} from 'node:os';
 import {join, resolve} from 'node:path';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {stageDevBundle} from './desktop-dev-macos.mjs';
 
 const mode=process.argv[2] || 'tracer';
 if (mode==='chatgpt-tunnel-contract') {
@@ -12,7 +13,7 @@ if (mode==='chatgpt-tunnel-contract') {
     assert(source.includes('mod chatgpt_tunnel;'),'native Tunnel manager must be registered');
   });
 } else {
-assert(['tracer','task-history-gate','renderer-ack-loss','all-write-entrances','stop-late-second-window','properties-markdown','footnotes-tables','file-identity-conflict'].includes(mode));
+assert(['chatgpt-tunnel-tracer','tracer','task-history-gate','renderer-ack-loss','all-write-entrances','stop-late-second-window','properties-markdown','footnotes-tables','file-identity-conflict'].includes(mode));
 const root=resolve(import.meta.dirname,'..');
 const directory=await mkdtemp(join(tmpdir(),'leaf-mcp-native-'));
 const result=join(directory,'result.json');
@@ -21,16 +22,25 @@ let app, server;
 function start(command,args,options={}) { return spawn(command,args,{cwd:root,env,stdio:['ignore','pipe','pipe'],...options}); }
 function completed(child) { return new Promise((res,rej)=>{ child.on('error',rej);child.on('exit',code=>code===0?res():rej(new Error(`process exited ${code}`))); }); }
 try {
+  if(mode.startsWith('chatgpt-tunnel-')&&!process.argv.includes('--reuse-build')) {
+    const helper=start('cargo',['build','--locked','--manifest-path','src-tauri/Cargo.toml','--bin','leaf-mcp-adapter','--features','native-smoke']);
+    helper.stdout.pipe(process.stdout);helper.stderr.pipe(process.stderr);await completed(helper);
+    assert(await readFile(join(root,'src-tauri/target/debug/leaf-mcp-adapter')),'actual sibling helper required');
+  }
   await writeFile(join(directory,'synthetic.md'),'Synthetic saved draft');
   await writeFile(join(directory,'different.md'),'Different saved draft');
   await writeFile(join(directory,'synthetic.txt'),'Public synthetic attachment');
-  const build=start('node',['node_modules/@tauri-apps/cli/tauri.js','build','--debug','--no-bundle','--features','native-smoke','--config','src-tauri/tauri.mcp-test.conf.json']);
-  build.stdout.pipe(process.stdout);build.stderr.pipe(process.stderr);await completed(build);
+  if(!process.argv.includes('--reuse-build')) {
+    const build=start('node',['node_modules/@tauri-apps/cli/tauri.js','build','--debug','--no-bundle','--features','native-smoke','--config','src-tauri/tauri.mcp-test.conf.json']);
+    build.stdout.pipe(process.stdout);build.stderr.pipe(process.stderr);await completed(build);
+  }
+  let executable=join(root,'src-tauri/target/debug/leaf');
+  if(mode.startsWith('chatgpt-tunnel-'))executable=(await stageDevBundle({source:executable,helper:join(root,'src-tauri/target/debug/leaf-mcp-adapter'),test:true})).executable;
   server=start('node',['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','41731','--strictPort']);
   for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:41731')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
   for(const runMode of mode==='renderer-ack-loss'?[mode,'renderer-ack-loss-restart']:[mode]) {
     await rm(result,{force:true});
-    app=start(join(root,'src-tauri/target/debug/leaf'),[],{env:{...env,LEAF_MCP_TEST_MODE:runMode}});
+    app=start(executable,[],{env:{...env,LEAF_MCP_TEST_MODE:runMode}});
     app.stderr.on('data',chunk=>process.stderr.write(chunk));
     let report;
     for(let i=0;i<900;i++){try{report=JSON.parse(await readFile(result,'utf8'));break;}catch{}if(app.exitCode!==null)break;await new Promise(r=>setTimeout(r,100));}

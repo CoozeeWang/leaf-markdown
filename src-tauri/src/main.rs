@@ -1148,7 +1148,12 @@ fn development_window<'a>(app: &tauri::AppHandle, builder: tauri::WebviewWindowB
     builder
 }
 
+mod chatgpt_tunnel;
 fn main() {
+    #[cfg(feature="native-smoke")]
+    if std::env::var("LEAF_MCP_TEST_PROCESS_ROLE").ok().as_deref()==Some("chatgpt-tunnel-fixture") {
+        std::process::exit(chatgpt_tunnel::synthetic_fixture_main());
+    }
     #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
     configure_development(context.config_mut());

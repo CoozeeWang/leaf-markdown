@@ -68,9 +68,9 @@ impl MutationLedger {
 }
 #[derive(Clone)]
 pub struct LeafMcpBroker {pub inner:Arc<BrokerState>}
-pub struct BrokerState {pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,pub credentials:Mutex<HashMap<String,String>>,pub profiles:Mutex<Option<AiClientProfileStore>>,pub results:Mutex<HashMap<String,(String,Value)>>,pub ledger:MutationLedger,leases:Mutex<AuthenticatedLeaseManager>,pending_finishes:Mutex<HashMap<String,Value>>,watchdog_started:std::sync::atomic::AtomicBool}
+pub struct BrokerState {pub tunnel:Mutex<super::chatgpt_tunnel::TunnelManager>,pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,pub credentials:Mutex<HashMap<String,String>>,pub profiles:Mutex<Option<AiClientProfileStore>>,pub results:Mutex<HashMap<String,(String,Value)>>,pub ledger:MutationLedger,leases:Mutex<AuthenticatedLeaseManager>,pending_finishes:Mutex<HashMap<String,Value>>,watchdog_started:std::sync::atomic::AtomicBool}
 impl Default for LeafMcpBroker {
-    fn default()->Self {Self{inner:Arc::new(BrokerState{registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default(),leases:Mutex::new(AuthenticatedLeaseManager::default()),pending_finishes:Mutex::new(HashMap::new()),watchdog_started:std::sync::atomic::AtomicBool::new(false)})}}
+    fn default()->Self {Self{inner:Arc::new(BrokerState{tunnel:Mutex::new(super::chatgpt_tunnel::TunnelManager::default()),registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default(),leases:Mutex::new(AuthenticatedLeaseManager::default()),pending_finishes:Mutex::new(HashMap::new()),watchdog_started:std::sync::atomic::AtomicBool::new(false)})}}
 }
 impl LeafMcpBroker {
     pub fn register_window(&self,app:&tauri::AppHandle,label:&str)->OpenedDocument {
