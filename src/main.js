@@ -2185,7 +2185,11 @@ if (desktop) {
         let result;
         if(operation==='snapshot')result=editor.mcpSnapshot();
         else if(operation==='begin')result=editor.beginAiTask(args);
-        else if(operation==='apply')result=await editor.applyMcpBatch(args);
+        else if(operation==='apply') {
+          const realClock=Date.now;
+          if(testMode && args.test_clock!==undefined) Date.now=()=>Number(args.test_clock);
+          try {result=await editor.applyMcpBatch(args);}finally{Date.now=realClock;}
+        }
         else if(operation==='finish')result=editor.finishAiTask(args);
         else if(operation==='query_renderer_mutation')result=editor.queryRendererMutation(args.mutation_id);
         else if(operation==='test' && testMode) {
