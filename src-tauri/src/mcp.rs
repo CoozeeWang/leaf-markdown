@@ -141,6 +141,8 @@ impl LeafMcpBroker {
         let broker=self.clone();tauri::async_runtime::spawn(async move{loop{
             tokio::time::sleep(Duration::from_secs(1)).await;
             let _serial=broker.inner.queue.lock().await;
+            let tunnel_failed=broker.inner.tunnel.lock().unwrap().supervise();
+            if tunnel_failed {broker.invalidate_client(&app,"chatgpt").await;}
             let docs:Vec<_>=broker.inner.registry.lock().unwrap().documents.values().cloned().collect();
             for mut d in docs {if d.task.as_ref().is_some_and(|task|broker.inner.leases.lock().unwrap().expired(task["task_id"].as_str().unwrap_or(""),lease_now())){let _=broker.finalize(&app,&mut d).await;}}
             let pending:Vec<_>=broker.inner.pending_finishes.lock().unwrap().iter().map(|(label,task)|(label.clone(),task.clone())).collect();
@@ -190,7 +192,8 @@ impl LeafMcpBroker {
         for mut d in documents {
             let _=self.finalize(app,&mut d).await;
             d.task=None;d.client=None;d.scope=None;d.authorization_epoch+=1;
-            self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d);
+            self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d.clone());
+            let _=self.bridge(app,&d.label,"binding",json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch,"mutation_generation":d.mutation_generation})).await;
         }
     }
     pub async fn revoke_client(&self,app:&tauri::AppHandle,client:&str,clear:bool,operation:&str)->Result<AiClientProfile,String> {
@@ -282,6 +285,7 @@ impl LeafMcpBroker {
     }
     pub async fn start_tunnel(&self,app:&tauri::AppHandle)->Result<Value,String>{
         let _serial=self.inner.queue.lock().await;
+        self.start_watchdog(app.clone());
         if !*self.inner.enabled.lock().unwrap(){return Err("connection_disabled".into());}
         let profile=self.inner.profiles.lock().unwrap().as_ref().ok_or("profiles_unavailable")?.status("chatgpt")?;
         if !profile.enabled{return Err("client_disabled".into());}

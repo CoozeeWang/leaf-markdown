@@ -15,22 +15,29 @@ pub struct TunnelRuntimeStatus {
     pub process:bool,pub local_ready:bool,pub host_verified:bool,pub last_error:Option<String>,
 }
 #[derive(Default)]
-pub struct TunnelManager { child:Option<OwnedProcess>,status:TunnelRuntimeStatus,health_file:Option<PathBuf>,started:Option<Instant> }
+pub struct TunnelManager { child:Option<OwnedProcess>,status:TunnelRuntimeStatus,health_file:Option<PathBuf>,started:Option<Instant>,failure_pending:bool }
 #[cfg(not(windows))] type OwnedProcess=Child;
 #[cfg(windows)] type OwnedProcess=windows_tree::OwnedJob;
 impl TunnelManager {
     pub fn status(&mut self)->TunnelRuntimeStatus {
         if self.child.as_mut().is_some_and(|c|c.try_wait().ok().flatten().is_some()) {
-            let _=self.stop();self.status.last_error=Some("tunnel_exited".into());
+            let _=self.stop();self.status.last_error=Some("tunnel_exited".into());self.failure_pending=true;
         }
         if self.status.process&&!self.status.local_ready {
             if self.health_file.as_ref().is_some_and(|p|local_ready_probe(p)){self.status.local_ready=true;}
             else if self.health_file.is_some()&&self.started.is_some_and(|s|s.elapsed()>Duration::from_secs(90)) {
-                let _=self.stop();self.status.last_error=Some("tunnel_start_timeout".into());
+                let _=self.stop();self.status.last_error=Some("tunnel_start_timeout".into());self.failure_pending=true;
             }
         }self.status.clone()
     }
     pub fn configured(&mut self,saved:bool,present:bool){self.status.saved_config=saved;self.status.runtime_present=present;}
+    // Status callers cannot consume failure notification. Only the native
+    // supervisor, serialized with start/stop/configuration, retires access.
+    pub fn supervise(&mut self)->bool {
+        self.status();
+        if !self.status.process&&self.child.is_some(){let _=self.stop();}
+        std::mem::take(&mut self.failure_pending)
+    }
     #[cfg(feature="native-smoke")]
     pub(crate) fn expire_start_for_test(&mut self){self.started=Some(Instant::now()-Duration::from_secs(91));}
     pub fn start(&mut self,spec:&TunnelLaunchSpec,key:&str)->Result<TunnelRuntimeStatus,String> {
@@ -49,6 +56,7 @@ impl TunnelManager {
         self.health_file=spec.health_file.clone();self.started=Some(Instant::now());
         self.status.generation=spec.generation;self.status.epoch+=1;self.status.process=true;
         self.status.runtime_present=true;self.status.local_ready=false;self.status.host_verified=false;self.status.last_error=None;
+        self.failure_pending=false;
         Ok(self.status.clone())
     }
     pub fn local_ready(&mut self,generation:u64,epoch:u64)->bool {
@@ -56,7 +64,7 @@ impl TunnelManager {
     }
     pub fn stop(&mut self)->Result<(),String> {
         self.status.epoch+=1;self.status.process=false;self.status.local_ready=false;self.status.host_verified=false;
-        if let Some(mut child)=self.child.take(){
+        if let Some(child)=self.child.as_mut(){
             #[cfg(unix)] {
                 let group=format!("-{}",child.id());
                 let _=Command::new("/bin/kill").args(["-KILL","--",&group]).stdout(Stdio::null()).stderr(Stdio::null()).status();
@@ -69,7 +77,9 @@ impl TunnelManager {
             }
             #[cfg(windows)] {child.stop()?;}
             #[cfg(not(any(unix,windows)))] {let _=child.kill();let _=child.wait();}
-        }Ok(())
+        }
+        // Retain the owned process group/Job handles if termination failed.
+        self.child=None;Ok(())
     }
 }
 impl Drop for TunnelManager {fn drop(&mut self){let _=self.stop();}}
@@ -245,7 +255,11 @@ pub fn synthetic_fixture_main()->i32 {
         let runtime=tokio::runtime::Runtime::new().map_err(|_|"fixture_runtime")?;
         runtime.block_on(async {
             use rmcp::ServiceExt;
-            if profile["mode"]=="hang-start"{std::future::pending::<()>().await;}
+            if profile["mode"]=="hang-start"{
+                let descendant=Command::new(if cfg!(windows){"timeout.exe"}else{"/bin/sleep"}).arg("30").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|_|"fixture_descendant")?;
+                std::fs::write(profile["evidence"].as_str().ok_or("fixture_evidence")?,serde_json::to_vec(&serde_json::json!({"connector_pid":std::process::id(),"descendant_pid":descendant.id(),"host_verified":false})).unwrap()).map_err(|_|"fixture_evidence")?;
+                std::future::pending::<()>().await;
+            }
             let helper=if let Some(path)=profile["helper"].as_str(){PathBuf::from(path)}else{std::env::current_exe().map_err(|_|"fixture_executable")?.parent().unwrap().join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"})};
             let mut command=tokio::process::Command::new(helper);
             if let Some(trace)=profile["adapter_env"].as_str(){command.env("LEAF_MCP_TEST_ADAPTER_ENV_TRACE",trace);}
@@ -266,6 +280,11 @@ pub fn synthetic_fixture_main()->i32 {
                 tokio::spawn(async move{use tokio::io::{AsyncReadExt,AsyncWriteExt};while let Ok((mut stream,_))=listener.accept().await {let mut request=[0;1024];let _=stream.read(&mut request).await;let _=stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK").await;}});
             }
             // Keep the real adapter connected so its authenticated heartbeat remains independent.
+            if profile["mode"]=="crash-on-command" {
+                let signal=PathBuf::from(std::env::var_os("LEAF_MCP_TEST_DIR").ok_or("fixture_directory")?).join("fixture-crash.signal");
+                while !signal.exists(){tokio::time::sleep(Duration::from_millis(25)).await;}
+                std::process::exit(7);
+            }
             std::future::pending::<()>().await;Ok(())
         })
     })();
@@ -305,9 +324,12 @@ mod tests {
         let directory=tempfile::tempdir().unwrap();let mut launch=spec(fixture(directory.path(),"sleep 30 & wait"));launch.health_file=Some(directory.path().join("missing-health"));
         let mut manager=TunnelManager::default();manager.start(&launch,"synthetic-unit-key").unwrap();manager.started=Some(Instant::now()-Duration::from_secs(91));
         assert_eq!(manager.status().last_error.as_deref(),Some("tunnel_start_timeout"));assert!(!manager.status().process);
+        assert!(manager.supervise(),"a prior status observation cannot consume native failure invalidation");
+        assert!(!manager.supervise(),"one failed generation invalidates once");
         launch.executable=fixture(directory.path(),"sleep 30 & exit 1");launch.health_file=None;manager.start(&launch,"synthetic-unit-key").unwrap();let root=manager.child.as_ref().unwrap().id();
         for _ in 0..100{if !manager.status().process{break;}std::thread::sleep(Duration::from_millis(10));}
         assert_eq!(manager.status().last_error.as_deref(),Some("tunnel_exited"));
+        assert!(manager.supervise());assert!(!manager.supervise());
         assert!(!Command::new("/bin/kill").args(["-0","--",&format!("-{root}")]).stdout(Stdio::null()).stderr(Stdio::null()).status().unwrap().success());
     }
     #[test]

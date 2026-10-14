@@ -397,12 +397,30 @@ async fn tunnel_lifecycle(app:&tauri::AppHandle,label:&str,broker:&super::mcp::L
     broker.configure_tunnel(app,format!("tunnel_{}","b".repeat(32)),fixture.clone(),String::new(),"replace-blank".into(),generation()?).await?;ensure_tree_stopped(&old).await?;
     ensure(broker.inner.profiles.lock().unwrap().as_ref().unwrap().status("chatgpt")?.runtime_ref==runtime_ref,"blank reconfiguration retains the GUI-only key entry")?;
     start_fixture("hang-start".into()).await?;
+    let hung=wait_tunnel_proof_without_status(&evidence).await?;
+    ensure(broker.bridge(app,label,"test",json!({"action":"close-ai-settings"})).await?["closed"]==true,"settings is closed before unattended supervision")?;
+    // Only the native-smoke build advances the 90-second startup clock.
     broker.inner.tunnel.lock().unwrap().expire_start_for_test();
-    for _ in 0..200{if !broker.tunnel_status()?["runtime"]["process"].as_bool().unwrap_or(false){break;}tokio::time::sleep(std::time::Duration::from_millis(100)).await;}
+    ensure_tree_stopped(&hung).await?;
+    ensure(!broker.inner.credentials.lock().unwrap().contains_key("chatgpt"),"unattended timeout retires client without a status request")?;
     ensure(broker.tunnel_status()?["runtime"]["last_error"]=="tunnel_start_timeout","actual startup is bounded")?;
-    start_fixture("crash-root".into()).await?;let crashed=wait_tunnel_proof(broker,&evidence,false).await?;
-    for _ in 0..100{if broker.tunnel_status()?["runtime"]["process"]==false{break;}tokio::time::sleep(std::time::Duration::from_millis(50)).await;}
-    ensure_tree_stopped(&crashed).await?;ensure(broker.tunnel_status()?["runtime"]["local_ready"]==false,"parent crash cannot leave local ready")?;
+    start_fixture("crash-on-command".into()).await?;let crashed=wait_tunnel_proof_without_status(&evidence).await?;
+    let d=broker.window_binding(label).ok_or("fixture binding")?;
+    let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+    let before=broker.bridge(app,label,"snapshot",json!({})).await?;
+    let mut begin=binding.clone();begin["request_id"]=json!("unattended-crash-task");begin["revision"]=before["revision"].clone();
+    let task=broker.call(app,"chatgpt","begin_edit",begin).await?;
+    let mut batch=binding.clone();batch["request_id"]=json!("unattended-crash-batch");batch["task_id"]=task["task_id"].clone();batch["revision"]=before["revision"].clone();batch["changes"]=json!([{"from":source.len(),"to":source.len(),"expected":"","insert":" revised"}]);
+    broker.call(app,"chatgpt","apply_edit_batch",batch).await?;
+    broker.bridge(app,label,"test",json!({"action":"close-ai-settings"})).await?;
+    std::fs::write(root.join("fixture-crash.signal"),"").map_err(|_|"fixture crash signal")?;
+    ensure_tree_stopped(&crashed).await?;
+    for _ in 0..40{if !broker.window_locked(label)&&!broker.inner.credentials.lock().unwrap().contains_key("chatgpt"){break;}tokio::time::sleep(std::time::Duration::from_millis(50)).await;}
+    ensure(!broker.window_locked(label)&&!broker.inner.credentials.lock().unwrap().contains_key("chatgpt"),"unattended crash closes task and capabilities without status polling")?;
+    ensure(broker.bridge(app,label,"snapshot",json!({})).await?["content"]==format!("{source} revised"),"unattended crash preserves the applied draft")?;
+    ensure(broker.call(app,"chatgpt","read_document",binding).await.is_err(),"unattended crash retires previous grant")?;
+    ensure(broker.bridge(app,label,"test",json!({"action":"undo"})).await?["content"]==source,"crash-finalized task preserves one undo")?;
+    ensure(broker.tunnel_status()?["runtime"]["local_ready"]==false,"parent crash cannot leave local ready")?;
     start_fixture("normal".into()).await?;let cleared=wait_tunnel_proof(broker,&evidence,true).await?;
     broker.revoke_client(app,"chatgpt",true,"tunnel-clear").await?;ensure_tree_stopped(&cleared).await?;
     ensure(broker.tunnel_status()?["profile"]["has_runtime_key"]==false&&broker.tunnel_status()?["runtime"]["saved_config"]==false,"clear removes only ChatGPT configuration")?;
@@ -426,6 +444,12 @@ async fn wait_tunnel_proof(broker:&super::mcp::LeafMcpBroker,path:&std::path::Pa
         if let Ok(bytes)=std::fs::read(path){if let Ok(proof)=serde_json::from_slice::<Value>(&bytes){if !ready||broker.tunnel_status()?["runtime"]["local_ready"]==true {ensure(proof["live_buffer"]==true&&proof["host_verified"]==false,"actual adapter buffer proof remains local-only")?;return Ok(proof);}}}
         let status=broker.tunnel_status()?;if status["runtime"]["process"]==false{let root=path.parent().unwrap();let stage=std::fs::read_to_string(root.join("adapter-startup.trace")).unwrap_or_else(|_|"adapter_not_started".into());return Err(format!("fixture stopped: {}; helper stage: {stage}; buffer proof: {}",status["runtime"]["last_error"].as_str().unwrap_or("none"),path.exists()));}tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }Err("fixture readiness timed out".into())
+}
+async fn wait_tunnel_proof_without_status(path:&std::path::Path)->Result<Value,String>{
+    for _ in 0..200 {
+        if let Ok(bytes)=std::fs::read(path){if let Ok(proof)=serde_json::from_slice(&bytes){return Ok(proof);}}
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }Err("unattended fixture evidence missing".into())
 }
 async fn ensure_tree_stopped(proof:&Value)->Result<(),String>{
     for _ in 0..100 {

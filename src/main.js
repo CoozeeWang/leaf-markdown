@@ -2624,6 +2624,7 @@ if (desktop) {
             while(aiConnection.busy) await new Promise(resolve=>setTimeout(resolve,10));
             result={key_empty:aiNode('aiRuntimeKey').value==='',focus:document.activeElement.id};
           }
+          else if(args.action==='close-ai-settings') {closeSettings();result={closed:appearancePopover.hidden};}
           else if(args.action==='selection') editor.view.dispatch({selection:{anchor:args.anchor,head:args.head??args.anchor}});
           else if(args.action==='ai-settings-authorize') {
             openSettings('ai');await refreshAiConnections();
