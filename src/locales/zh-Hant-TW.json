@@ -717,15 +717,13 @@
   "comments.add": "新增批註",
   "comments.show": "查看批註",
   "comments.sidebar": "批註與註腳",
-  "comments.expand": "展開批註與註腳",
+  "comments.expand": "展開批註",
   "comments.collapse": "收合批註與註腳",
   "comments.resize": "調整批註與註腳側欄寬度",
   "comments.empty": "本文沒有批註",
   "comments.range": "範圍批註",
   "comments.point": "位置批註",
   "comments.hidden": "隱藏註解",
-  "comments.edit": "編輯",
-  "comments.finish": "結束編輯",
   "comments.delete": "刪除批註",
   "comments.body": "批註內容",
   "comments.position": "此處批註",
@@ -735,5 +733,6 @@
   "comments.add_shortcut": "新增批註 ({{shortcut}})",
   "comments.pdf_omit": "PDF 不包含批註、隱藏註解及批註標記。",
   "comments.pdf_revision": "本文包含未處理的修訂標記，將按原樣匯出。",
-  "comments.position_invalid": "請將游標放在正文文字之間，再新增批註。"
+  "comments.position_invalid": "請將游標放在正文文字之間，再新增批註。",
+  "comments.edit_hint": "按兩下或按 Enter 編輯批註"
 }

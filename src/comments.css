@@ -1,4 +1,6 @@
 .annotation-tabs{display:flex;gap:8px;align-items:center;flex:1;min-width:0}
+.annotation-rail{gap:8px}
+.annotation-rail .icon-control{width:32px;height:28px;flex:none;padding:4px;border:0;border-radius:0}
 .drawer-header .annotation-tabs button{font:inherit;border:0;border-radius:0;background:none;color:var(--muted);padding:6px 9px;display:flex;gap:6px;align-items:center;min-height:30px;width:auto;height:auto;white-space:nowrap;flex:none}
 .annotation-tabs button[aria-selected="true"]{color:var(--text);box-shadow:inset 0 -2px var(--accent)}
 .annotation-tabs button:focus-visible{outline:1px solid var(--accent);outline-offset:-1px;border-radius:4px}
@@ -7,11 +9,12 @@
 .comment-card.active{background:color-mix(in srgb,var(--accent-soft) 55%,var(--canvas));border-color:var(--accent)}
 .comment-quote{display:block;text-align:start;background:none;border:0;padding:0;color:var(--muted);font:inherit;font-size:12px;width:100%;white-space:normal}
 .comment-quote:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
-.comment-body{white-space:pre-wrap;margin:6px 0}
+.comment-body{white-space:pre-wrap;margin:6px 0;min-height:1.7em}
+.comment-body:focus-visible{outline:1px solid var(--accent);outline-offset:2px;border-radius:2px}
 .comment-body textarea{box-sizing:border-box;width:100%;min-height:60px;resize:vertical;font:inherit;color:var(--text);background:var(--canvas);border:1px solid var(--accent);border-radius:6px;padding:6px;outline:none}
 .comment-body textarea:focus{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 15%,transparent)}
 .comment-actions{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px}
-.comment-actions span{margin-inline-end:auto}.comment-actions button{font:inherit;font-size:12px;background:none;border:0;color:var(--muted);min-height:28px;padding:3px}
+.comment-actions span{margin-inline-end:auto}.comment-actions button{font:inherit;font-size:12px;background:none;border:0;color:var(--muted);width:28px;min-height:28px;padding:3px;display:inline-flex;align-items:center;justify-content:center}
 .comment-delete:hover{color:var(--danger)}
 .leaf-comment-range{background:color-mix(in srgb,var(--accent) 22%,var(--canvas));border-radius:2px;cursor:inherit;box-decoration-break:clone;-webkit-box-decoration-break:clone}
 .leaf-comment-range.active{background:color-mix(in srgb,var(--accent) 32%,var(--canvas))}

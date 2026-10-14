@@ -30,12 +30,13 @@ export function setupCommentPanel({editor,getMode,open,status,locate}) {
      card=document.createElement('section');card.className='comment-card';card.dataset.commentId=note.id;
      const jump=document.createElement('button');jump.type='button';jump.className='comment-quote';jump.onclick=()=>{current=card.dataset.commentId;if(locate)locate(card._comment);else editor.goToComment(current);render();};card.append(jump);
      const body=document.createElement('div');body.className='comment-body';body.ondblclick=()=>edit(card.dataset.commentId);card.append(body);
+     body.addEventListener('keydown',e=>{if(e.target===body&&!e.isComposing&&(e.key==='Enter'||e.key===' ')){e.preventDefault();edit(card.dataset.commentId);}});
      const actions=document.createElement('div');actions.className='comment-actions';actions.append(document.createElement('span'));
-     const editButton=document.createElement('button');editButton.type='button';editButton.className='comment-edit';editButton.onclick=()=>editing===card.dataset.commentId?finish():edit(card.dataset.commentId);actions.append(editButton);
      const remove=document.createElement('button');remove.type='button';remove.className='comment-delete';remove.innerHTML=uiIcon('trash',14);setAttr(remove,'aria-label',()=>t('comments.delete'));setAttr(remove,'data-tooltip',()=>t('comments.delete'));remove.onclick=()=>{editing=null;editor.deleteComment(card.dataset.commentId);render();};actions.append(remove);card.append(actions);
     }
     card._comment=note;card.classList.toggle('active',note.id===current);card.querySelector('.comment-quote').textContent=commentQuote(note.quote)||t('comments.position');setText(card.querySelector('.comment-actions span'),()=>t('comments.'+note.kind));
     const body=card.querySelector('.comment-body'),input=body.querySelector('textarea');
+    body.tabIndex=reading||editing===note.id?-1:0;setAttr(body,'data-tooltip',()=>reading?'':t('comments.edit_hint'));setAttr(body,'aria-description',()=>reading?'':t('comments.edit_hint'));
     if(editing===note.id&&!reading){
      if(!input){
       const area=document.createElement('textarea');area.value=note.text;area.rows=2;setAttr(area,'aria-label',()=>t('comments.body'));body.replaceChildren(area);
@@ -44,7 +45,7 @@ export function setupCommentPanel({editor,getMode,open,status,locate}) {
       area.addEventListener('blur',()=>{if(editing===card.dataset.commentId&&!area._composing)finish();});area.addEventListener('compositionstart',()=>area._composing=true);area.addEventListener('compositionend',()=>{area._composing=false;render();});
      }else if(!input._composing&&input.value!==note.text){const pos=input.selectionStart;input.value=note.text;input.setSelectionRange(Math.min(pos,note.text.length),Math.min(pos,note.text.length));}
     }else if(input||body.textContent!==note.text)body.textContent=note.text;
-    setText(card.querySelector('.comment-edit'),()=>t(editing===note.id?'comments.finish':'comments.edit'));card.querySelector('.comment-edit').hidden=reading;card.querySelector('.comment-delete').hidden=reading;
+    card.querySelector('.comment-delete').hidden=reading;
     // A focused textarea must not be reparented during composition.
     const expected=list.children[i];if(expected!==card)list.insertBefore(card,expected??null);
    });

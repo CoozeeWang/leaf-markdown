@@ -710,8 +710,6 @@
   "CM0009": "comments.range",
   "CM0010": "comments.point",
   "CM0011": "comments.hidden",
-  "CM0012": "comments.edit",
-  "CM0013": "comments.finish",
   "CM0014": "comments.delete",
   "CM0015": "comments.body",
   "CM0016": "comments.position",
@@ -721,5 +719,6 @@
   "CM0020": "comments.add_shortcut",
   "CM0021": "comments.pdf_omit",
   "CM0022": "comments.pdf_revision",
-  "CM0023": "comments.position_invalid"
+  "CM0023": "comments.position_invalid",
+  "CM0024": "comments.edit_hint"
 }

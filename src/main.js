@@ -186,7 +186,10 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <div id="commentsList" class="comments-list" role="tabpanel" aria-labelledby="commentsTab"></div>
         <div id="notesList" class="notes-list" role="tabpanel" aria-labelledby="notesTab" hidden></div>
       </aside>
-      <button id="notesButton" class="sidebar-rail sidebar-rail-right" aria-label="${t("comments.expand")}" data-i18n-aria-label="comments.expand" aria-controls="notesDrawer" aria-expanded="false" aria-pressed="false" data-tooltip="${t("comments.expand")}" data-i18n-data-tooltip="comments.expand">${icon('notes')}</button>
+      <div id="annotationRail" class="sidebar-rail sidebar-rail-right annotation-rail" role="group" aria-label="${t('comments.sidebar')}" data-i18n-aria-label="comments.sidebar">
+        <button id="commentsButton" class="icon-control" aria-label="${t('comments.expand')}" data-i18n-aria-label="comments.expand" aria-controls="notesDrawer" aria-expanded="false" data-tooltip="${t('comments.expand')}" data-i18n-data-tooltip="comments.expand">${icon('comment')}</button>
+        <button id="notesButton" class="icon-control" aria-label="${t('main.expand_footnotes')}" data-i18n-aria-label="main.expand_footnotes" aria-controls="notesDrawer" aria-expanded="false" aria-pressed="false" data-tooltip="${t('main.expand_footnotes')}" data-i18n-data-tooltip="main.expand_footnotes">${icon('notes')}</button>
+      </div>
     </section>
 
     <footer class="statusbar">
@@ -617,6 +620,8 @@ function renderOutline(markdown = state.content) {
 const notesDrawer = document.querySelector('#notesDrawer');
 const notesList = document.querySelector('#notesList');
 const notesButton = document.querySelector('#notesButton');
+const commentsButton = document.querySelector('#commentsButton');
+const annotationRail = document.querySelector('#annotationRail');
 const outlineButton = document.querySelector('#outlineButton');
 const resizeOutline = setupSidebarResize(outlineDrawer, {side: 'left', name: 'outline', defaultWidth: 280, other: notesDrawer});
 const resizeNotes = setupSidebarResize(notesDrawer, {side: 'right', name: 'notes', defaultWidth: 300, other: outlineDrawer});
@@ -814,7 +819,8 @@ function gotoNote(row) {
 
 function setNotesDrawer(open) {
   if (open && narrowSidebar.matches && outlineDrawer.classList.contains('visible')) setOutlineDrawer(false);
-  notesButton.hidden = open;
+  annotationRail.hidden = open;
+  commentsButton.setAttribute('aria-expanded', String(open));
   notesButton.setAttribute('aria-expanded', String(open));
   notesDrawer.classList.toggle('visible', open);
   notesButton.setAttribute('aria-pressed', String(open));
@@ -826,6 +832,7 @@ function setNotesDrawer(open) {
 }
 
 function toggleNotesDrawer() {
+  if(!notesDrawer.classList.contains('visible'))commentPanel?.selectTab('notes');
   setNotesDrawer(!notesDrawer.classList.contains('visible'));
 }
 
@@ -1617,7 +1624,8 @@ for (const [button, action] of [[undoButton, 'undo'], [redoButton, 'redo']]) {
 }
 document.querySelector('[data-close="outline"]').addEventListener('click', () => { setOutlineDrawer(false); outlineButton.focus(); });
 document.querySelector('#notesButton').addEventListener('click', toggleNotesDrawer);
-document.querySelector('[data-close="notes"]').addEventListener('click', () => { setNotesDrawer(false); notesButton.focus(); });
+commentsButton.addEventListener('click',()=>{commentPanel?.selectTab('comments');setNotesDrawer(true);});
+document.querySelector('[data-close="notes"]').addEventListener('click', () => { setNotesDrawer(false); (document.querySelector('#commentsTab').getAttribute('aria-selected')==='true'?commentsButton:notesButton).focus(); });
 // The reading view keeps its own jump down to the printed list; lighting up the
 // matching row as well is what a reader expects the panel to do, and it costs no
 // navigation of its own.

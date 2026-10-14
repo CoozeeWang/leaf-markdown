@@ -717,15 +717,13 @@
   "comments.add": "Add Comment",
   "comments.show": "Show Comment",
   "comments.sidebar": "Comments and Footnotes",
-  "comments.expand": "Expand Comments and Footnotes",
+  "comments.expand": "Expand Comments",
   "comments.collapse": "Collapse Comments and Footnotes",
   "comments.resize": "Resize Comments and Footnotes Sidebar",
   "comments.empty": "No comments in this document",
   "comments.range": "Range comment",
   "comments.point": "Point comment",
   "comments.hidden": "Hidden comment",
-  "comments.edit": "Edit",
-  "comments.finish": "Finish Editing",
   "comments.delete": "Delete Comment",
   "comments.body": "Comment text",
   "comments.position": "Comment at this position",
@@ -735,5 +733,6 @@
   "comments.add_shortcut": "Add Comment ({{shortcut}})",
   "comments.pdf_omit": "Comments, hidden comments, and annotation markers are not included in the PDF.",
   "comments.pdf_revision": "This document contains unresolved revision markup, which will be exported as written.",
-  "comments.position_invalid": "Place the cursor between body text characters, then add a comment."
+  "comments.position_invalid": "Place the cursor between body text characters, then add a comment.",
+  "comments.edit_hint": "Double-click or press Enter to edit the comment"
 }
