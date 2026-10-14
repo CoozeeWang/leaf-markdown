@@ -150,6 +150,8 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <button id="displayButton" aria-label="${t("main.display")}" data-i18n-aria-label="main.display" aria-haspopup="dialog" aria-expanded="false" data-tooltip="${t("main.display")}" data-i18n-data-tooltip="main.display">${icon('eye')}</button>
     </nav>
 
+    <div class="document-notices" style="grid-row:3;min-width:0">
+    <div id="aiTaskNotice" class="status-notice" data-kind="error" role="status" aria-live="polite" hidden></div>
     <div id="statusNotice" class="status-notice" hidden>
       <span id="saveStatus" class="save-status" hidden></span>
       <button id="recoveryNotice" class="recovery-notice" hidden>${h("main.recovery_available_view")}</button>
@@ -157,6 +159,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <button id="dismissStatus" class="dismiss-status" aria-label="${t("main.dismiss_notice")}" data-i18n-aria-label="main.dismiss_notice" data-tooltip="${t("main.dismiss_notice")}" data-i18n-data-tooltip="main.dismiss_notice">${icon('close', 14)}</button>
     </div>
     <span id="statusAnnouncement" class="status-announcement" role="status" aria-live="polite" aria-atomic="true"></span>
+    </div>
 
     <section class="document-area">
       <div id="editor" class="editor-host"></div>
@@ -353,6 +356,7 @@ const statusNotices = setupStatusNotices({
   dismiss: document.querySelector('#dismissStatus'),
   announcement: document.querySelector('#statusAnnouncement'),
   saveIndicator: document.querySelector('#saveIndicator'),
+  taskContainer: document.querySelector('#aiTaskNotice'),
   format: shortcutText,
 });
 const setStatus = statusNotices.show;
@@ -905,6 +909,15 @@ const editor = createLeafEditor({
   showBlankMarkers: state.showBlankMarkers,
   showFileNameTitle: state.showFileNameTitle,
   showHeadingNumbers: state.showHeadingNumbers,
+  onAiTaskChange(task){
+    const client=({'chatgpt':'ChatGPT','claude-desktop':'Claude Desktop','workbuddy':'WorkBuddy'})[task?.client] ?? task?.client ?? 'AI';
+    // Presentation/localized resources are reconciled by the settings UI slice.
+    const taskCopy=()=>document.documentElement.lang.startsWith('en')?`${client} is editing with AI assistance. This document is temporarily read-only; you can browse and find.`:document.documentElement.lang.startsWith('zh-Hant')?`${client} 正在輔助編輯，此文件暫時唯讀，可瀏覽、尋找。`:`${client} 正在辅助编辑，此文档暂时只读，可浏览、查找。`;
+    statusNotices.setTask(task?{text:taskCopy,stopLabel:()=>document.documentElement.lang.startsWith('en')?'End editing':document.documentElement.lang.startsWith('zh-Hant')?'結束編輯':'结束编辑',stop:async()=>{
+      await invoke('mcp_stop_edit',{taskId:task.task_id}).catch(()=>setStatus(taskCopy(),'error'));
+    }}:null);
+    updateHistoryControls();
+  },
   onChange(content, labels) {
     for (const card of notesList.querySelectorAll('.note-card')) {
       const label = labels?.get(card.dataset.label);
@@ -967,8 +980,8 @@ setAttr(document.querySelector('[data-format="code"]'), 'data-tooltip', () => sh
 // offering an action that would do nothing.
 function updateHistoryControls() {
   const depth = editor.historyDepth();
-  undoButton.disabled = depth.undo === 0;
-  redoButton.disabled = depth.redo === 0;
+  undoButton.disabled = !editor.mutationAllowed() || depth.undo === 0;
+  redoButton.disabled = !editor.mutationAllowed() || depth.redo === 0;
 }
 
 const readingPane = document.querySelector('#readingPane');

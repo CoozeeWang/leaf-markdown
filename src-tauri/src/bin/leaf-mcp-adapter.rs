@@ -43,7 +43,20 @@ async fn run()->Result<(),String> {
     let adapter=Adapter{upstream:Arc::new(upstream.peer().clone()),info};
     let service=adapter.serve(stdio()).await.map_err(|_|"stdio_unavailable")?;
     trace("stdio_initialized");
-    service.waiting().await.map_err(|_|"stdio_unavailable")?;
+    // Independent of model calls and their request deadlines. EOF terminates
+    // this loop; a killed helper stops renewing and the broker lease expires.
+    let peer=upstream.peer().clone();
+    let heartbeat=tokio::spawn(async move{
+        #[cfg(not(feature="native-smoke"))]
+        let period=std::time::Duration::from_secs(5);
+        #[cfg(feature="native-smoke")]
+        let period=if std::env::var_os("LEAF_AI_LIFECYCLE_NATIVE").is_some(){std::time::Duration::from_millis(100)}else{std::time::Duration::from_secs(5)};
+        let mut interval=tokio::time::interval(period);
+        loop {interval.tick().await;let _=tokio::time::timeout(std::time::Duration::from_secs(3),peer.send_request(ClientRequest::PingRequest(Default::default()))).await;}
+    });
+    let _ended=service.waiting().await;
+    heartbeat.abort();
+    let _=tokio::time::timeout(std::time::Duration::from_secs(5),upstream.peer().call_tool(CallToolRequestParams::new("adapter_disconnect"))).await;
     let _=upstream.cancel().await;Ok(())
 }
 fn trace(stage:&str) {

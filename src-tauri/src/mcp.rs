@@ -16,6 +16,23 @@ pub fn digest(value:&Value)->String { format!("{:x}",Sha256::digest(serde_json::
 fn text_digest(value:&str)->String {format!("{:x}",Sha256::digest(value.as_bytes()))}
 fn required<'a>(v:&'a Value,key:&str)->Result<&'a str,String> { v[key].as_str().filter(|v|!v.is_empty()).ok_or_else(||format!("missing_{key}")) }
 
+// Request ACKs, adapter health, model progress and the absolute safety limit
+// have different clocks. A quiet model must not expire a healthy adapter.
+const ADAPTER_HEALTH_MS:u64=30_000;
+const DISCONNECT_GRACE_MS:u64=10_000;
+const TASK_MAX_MS:u64=7_200_000;
+fn lease_now()->u64 {static START:std::sync::OnceLock<std::time::Instant>=std::sync::OnceLock::new();START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64}
+struct AuthenticatedLease {client:String,started:u64,health:u64,progress:u64}
+pub struct AuthenticatedLeaseManager {tasks:HashMap<String,AuthenticatedLease>,health_ms:u64,grace_ms:u64,max_ms:u64}
+impl Default for AuthenticatedLeaseManager {fn default()->Self{Self{tasks:HashMap::new(),health_ms:ADAPTER_HEALTH_MS,grace_ms:DISCONNECT_GRACE_MS,max_ms:TASK_MAX_MS}}}
+impl AuthenticatedLeaseManager {
+    fn begin(&mut self,task:&str,client:&str,now:u64){self.tasks.entry(task.into()).or_insert(AuthenticatedLease{client:client.into(),started:now,health:now,progress:now});}
+    fn renew(&mut self,client:&str,now:u64){for lease in self.tasks.values_mut().filter(|lease|lease.client==client){if now.saturating_sub(lease.health)<self.health_ms+self.grace_ms&&now.saturating_sub(lease.started)<self.max_ms{lease.health=now;}}}
+    fn progress(&mut self,task:&str,now:u64){if let Some(lease)=self.tasks.get_mut(task){lease.progress=now;}}
+    fn expired(&self,task:&str,now:u64)->bool{self.tasks.get(task).is_none_or(|lease|now.saturating_sub(lease.health)>=self.health_ms+self.grace_ms||now.saturating_sub(lease.started)>=self.max_ms)}
+    fn finish(&mut self,task:&str)->bool{self.tasks.remove(task).is_some()}
+}
+
 #[derive(Clone,Serialize,Deserialize)]
 pub struct OpenedDocument {pub document_id:String,pub session_id:String,pub label:String,pub authorization_epoch:u64,pub client:Option<String>,pub scope:Option<Value>,pub task:Option<Value>}
 #[derive(Default)]
@@ -50,11 +67,44 @@ impl MutationLedger {
 }
 #[derive(Clone)]
 pub struct LeafMcpBroker {pub inner:Arc<BrokerState>}
-pub struct BrokerState {pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,pub credentials:Mutex<HashMap<String,String>>,pub profiles:Mutex<Option<AiClientProfileStore>>,pub results:Mutex<HashMap<String,(String,Value)>>,pub ledger:MutationLedger}
+pub struct BrokerState {pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,pub credentials:Mutex<HashMap<String,String>>,pub profiles:Mutex<Option<AiClientProfileStore>>,pub results:Mutex<HashMap<String,(String,Value)>>,pub ledger:MutationLedger,leases:Mutex<AuthenticatedLeaseManager>,pending_finishes:Mutex<HashMap<String,Value>>,watchdog_started:std::sync::atomic::AtomicBool}
 impl Default for LeafMcpBroker {
-    fn default()->Self {Self{inner:Arc::new(BrokerState{registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default()})}}
+    fn default()->Self {Self{inner:Arc::new(BrokerState{registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default(),leases:Mutex::new(AuthenticatedLeaseManager::default()),pending_finishes:Mutex::new(HashMap::new()),watchdog_started:std::sync::atomic::AtomicBool::new(false)})}}
 }
 impl LeafMcpBroker {
+    // Caller owns the native queue. Invalidate first, then close renderer history;
+    // retries cannot resurrect a capability or discard any applied draft.
+    async fn finalize(&self,app:&tauri::AppHandle,d:&mut OpenedDocument)->Result<(),String>{
+        if let Some(task)=d.task.take(){
+            self.inner.leases.lock().unwrap().finish(task["task_id"].as_str().unwrap_or(""));
+            self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d.clone());
+            self.inner.pending_finishes.lock().unwrap().insert(d.label.clone(),task.clone());
+            self.bridge(app,&d.label,"finish",task).await?;
+            self.inner.pending_finishes.lock().unwrap().remove(&d.label);
+        }Ok(())
+    }
+    fn start_watchdog(&self,app:tauri::AppHandle){
+        if self.inner.watchdog_started.swap(true,Ordering::SeqCst){return;}
+        let broker=self.clone();tauri::async_runtime::spawn(async move{loop{
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let _serial=broker.inner.queue.lock().await;
+            let docs:Vec<_>=broker.inner.registry.lock().unwrap().documents.values().cloned().collect();
+            for mut d in docs {if d.task.as_ref().is_some_and(|task|broker.inner.leases.lock().unwrap().expired(task["task_id"].as_str().unwrap_or(""),lease_now())){let _=broker.finalize(&app,&mut d).await;}}
+            let pending:Vec<_>=broker.inner.pending_finishes.lock().unwrap().iter().map(|(label,task)|(label.clone(),task.clone())).collect();
+            for(label,task)in pending {if app.get_webview_window(&label).is_none()||broker.bridge(&app,&label,"finish",task).await.is_ok(){broker.inner.pending_finishes.lock().unwrap().remove(&label);}}
+        }});
+    }
+    async fn health(&self,client:&str,bearer:&str)->Result<(),String>{
+        let _serial=self.inner.queue.lock().await;
+        if !*self.inner.enabled.lock().unwrap()||self.inner.credentials.lock().unwrap().get(client).is_none_or(|token|token!=bearer){return Err("client_revoked".into());}
+        self.inner.leases.lock().unwrap().renew(client,lease_now());Ok(())
+    }
+    pub async fn stop_from_leaf(&self,app:&tauri::AppHandle,label:&str,task_id:&str)->Result<Value,String>{
+        let _serial=self.inner.queue.lock().await;
+        let mut d=self.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).cloned().ok_or("stale_session")?;
+        if d.task.as_ref().is_some_and(|task|task["task_id"]!=task_id){return Err("stale_task".into());}
+        self.finalize(app,&mut d).await?;Ok(json!({"state":"stopped","disk_status":"unsaved"}))
+    }
     pub fn initialize(&self,app:&tauri::AppHandle)->Result<(),String>{
         let directory=super::application_data(app).map_err(|_|"ledger directory")?;
         self.inner.ledger.initialize(directory.join("mcp-mutations-v1.json"))?;
@@ -83,7 +133,7 @@ impl LeafMcpBroker {
         self.inner.credentials.lock().unwrap().remove(client);
         let documents:Vec<_>=self.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(client)).cloned().collect();
         for mut d in documents {
-            if let Some(task)=&d.task {let _=self.bridge(app,&d.label,"finish",task.clone()).await;}
+            let _=self.finalize(app,&mut d).await;
             d.task=None;d.client=None;d.scope=None;d.authorization_epoch+=1;
             self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d);
         }
@@ -150,7 +200,11 @@ impl LeafMcpBroker {
         let d=OpenedDocument{document_id:id("document"),session_id:id("session"),label:label.into(),authorization_epoch:0,client:None,scope:None,task:None};
         registry.documents.insert(d.session_id.clone(),d.clone());d
     }
-    pub fn unregister(&self,label:&str) {self.inner.registry.lock().unwrap().documents.retain(|_,d|d.label!=label);}
+    pub fn unregister(&self,label:&str) {
+        let mut registry=self.inner.registry.lock().unwrap();
+        for d in registry.documents.values().filter(|d|d.label==label){if let Some(task)=&d.task{self.inner.leases.lock().unwrap().finish(task["task_id"].as_str().unwrap_or(""));}}
+        registry.documents.retain(|_,d|d.label!=label);self.inner.pending_finishes.lock().unwrap().remove(label);
+    }
     pub async fn bridge(&self,app:&tauri::AppHandle,label:&str,operation:&str,args:Value)->Result<Value,String> {
         let call=id("bridge");let (tx,rx)=oneshot::channel();
         self.inner.bridge.pending.lock().unwrap().insert(call.clone(),(label.into(),tx));
@@ -191,7 +245,13 @@ impl LeafMcpBroker {
             if !*self.inner.enabled.lock().unwrap(){return Err("connection_disabled".into());}
             let mut docs:Vec<_>=self.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(client)).cloned().collect();docs.sort_by(|a,b|a.session_id.cmp(&b.session_id));return Ok(json!({"documents":docs}));
         }
+        if name=="adapter_disconnect"{
+            let docs:Vec<_>=self.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(client)).cloned().collect();
+            for mut d in docs {let _=self.finalize(app,&mut d).await;}
+            return Ok(json!({"state":"disconnected"}));
+        }
         let mut d=self.document(app,client,&args)?;
+        if d.task.as_ref().is_some_and(|task|self.inner.leases.lock().unwrap().expired(task["task_id"].as_str().unwrap_or(""),lease_now())){self.finalize(app,&mut d).await?;}
         match name {
             "read_document"=>{
                 let read_identity=if let Some(request)=args["request_id"].as_str() {
@@ -215,12 +275,19 @@ impl LeafMcpBroker {
             "begin_edit"=>{
                 let request=required(&args,"request_id")?;
                 let key=format!("{}:begin:{request}",d.session_id);let hash=digest(&args);
-                if let Some((old,result))=self.inner.results.lock().unwrap().get(&key){if old==&hash{return Ok(result.clone());}return Err("request_id_conflict".into());}
+                if let Some((old,result))=self.inner.results.lock().unwrap().get(&key){if old==&hash{return if d.task.as_ref().is_some_and(|task|task["task_id"]==result["task_id"]){Ok(result.clone())}else{Err("task_stopped".into())};}return Err("request_id_conflict".into());}
                 if d.task.is_some() {return Err("document_locked".into());}
+                if self.inner.pending_finishes.lock().unwrap().contains_key(&d.label){return Err("task_finalizing".into());}
                 let snapshot=self.bridge(app,&d.label,"snapshot",json!({})).await?;
                 if args["revision"]!=snapshot["revision"] {return Err("stale_revision".into());}
-                let task=json!({"task_id":id("task"),"request_id":request,"session_id":d.session_id,"document_id":d.document_id,"authorization_epoch":d.authorization_epoch,"scope":d.scope,"revision":snapshot["revision"]});
-                self.bridge(app,&d.label,"begin",task.clone()).await?;d.task=Some(task.clone());self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d);
+                let task=json!({"task_id":id("task"),"request_id":request,"session_id":d.session_id,"document_id":d.document_id,"client":client,"authorization_epoch":d.authorization_epoch,"scope":d.scope,"revision":snapshot["revision"]});
+                if let Err(error)=self.bridge(app,&d.label,"begin",task.clone()).await{
+                    // Explicit prepare refusals have no lock. An uncertain ACK
+                    // may have locked the renderer; schedule its idempotent close.
+                    if !["composition_pending","structural_draft_pending","stale_revision","document_locked"].contains(&error.as_str()){self.inner.pending_finishes.lock().unwrap().insert(d.label.clone(),task.clone());}
+                    return Err(error);
+                }
+                self.inner.leases.lock().unwrap().begin(task["task_id"].as_str().unwrap(),client,lease_now());d.task=Some(task.clone());self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d);
                 self.inner.results.lock().unwrap().insert(key,(hash,task.clone()));Ok(task)
             },
             "apply_edit_batch"|"reconcile_request"=>{
@@ -257,8 +324,8 @@ impl LeafMcpBroker {
                 Ok(json!({"task":d.task,"snapshot":snapshot}))
             },
             "finish_edit"|"stop_edit"=>{
-                if let Some(task)=&d.task {if task["task_id"]!=args["task_id"] {return Err("stale_task".into());}self.bridge(app,&d.label,"finish",task.clone()).await?;}
-                d.task=None;self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d);Ok(json!({"state":"finished","disk_status":"unsaved"}))
+                if let Some(task)=&d.task {if task["task_id"]!=args["task_id"] {return Err("stale_task".into());}}
+                self.finalize(app,&mut d).await?;Ok(json!({"state":"finished","disk_status":"unsaved"}))
             },
             _=>Err("unknown_tool".into()),
         }
@@ -268,18 +335,20 @@ impl LeafMcpBroker {
         let matched=receipt.as_ref().is_some_and(|r|r["mutation_id"]==record.mutation_id&&r["session_id"]==record.session_id&&r["task_id"]==record.task_id&&r["request_id"]==record.request_id&&r["authorization_epoch"]==record.authorization_epoch&&r["source_revision"]==record.source_revision&&r["request_digest"]==record.request_digest&&r["changes_digest"]==record.changes_digest&&r["source_digest"]==record.source_digest&&r["applied_revision"].as_u64()==Some(record.source_revision+u64::from(r["changed"]==true)));
         if !matched {
             record.state="UNKNOWN".into();record.transitions.push("UNKNOWN".into());let persist=self.inner.ledger.save(record,key.into());
-            if let Some(task)=&d.task {let _=self.bridge(app,&d.label,"finish",task.clone()).await;}
+            let _=self.finalize(app,d).await;
             d.task=None;d.authorization_epoch+=1;d.client=None;d.scope=None;self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d.clone());
             persist?;return Err("mutation_outcome_unknown".into());
         }
         let receipt=receipt.unwrap();record.result=Some(receipt.clone());record.state="APPLIED".into();record.transitions.push("APPLIED".into());
         if let Err(error)=self.inner.ledger.save(record.clone(),key.into()) {
-            if let Some(task)=&d.task {let _=self.bridge(app,&d.label,"finish",task.clone()).await;}d.task=None;d.authorization_epoch+=1;d.client=None;d.scope=None;self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d.clone());return Err(error);
+            let _=self.finalize(app,d).await;d.authorization_epoch+=1;d.client=None;d.scope=None;self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d.clone());return Err(error);
         }
         d.scope=Some(receipt["scope"].clone());self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d.clone());
+        self.inner.leases.lock().unwrap().progress(&record.task_id,lease_now());
         record.state="FINALIZED".into();record.transitions.push("FINALIZED".into());self.inner.ledger.save(record,key.into())?;Ok(receipt)
     }
     pub async fn serve_http(&self,app:tauri::AppHandle,client:String,token:String)->Result<u16,String> {
+        self.start_watchdog(app.clone());
         let broker=self.clone();
         #[cfg(feature="native-smoke")]
         let handler_app=app.clone();
@@ -307,6 +376,7 @@ impl LeafMcpBroker {
 #[derive(Clone)]
 struct LeafMcpHandler {broker:LeafMcpBroker,app:tauri::AppHandle,client:String,bearer:String}
 impl ServerHandler for LeafMcpHandler {
+    async fn ping(&self,_:RequestContext<RoleServer>)->Result<(),ErrorData>{self.broker.health(&self.client,&self.bearer).await.map_err(|_|ErrorData::invalid_params("client_revoked",None))}
     fn get_info(&self)->ServerConfig {let mut info=ServerConfig::default();info.capabilities=ServerCapabilities::builder().enable_tools().enable_resources().build();info}
     async fn list_resources(&self,_:Option<PaginatedRequestParams>,_:RequestContext<RoleServer>)->Result<ListResourcesResult,ErrorData> {
         let _serial=self.broker.inner.queue.lock().await;
@@ -369,9 +439,58 @@ impl LeafMcpBroker {
     // Reuses Plan 01's actual ephemeral Tauri window/renderer driver. Only active
     // in the isolated mcptest namespace, never compiled into production bundles.
     async fn adapter_native_test(&self,app:&tauri::AppHandle)->Result<(),String> {
-        let result=self.adapter_native_scenario(app).await;
+        let result=if std::env::var_os("LEAF_AI_LIFECYCLE_NATIVE").is_some(){self.lifecycle_native_scenario(app).await}else{self.adapter_native_scenario(app).await};
         for client in ai_credentials::CLIENTS {let _=self.revoke_client(app,client,true,"test-cleanup").await;}
         result
+    }
+    async fn lifecycle_native_scenario(&self,app:&tauri::AppHandle)->Result<(),String>{
+        let root=PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
+        let label=self.inner.registry.lock().unwrap().documents.values().next().ok_or("test_document_missing")?.label.clone();
+        self.bridge(app,&label,"test",json!({"action":"reset","content":"synthetic alpha omega"})).await?;
+        {let mut leases=self.inner.leases.lock().unwrap();leases.health_ms=1_000;leases.grace_ms=500;}
+        for client in ["claude-desktop","workbuddy"]{let p=self.configure_client(app,client,ai_credentials::random_token()?,"setup",0).await?;self.enable_client(client,"enable",p.generation).await?;}
+        let descriptor=self.publish_descriptor(app,"claude-desktop").await?;let other=self.publish_descriptor(app,"workbuddy").await?;
+        let session=self.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).unwrap().session_id.clone();
+        let d=self.authorize(app,&label,&session,"claude-desktop",json!({"from":0,"to":21})).await?;
+        let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+        std::fs::write(root.join("adapter-ready.json"),serde_json::to_vec(&json!({"descriptor":descriptor,"other_descriptor":other,"binding":binding})).unwrap()).map_err(|_|"test_evidence")?;
+        wait_test_signal(&root,"heartbeat-ready").await?;
+        let snapshot=self.call(app,"claude-desktop","read_document",binding.clone()).await?;
+        let mut begin=binding.clone();begin["request_id"]=json!("silent-task");begin["revision"]=snapshot["revision"].clone();
+        let task=self.call(app,"claude-desktop","begin_edit",begin.clone()).await?;
+        std::fs::write(root.join("silent-task"),b"ready").map_err(|_|"test_evidence")?;
+        wait_test_signal(&root,"model-silent").await?;
+        let current=self.inner.registry.lock().unwrap().documents.get(&session).unwrap().task.clone();
+        if current.as_ref().is_none_or(|t|t["task_id"]!=task["task_id"]){return Err("healthy_adapter_expired_during_model_silence".into());}
+        let lease=self.inner.leases.lock().unwrap().tasks.get(task["task_id"].as_str().unwrap()).map(|l|(l.health,l.progress)).ok_or("lease_missing")?;
+        if lease.0<=lease.1{return Err("actual_adapter_never_renewed".into());}
+        std::fs::write(root.join("silence-passed"),b"pass").map_err(|_|"test_evidence")?;
+        wait_test_signal(&root,"eof").await?;
+        for _ in 0..30{if self.inner.registry.lock().unwrap().documents[&session].task.is_none(){break;}tokio::time::sleep(Duration::from_millis(100)).await;}
+        if self.inner.registry.lock().unwrap().documents[&session].task.is_some(){return Err("eof_failed_to_finalize".into());}
+        if self.call(app,"claude-desktop","begin_edit",begin).await.is_ok(){return Err("stopped_begin_replayed".into());}
+        std::fs::write(root.join("eof-passed"),b"pass").map_err(|_|"test_evidence")?;
+        wait_test_signal(&root,"crash-ready").await?;
+        let mut begin=binding.clone();begin["request_id"]=json!("crash-task");begin["revision"]=snapshot["revision"].clone();
+        let crashed=self.call(app,"claude-desktop","begin_edit",begin).await?;
+        std::fs::write(root.join("crash-task"),b"ready").map_err(|_|"test_evidence")?;
+        wait_test_signal(&root,"crash").await?;
+        for _ in 0..40{if self.inner.registry.lock().unwrap().documents[&session].task.is_none(){break;}tokio::time::sleep(Duration::from_millis(100)).await;}
+        if self.inner.registry.lock().unwrap().documents[&session].task.is_some(){return Err("crash_or_other_client_kept_lock_alive".into());}
+        let mut late=binding.clone();late["task_id"]=crashed["task_id"].clone();late["request_id"]=json!("crash-late");late["revision"]=snapshot["revision"].clone();late["changes"]=json!([]);
+        if self.call(app,"claude-desktop","apply_edit_batch",late).await.is_ok(){return Err("crashed_task_wrote_late".into());}
+        let mut begin=binding.clone();begin["request_id"]=json!("stop-race");begin["revision"]=snapshot["revision"].clone();
+        let task=self.call(app,"claude-desktop","begin_edit",begin).await?;
+        let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!("stop-race-batch");batch["revision"]=snapshot["revision"].clone();batch["changes"]=json!([{"from":10,"to":15,"expected":"alpha","insert":"ALPHA"}]);
+        let(applied,stopped)=tokio::join!(self.call(app,"claude-desktop","apply_edit_batch",batch.clone()),self.stop_from_leaf(app,&label,task["task_id"].as_str().unwrap()));stopped?;
+        let actual=self.bridge(app,&label,"snapshot",json!({})).await?;
+        let expected=if applied.is_ok(){"synthetic ALPHA omega"}else{"synthetic alpha omega"};if actual["content"]!=expected{return Err("stop_race_lost_applied_draft".into());}
+        batch["request_id"]=json!("stop-late");batch["revision"]=actual["revision"].clone();batch["changes"]=json!([]);
+        if self.call(app,"claude-desktop","apply_edit_batch",batch).await.is_ok(){return Err("stopped_task_wrote_late".into());}
+        self.stop_from_leaf(app,&label,task["task_id"].as_str().unwrap()).await?;
+        let human=self.bridge(app,&label,"test",json!({"action":"human","content":"Human resumed after stop"})).await?;if human["content"]!="Human resumed after stop"{return Err("human_edit_not_restored".into());}
+        std::fs::write(root.join("lifecycle-passed.json"),serde_json::to_vec(&json!({"silent_model":true,"actual_heartbeat":true,"eof":true,"crash_wrong_client":true,"native_stop_race":true,"late_write_rejected":true,"human_resumed":true})).unwrap()).map_err(|_|"test_evidence")?;
+        wait_test_signal(&root,"done").await?;Ok(())
     }
     async fn adapter_native_scenario(&self,app:&tauri::AppHandle)->Result<(),String> {
         let root=PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
@@ -425,6 +544,42 @@ pub fn mcp_renderer_reply(window:tauri::WebviewWindow,broker:tauri::State<LeafMc
 }
 #[tauri::command]
 pub async fn mcp_authorize(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,session_id:String,client:String,scope:Value)->Result<OpenedDocument,String> {broker.authorize(&app,window.label(),&session_id,&client,scope).await}
+
+#[tauri::command]
+pub async fn mcp_stop_edit(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,task_id:String)->Result<Value,String>{broker.stop_from_leaf(&app,window.label(),&task_id).await}
+
+#[cfg(test)]
+mod authenticated_lease_tests {
+    use super::*;
+    #[test]
+    fn authenticated_lease_long_model_silence_and_request_deadline(){
+        let mut leases=AuthenticatedLeaseManager::default();leases.begin("task","client-a",0);
+        for now in (5_000..=120_000).step_by(5_000){leases.renew("client-a",now);assert!(!leases.expired("task",now));}
+        assert_eq!(leases.tasks["task"].progress,0,"health is not model progress");
+        assert!(!leases.expired("task",123_001),"3s request timeout is not task expiry");
+        assert!(leases.expired("task",160_000),"crash expires at health + grace");
+    }
+    #[test]
+    fn authenticated_lease_wrong_client_cannot_extend_or_revive(){
+        let mut leases=AuthenticatedLeaseManager::default();leases.begin("task","client-a",0);
+        leases.renew("client-b",35_000);assert!(leases.expired("task",40_000));
+        leases.renew("client-a",40_001);assert!(leases.expired("task",40_001));
+        assert!(leases.finish("task"));assert!(!leases.finish("task"));leases.renew("client-a",45_000);assert!(leases.expired("task",45_000));
+    }
+    #[test]
+    fn authenticated_lease_has_absolute_limit_despite_progress(){
+        let mut leases=AuthenticatedLeaseManager::default();leases.begin("task","client",0);
+        for now in (5_000..TASK_MAX_MS).step_by(5_000){leases.renew("client",now);leases.progress("task",now);}
+        assert!(!leases.expired("task",TASK_MAX_MS-1));assert!(leases.expired("task",TASK_MAX_MS));
+    }
+    #[tokio::test]
+    async fn authenticated_lease_checks_bearer_inside_queue(){
+        let broker=LeafMcpBroker::default();*broker.inner.enabled.lock().unwrap()=true;broker.inner.credentials.lock().unwrap().insert("client".into(),"synthetic-current".into());
+        broker.inner.leases.lock().unwrap().begin("task","client",lease_now());
+        assert!(broker.health("client","synthetic-stale").await.is_err());assert!(broker.health("other","synthetic-current").await.is_err());assert!(broker.health("client","synthetic-current").await.is_ok());
+        broker.inner.credentials.lock().unwrap().remove("client");assert!(broker.health("client","synthetic-current").await.is_err());
+    }
+}
 
 #[tauri::command]
 pub fn mcp_profiles(broker:tauri::State<LeafMcpBroker>)->Result<Value,String> {Ok(json!({"enabled":*broker.inner.enabled.lock().unwrap(),"clients":broker.client_profiles()?}))}

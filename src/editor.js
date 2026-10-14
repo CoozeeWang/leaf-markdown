@@ -934,6 +934,9 @@ function openFootnotePopup(view, label, pos, anchor = null) {
   const input = document.createElement('textarea');
   input.rows = 1; setAttr(input, 'placeholder', () => t("editor.enter_footnote_content")); setAttr(input, 'aria-label', () => t("editor.footnote_content"));
   input.value = note?.def?.body ?? '';
+  input.readOnly=!assertDocumentMutationAllowed(view);
+  input.addEventListener('compositionstart',()=>input._leafComposing=true);
+  input.addEventListener('compositionend',()=>input._leafComposing=false);
   box.append(input);
   document.body.append(box);
   footnoteBox = box; footnoteBoxView = view; footnoteBoxAt = pos ?? 0; footnoteBoxAnchor = anchor; footnoteBoxLabel = label;
@@ -1394,7 +1397,7 @@ export function createLeafEditor(options) {
   const changedControls=new Map();
   const syncLockedControls=()=>{
     if(!aiTask)return;
-    for(const node of controlScope.querySelectorAll('.format-toolbar button:not(#displayButton), .leaf-property-body input, .leaf-property-body select, .leaf-property-body button, .leaf-property-source textarea, .leaf-table textarea, .leaf-table button, .leaf-callout-widget textarea, .leaf-callout-widget button, #notesList .note-delete, #commentsList textarea, #commentsList .comment-delete, #commentInsert, .outline-rename, .leaf-footnote-popup textarea')) {
+    for(const node of controlScope.querySelectorAll('.format-toolbar button:not(#displayButton), .leaf-property-body input, .leaf-property-body select, .leaf-property-body button, textarea.leaf-property-source, .leaf-table textarea, .leaf-table button, .leaf-callout-widget textarea, .leaf-callout-widget button, #notesList .note-delete, #commentsList textarea, #commentsList .comment-delete, #commentInsert, .outline-rename')) {
       if(!changedControls.has(node))changedControls.set(node,{disabled:node.disabled,readOnly:node.readOnly,description:node.getAttribute('aria-description')});
       if(node.matches('textarea,input:not([type=checkbox])'))node.readOnly=true;else node.disabled=true;
       node.setAttribute('aria-description',options.lockDescription?.() ?? 'AI editing');
@@ -1404,8 +1407,9 @@ export function createLeafEditor(options) {
   };
   const observer=new MutationObserver(()=>syncLockedControls());observer.observe(controlScope,{childList:true,subtree:true});
   const composing=new Set();
-  controlScope.addEventListener('compositionstart',event=>composing.add(event.target),true);
-  controlScope.addEventListener('compositionend',event=>composing.delete(event.target),true);
+  const compositionStart=event=>composing.add(event.target),compositionEnd=event=>composing.delete(event.target);
+  controlScope.addEventListener('compositionstart',compositionStart,true);
+  controlScope.addEventListener('compositionend',compositionEnd,true);
   view.dom.addEventListener('leaf-comment-activate',event=>options.onCommentActivate?.(event.detail.id));
   view.dom.addEventListener("leaf-image-ready", () => view.requestMeasure());
   // Dragging a file over the property block must not offer a position there: the
@@ -1439,7 +1443,7 @@ export function createLeafEditor(options) {
     beginAiTask(task) {
       if (!task?.task_id || aiTask && aiTask.id!==task.task_id) throw new Error('document_locked');
       if(!aiTask) {
-        if(view.compositionStarted || [...composing].some(node=>node.isConnected) || [...controlScope.querySelectorAll('.cm-editor')].some(node=>node._leafNoteEditor?.view.compositionStarted))throw new Error('composition_pending');
+        if(view.compositionStarted || footnoteBoxView===view&&footnoteBox.querySelector('textarea')?._leafComposing || [...composing].some(node=>node.isConnected) || [...controlScope.querySelectorAll('.cm-editor')].some(node=>node._leafNoteEditor?.view.compositionStarted))throw new Error('composition_pending');
         if([...controlScope.querySelectorAll('.leaf-property-body')].some(node=>node.hasPendingDraft?.()) || controlScope.querySelector('.outline-rename'))throw new Error('structural_draft_pending');
         if(task.revision!==undefined&&task.revision!==bufferRevision)throw new Error('stale_revision');
         taskFocus=document.activeElement;
@@ -1654,6 +1658,7 @@ export function createLeafEditor(options) {
     },
     destroy() {
       observer.disconnect();
+      controlScope.removeEventListener('compositionstart',compositionStart,true);controlScope.removeEventListener('compositionend',compositionEnd,true);
       view.destroy();
     },
   };
