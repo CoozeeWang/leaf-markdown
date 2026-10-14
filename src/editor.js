@@ -1466,24 +1466,29 @@ const noteSearchDecoration = StateField.define({
 
 // A note uses the same Markdown grammar and live-preview decorations as the
 // document, but sends every edit through the document's history/save pipeline.
-export function createLeafNoteEditor({parent, doc, source = false, label, onChange, onUndo, onRedo, onLeave, multiline = false, onCompositionEnd, onFocus}) {
+export function createLeafNoteEditor({parent, doc, source = false, label, onChange, onUndo, onRedo, onLeave, multiline = false, onCompositionEnd, onFocus, onBlur, locked = false, onActivate, onEditingChange}) {
   let syncing = false;
+  const editing = new Compartment();
+  const editability = enabled => [EditorState.readOnly.of(!enabled), EditorView.editable.of(enabled)];
   const view = new EditorView({parent, doc, extensions: [
+    editing.of(editability(!locked)),
+    drawSelection(),
+    EditorState.changeFilter.of(tr=>syncing||!tr.startState.readOnly),
     markdown({extensions: leafMarkdownExtensions, addKeymap: false}),
     sourceMode.init(() => source), blankMarkers, headingNumbers,
     fileNameTitle.init(() => false), propertiesFolded, structuredPreview,
     footnoteIndex, noteFocus, noteSearchDecoration,
     syntaxHighlighting(leafHighlightStyle), livePreview,
     EditorView.lineWrapping,
-    EditorView.contentAttributes.of({'aria-label': label, spellcheck: 'false'}),
+    EditorView.contentAttributes.of(view=>({'aria-label':label,spellcheck:'false',tabindex:'0','aria-readonly':String(view.state.readOnly)})),
     EditorView.theme({'&': {backgroundColor:'transparent'}, '.cm-content': {padding:'0', minHeight:'1.7em'}, '.cm-line': {padding:'0'}, '.cm-scroller': {overflow:'visible', fontFamily:'inherit'}}),
     EditorView.updateListener.of(update => {
       if (update.docChanged && !syncing) onChange(update.state.doc.toString(), update.view.compositionStarted);
     }),
     EditorView.domEventHandlers({
-      focus(_event, view) { onFocus?.(); view.dispatch({effects:setNoteFocus.of(true)}); return false; },
-      blur(_event, view) { view.dispatch({effects:setNoteFocus.of(false)}); return false; },
-      compositionend() { onCompositionEnd?.(); return false; },
+      focus(_event, view) { if(!view.state.readOnly){onFocus?.();view.dispatch({effects:setNoteFocus.of(true)});}return false; },
+      blur(_event, view) { view.dispatch({effects:setNoteFocus.of(false)});queueMicrotask(()=>{if(view.dom.isConnected&&!view.hasFocus&&!view.compositionStarted)onBlur?.();});return false; },
+      compositionend(_event,view) { onCompositionEnd?.();queueMicrotask(()=>{if(view.dom.isConnected&&!view.hasFocus)onBlur?.();});return false; },
     }),
     keymap.of([
       {key:'Mod-z',run:()=>{onUndo();return true;}},
@@ -1492,7 +1497,7 @@ export function createLeafNoteEditor({parent, doc, source = false, label, onChan
       ...[['Mod-b','bold'],['Mod-i','italic'],['Mod-=','highlight'],['Mod-Alt-c','code'],['Mod-Shift-x','strike'],['Mod-.','sup'],['Mod-,','sub']].map(([key,type])=>({key,run:view=>{formatEditor(view,type);return true;}})),
       {key:'Mod-k',run:view=>{const r=view.state.selection.main;const selected=view.state.doc.sliceString(r.from,r.to);const address=t('writing_tools.link_address');const insert=`[${selected||t('writing_tools.link_text')}](${address})`;const from=r.from+insert.lastIndexOf(address);view.dispatch({changes:{from:r.from,to:r.to,insert},selection:{anchor:from,head:from+address.length},userEvent:'input'});return true;}},
       {key:'Shift-Enter',run:view=>{view.dispatch(view.state.replaceSelection('\n'));return true;}},
-      {key:'Enter',run:view=>{if(multiline)return insertNewlineContinueMarkup(view);onLeave();return true;}},
+      {key:'Enter',run:view=>{if(view.state.readOnly){onActivate?.();return true;}if(multiline)return insertNewlineContinueMarkup(view);onLeave();return true;}},
       {key:'Escape',run:()=>{onLeave();return true;}},
       ...defaultKeymap,
     ]),
@@ -1508,7 +1513,7 @@ export function createLeafNoteEditor({parent, doc, source = false, label, onChan
     view.dispatch({changes:{from,to:length-suffix,insert:text.slice(from,text.length-suffix)}});
     syncing = false;
   };
-  return {view, sync, highlightMatch(from,to){view.dispatch({effects:noteSearchRange.of(from==null?null:{from,to}),...(from==null?{}:{selection:{anchor:from,head:to}})});}, focus(){view.focus();view.dispatch({selection:{anchor:view.state.doc.length}});},
+  return {view, sync, setEditing(enabled,at){view.dispatch({effects:[editing.reconfigure(editability(enabled)),setNoteFocus.of(enabled)]});onEditingChange?.(enabled);if(enabled){if(at!=null)view.dispatch({selection:{anchor:Math.max(0,Math.min(at,view.state.doc.length))}});onFocus?.();view.focus();}}, highlightMatch(from,to){view.dispatch({effects:noteSearchRange.of(from==null?null:{from,to}),...(from==null?{}:{selection:{anchor:from,head:to}})});}, focus(){view.focus();view.dispatch({selection:{anchor:view.state.doc.length}});},
     value:()=>view.state.doc.toString(), format:type=>formatEditor(view,type),
     destroy:()=>view.destroy()};
 }

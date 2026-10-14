@@ -24,6 +24,14 @@ for(const [engine,platform] of engines.flatMap(engine=>(engine==='chrome'?['MacI
   assert.ok(sizes.note<sizes.body,JSON.stringify(sizes));
   await page.evaluate(()=>{const c=document.querySelector('.leaf-endnote');window.originalNoteDOM=c._editor.view.contentDOM;});
   await foot.locator('.cm-content').click();
+  assert.equal(await foot.locator('.cm-content').getAttribute('contenteditable'),'false','single click keeps preview read-only');
+  await page.keyboard.type('Blocked');
+  assert.equal(await page.evaluate(()=>testEditor.getValue()),source,'preview typing cannot change notes');
+  await foot.locator('.cm-content').dblclick();
+  assert.equal(await foot.locator('.cm-content').getAttribute('contenteditable'),'true');
+  await page.keyboard.press('ArrowRight');
+  const cursor=foot.locator('.cm-cursor');await cursor.waitFor({state:'visible'});
+  assert.ok(await cursor.evaluate(el=>el.getBoundingClientRect().height>5),'note caret must be painted');
   await page.keyboard.press('End');await page.keyboard.press('Enter');await page.keyboard.press('Enter');await page.keyboard.type('Second paragraph');
   assert.ok((await page.evaluate(()=>testEditor.getValue())).includes('    Second paragraph'),'new paragraphs remain in last note');
   assert.equal(await page.evaluate(()=>document.querySelector('.leaf-endnote')._editor.view.contentDOM===originalNoteDOM),true,'active note DOM must survive editing');
@@ -40,11 +48,20 @@ for(const [engine,platform] of engines.flatMap(engine=>(engine==='chrome'?['MacI
   await page.evaluate(()=>document.querySelector('.leaf-endnote')._editor.view.contentDOM.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true})));
   await page.keyboard.press('End');await page.keyboard.insertText('中文');
   await page.evaluate(()=>document.querySelector('.leaf-endnote')._editor.view.contentDOM.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'中文'})));
-  await page.waitForTimeout(80);
+  await page.waitForTimeout(150);
   assert.ok((await page.evaluate(()=>testEditor.getValue())).includes('Pasted note paragraph中文'));
   assert.equal(await page.evaluate(()=>document.querySelector('.leaf-endnote')._editor.view.contentDOM===originalNoteDOM),true);
 
-  await page.locator('.leaf-continue-body').click();await page.keyboard.type('Continued body');
+  await page.keyboard.press('Escape');
+  assert.equal(await foot.locator('.cm-content').getAttribute('contenteditable'),'false','Escape locks note again: '+JSON.stringify(await page.evaluate(()=>{const n=document.querySelector('.leaf-endnote')._editor.view;return {composing:n.composing,compositionStarted:n.compositionStarted,focus:n.hasFocus,readonly:n.state.readOnly};})));
+  await foot.locator('.cm-content').focus();await page.keyboard.press('Enter');
+  assert.equal(await foot.locator('.cm-content').getAttribute('contenteditable'),'true','keyboard entry remains available');
+  await page.locator('.leaf-continue-body').click();
+  assert.equal(await foot.locator('.cm-content').getAttribute('contenteditable'),'false','leaving note restores preview');
+  const beforeRepeated=await page.evaluate(()=>testEditor.getValue());
+  await page.locator('.leaf-continue-body').click();
+  assert.equal(await page.evaluate(()=>testEditor.getValue()),beforeRepeated,'repeated continue does not append blank paragraphs');
+  await page.keyboard.type('Continued body');
   const saved=await page.evaluate(()=>testEditor.getValue());
   assert.ok(saved.indexOf('Continued body')<saved.indexOf('[^a]:'));
   assert.ok(saved.includes('尾段'));assert.ok(!saved.includes('\n---\n'));
@@ -67,7 +84,7 @@ for(const [engine,platform] of engines.flatMap(engine=>(engine==='chrome'?['MacI
   await page.evaluate(text=>{setTestDoc(text,text.indexOf('\n'));v.focus();},tight);
   await page.keyboard.press('Delete');
   assert.equal(await page.evaluate(()=>testEditor.getValue()),tight,'forward delete cannot merge body into a protected note');
-  await page.evaluate(()=>{testEditor.setValue('正文[^a]。\r\n\r\n[^a]: A');const note=document.querySelector('.leaf-endnote')._editor.view;note.dispatch({changes:{from:0,to:note.state.doc.length,insert:'A\n\nB'},userEvent:'input.type'});});
+  await page.evaluate(()=>{testEditor.setValue('正文[^a]。\r\n\r\n[^a]: A');const editor=document.querySelector('.leaf-endnote')._editor;editor.setEditing(true);const note=editor.view;note.dispatch({changes:{from:0,to:note.state.doc.length,insert:'A\n\nB'},userEvent:'input.type'});});
   assert.ok((await page.evaluate(()=>testEditor.getValue())).includes('\r\n\r\n    B'),'CRLF and multi-paragraph note survive persistence');
   await page.evaluate(()=>{const {length}=v.state.doc;v.dispatch({selection:{anchor:0,head:length}});v.focus();});
   await page.keyboard.press('Backspace');

@@ -41,6 +41,7 @@ for (const engine of process.env.LEAF_FOOTNOTE_ENGINE ? [process.env.LEAF_FOOTNO
     }
     assert.equal(await page.evaluate(() => v.state.doc.toString()), source, 'rendering never writes the source');
     await page.screenshot({ path: artifactPath(`footnote-definition-format-${engine}.png`) });
+    await page.locator('.leaf-endnote .cm-content').dblclick();
     await page.evaluate(() => {
       const note=document.querySelector('.leaf-endnote')._editor.view;
       note.dispatch({selection:{anchor:2}});note.focus();

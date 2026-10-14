@@ -16,7 +16,12 @@ window.startTest=async()=>{
   check(testEditor.getValue()===source,'opening changed source');
   const card=document.querySelector('.leaf-endnote'),note=card._editor.view,dom=note.contentDOM;
   check(parseFloat(getComputedStyle(dom).fontSize)<parseFloat(getComputedStyle(v.contentDOM).fontSize),'note is not smaller');
+  check(note.state.readOnly,'note should start locked');
+  card.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+  check(!note.state.readOnly,'double click did not start editing');
   note.dispatch({selection:{anchor:note.state.doc.length}});note.focus();
+  await pause();
+  check(note.dom.querySelector('.cm-cursor')?.getBoundingClientRect().height>5,'painted caret missing');
   let trusted=false;dom.addEventListener('keydown',e=>{if(e.key==='Enter')trusted=e.isTrusted;});
   for(let n=1;n<=2;n++){document.title='LeafKey Enter '+n;await pause();check(trusted,'expected AppKit Enter');}
   note.dispatch({changes:{from:note.state.doc.length,insert:'脚注第二段'},userEvent:'input.type'});
@@ -25,6 +30,8 @@ window.startTest=async()=>{
   check(testEditor.undo(),'undo missing');check(testEditor.getValue()===source,'undo did not restore original source order');
   check(testEditor.redo(),'redo missing');
   document.querySelector('.leaf-continue-body').click();
+  check(note.state.readOnly,'leaving note did not restore preview');
+  const once=testEditor.getValue();document.querySelector('.leaf-continue-body').click();check(testEditor.getValue()===once,'continue duplicated blank lines');
   v.dispatch({...v.state.replaceSelection('续写正文'),userEvent:'input.type'});
   const saved=testEditor.getValue();
   check(saved.indexOf('续写正文')<saved.indexOf('[^a]:'),'body landed after notes');

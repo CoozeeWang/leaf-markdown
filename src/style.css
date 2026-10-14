@@ -639,7 +639,7 @@ button.leaf-list-marker { cursor:pointer; }
 .note-card:hover { background: color-mix(in srgb, var(--surface-strong) 70%, transparent); }
 .note-card.active { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); }
 .note-card-head { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
-.note-number {
+.note-number, .leaf-endnote-number {
   flex: none;
   margin-top: 1px;
   display: inline-flex;
@@ -1181,10 +1181,15 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .leaf-footnote-region-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; color:var(--muted); font-family:var(--ui-font); }
 .leaf-continue-body { font:inherit; color:var(--accent); background:transparent; border:1px solid var(--line); border-radius:6px; padding:4px 10px; cursor:pointer; }
 .leaf-continue-body:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-.leaf-endnote { display:grid; grid-template-columns:3ch minmax(0,1fr); gap:.5em; margin:0 0 12px; }
-.leaf-endnote-number { color:var(--muted); }
+.leaf-endnote { display:grid; grid-template-columns:minmax(3ch,max-content) minmax(0,1fr); gap:.5em; margin:0 0 12px; }
+.leaf-endnote-number { align-self:start; font-size:inherit; }
 .cm-editor .leaf-footnote-region .cm-editor { font-size:inherit; height:auto; }
 .cm-editor .leaf-footnote-region .cm-line { font-size:inherit; line-height:1.7; }
 .cm-editor .leaf-footnote-region .cm-leaf-heading { font-size:inherit; }
 .cm-editor .leaf-footnote-region .cm-content { min-height:1.7em; font-size:inherit; width:100%; padding:0 !important; margin:0 !important; }
 .cm-editor .leaf-footnote-region .cm-scroller { overflow:visible; }
+
+.leaf-footnote-region-hint { flex:1; font-size:.85em; }
+.leaf-endnote:not(.is-editing) .cm-cursorLayer { display:none; }
+.leaf-endnote:not(.is-editing) .cm-content { cursor:default; }
+.leaf-endnote.is-editing .leaf-footnote-body { background:color-mix(in srgb, var(--accent-soft) 65%, transparent); box-shadow:inset 0 -1px var(--accent); }

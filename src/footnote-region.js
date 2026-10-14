@@ -12,7 +12,11 @@ const collectNotes = StateEffect.define();
 
 export function continueFootnoteBody(view) {
   const at = continueBodyPosition(view.state.doc, view.state.field(footnoteIndex).definitions);
-  view.dispatch({changes:{from:at,insert:'\n\n'},selection:{anchor:at?at+2:0},
+  const limit=view.state.field(footnoteIndex).definitions.find(def=>def.lineFrom>=at)?.lineFrom??view.state.doc.length;
+  const gap=view.state.doc.sliceString(at,limit);
+  const existing=(at?/^\n[ \t]*\n[ \t]*\n[ \t]*\n/:/^\n[ \t]*\n/).test(gap);
+  const anchor=at?at+2:0;
+  view.dispatch({...(existing?{}:{changes:{from:at,insert:'\n\n'}}),selection:{anchor},
     annotations:isolateHistory.of('full'),userEvent:'input.footnote-body',scrollIntoView:true});
   view.focus();
 }
@@ -31,10 +35,15 @@ class FootnoteRegion extends WidgetType {
     root.setAttribute('contenteditable','false');setAttr(root,'aria-label',()=>t('print_document.footnotes'));
     const head=document.createElement('div');head.className='leaf-footnote-region-head';
     const title=document.createElement('span');setText(title,()=>t('print_document.footnotes'));
+    const hint=document.createElement('span');hint.className='leaf-footnote-region-hint';
+    setText(hint,()=>t('editor.edit_footnote_hint'));
     const button=document.createElement('button');button.type='button';button.className='leaf-continue-body';
     setText(button,()=>t('editor.continue_body'));
-    button.addEventListener('click',()=>continueFootnoteBody(view));
-    head.append(title,button);root.append(head);root._notes=new Map();
+    button.addEventListener('click',()=>{root._lockNotes();continueFootnoteBody(view);});
+    head.append(title,hint,button);root.append(head);root._notes=new Map();
+    root._lockNotes=except=>{for(const card of root._notes.values())if(card!==except&&!card._editor.view.state.readOnly&&!card._editor.view.compositionStarted)card._editor.setEditing(false);};
+    root._outside=event=>{if(view.contentDOM.contains(event.target))root._lockNotes(event.target.closest('.leaf-endnote'));};
+    view.dom.addEventListener('pointerdown',root._outside,true);root._parentView=view;
     this.patch(root,view);return root;
   }
   updateDOM(root,view) { this.patch(root,view);return true; }
@@ -49,7 +58,10 @@ class FootnoteRegion extends WidgetType {
         const number=document.createElement('span');number.className='leaf-endnote-number';
         const body=document.createElement('div');body.className='leaf-footnote-body';
         card.append(number,body);root._notes.set(key,card);root.append(card);
-        card._editor=this.createEditor({parent:body,doc:row.body,multiline:true,
+        card._editor=this.createEditor({parent:body,doc:row.body,multiline:true,locked:true,
+          onActivate:()=>card._editor.setEditing(true),
+          onBlur:()=>card._editor.setEditing(false),
+          onEditingChange:enabled=>card.classList.toggle('is-editing',enabled),
           label:t('main.content_of_footnote',{note:row.number??row.label}),
           onFocus:()=>view.dispatch({annotations:isolateHistory.of('full')}),
           onChange:(value,composing)=>{
@@ -57,11 +69,18 @@ class FootnoteRegion extends WidgetType {
             try { this.applyBody(view,card._row.label,value,composing,card._row.ordinal??0,true); }
             finally { card._updating=false; }
           },
-          onUndo:()=>undo(view),onRedo:()=>redo(view),onLeave:()=>view.focus(),
+          onUndo:()=>undo(view),onRedo:()=>redo(view),onLeave:()=>{card._editor.setEditing(false);view.focus();},
           onCompositionEnd:()=>queueMicrotask(()=>{
             if(view.dom.isConnected) view.dispatch({effects:collectNotes.of(null),userEvent:'input.type.compose'});
           })});
         card._noteEditor=card._editor;
+        setAttr(body,'title',()=>t('editor.edit_footnote_hint'));
+        card.addEventListener('dblclick',event=>{
+          if(!card._editor.view.state.readOnly)return;
+          const at=card._editor.view.posAtCoords({x:event.clientX,y:event.clientY});
+          card._editor.setEditing(true,at??card._editor.view.state.doc.length);
+          event.preventDefault();
+        });
       }
       card._row=row;
       card.firstChild.textContent=String(row.number??`[${row.label}]`);
@@ -75,7 +94,7 @@ class FootnoteRegion extends WidgetType {
       card._editor.destroy();card.remove();root._notes.delete(label);
     }
   }
-  destroy(root) { for(const card of root._notes.values()) card._editor.destroy(); }
+  destroy(root) { root._parentView.dom.removeEventListener('pointerdown',root._outside,true);for(const card of root._notes.values()) card._editor.destroy(); }
   ignoreEvent() { return true; }
 }
 
