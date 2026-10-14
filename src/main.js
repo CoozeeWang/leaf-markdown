@@ -22,6 +22,7 @@ import { indexFootnotes, notePanelRows } from './footnotes.js';
 import { uiIcon, uiIconPaths } from './ui-icons.js';
 import {readingFolding} from './outline-folding.js';
 import { BODY_ZOOM_LEVELS, stepBodyZoom, bodyZoomShortcut } from './body-zoom.js';
+import { setupBodyFontSettings } from './body-font-settings.js';
 
 const welcome = t("main.leaf_a_lightweight_markdown_editor");
 const leafDev = typeof __LEAF_DESKTOP_DEV__ !== 'undefined' && __LEAF_DESKTOP_DEV__ && desktop;
@@ -44,7 +45,6 @@ const state = {
   showHeadingNumbers: localStorage.getItem('leaf-heading-numbers') === 'true',
   fontSize: Number(localStorage.getItem('leaf-reading-v2-size')) || 17,
   contentWidth: Number(localStorage.getItem('leaf-reading-v2-width')) || 780,
-  fontFamily: localStorage.getItem('leaf-reading-v2-font') || 'sans',
   focusMode: false,
   outline: [],
   // The signature of the notes the panel is currently showing, so a redraw can be
@@ -216,9 +216,14 @@ document.querySelector('#app').innerHTML = shortcutText(`
       </label>
       </fieldset>
       <fieldset class="appearance-group" aria-label="${t("main.body_typography")}" data-i18n-aria-label="main.body_typography">
-      <label class="setting-row"><span>${h("main.body_font")}</span>
-        <span class="ui-select"><select id="fontFamilySelect"><option value="serif" data-i18n="main.serif">${t("main.serif")}</option><option value="sans" data-i18n="main.system_sans_serif">${t("main.system_sans_serif")}</option><option value="mono" data-i18n="main.monospace">${t("main.monospace")}</option></select>${icon('chevron', 16)}</span>
+      <label class="setting-row body-font-row"><span>${h('fonts.chinese')}</span>
+        <span class="ui-select"><select id="chineseFontSelect" aria-label="${t('fonts.chinese')}" data-i18n-aria-label="fonts.chinese" aria-describedby="bodyFontStatus"></select>${icon('chevron', 16)}</span>
       </label>
+      <label class="setting-row body-font-row"><span>${h('fonts.english')}</span>
+        <span class="ui-select"><select id="englishFontSelect" aria-label="${t('fonts.english')}" data-i18n-aria-label="fonts.english" aria-describedby="bodyFontStatus"></select>${icon('chevron', 16)}</span>
+      </label>
+      <p id="bodyFontStatus" class="setting-hint body-font-status" role="status"></p>
+      <p class="body-font-preview" aria-label="${t('fonts.preview')}" data-i18n-aria-label="fonts.preview"><span lang="zh">${h('fonts.sample_chinese')}</span> <span lang="en">The quick brown fox. 123</span></p>
       <label class="setting-slider"><span>${h("main.body_font_size")}</span><span class="slider-control"><input id="fontSizeInput" type="range" min="14" max="24" step="1" /><output id="fontSizeValue"></output></span></label>
       <label class="setting-slider"><span>${h("main.maximum_body_width")}</span><span class="slider-control"><input id="contentWidthInput" type="range" min="600" max="1100" step="20" /><output id="contentWidthValue"></output></span></label>
       </fieldset>
@@ -294,6 +299,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
 `);
 
 const shell = document.querySelector('.shell');
+setupBodyFontSettings({ root: shell });
 const fileNameElement = document.querySelector('#fileName');
 const dirtyElement = document.querySelector('#dirty');
 const statsElement = document.querySelector('#stats');
@@ -378,11 +384,9 @@ function currentTheme() {
 
 function updateAppearance() {
   document.documentElement.dataset.theme = currentTheme();
-  shell.dataset.font = state.fontFamily;
   shell.style.setProperty('--editor-font-size', `${state.fontSize}px`);
   shell.style.setProperty('--content-width', `${state.contentWidth}px`);
   document.querySelector('#themeSelect').value = state.theme;
-  document.querySelector('#fontFamilySelect').value = state.fontFamily;
   document.querySelector('#fontSizeInput').value = state.fontSize;
   document.querySelector('#fontSizeValue').textContent = `${state.fontSize}px`;
   document.querySelector('#contentWidthInput').value = state.contentWidth;
@@ -1856,11 +1860,6 @@ document.querySelector('#themeSelect').addEventListener('change', (event) => {
   localStorage.setItem('leaf-theme', state.theme);
   updateAppearance();
 });
-document.querySelector('#fontFamilySelect').addEventListener('change', (event) => {
-  state.fontFamily = event.target.value;
-  localStorage.setItem('leaf-reading-v2-font', state.fontFamily);
-  updateAppearance();
-});
 document.querySelector('#fontSizeInput').addEventListener('input', (event) => {
   state.fontSize = Number(event.target.value);
   localStorage.setItem('leaf-reading-v2-size', state.fontSize);
@@ -2073,6 +2072,14 @@ document.addEventListener('leaf-image-reveal-failed', event => {
   setStatus(translatedMessage("main.could_not_show_the_file_in_the", {"error": event.detail}), 'error');
 });
 
+window.addEventListener('leaf-body-fonts-change', () => {
+  editor.view.requestMeasure();
+  for (const body of notesDrawer.querySelectorAll('.note-body')) fitNoteBody(body);
+  for (const table of editor.view.dom.querySelectorAll('.leaf-table')) table._resizeCells?.();
+  for (const input of editor.view.dom.querySelectorAll('.leaf-callout-widget textarea:focus, .footnote-box textarea:focus')) {
+    input.style.height = 'auto'; input.style.height = `${Math.max(30, input.scrollHeight)}px`;
+  }
+});
 updateAppearance();
 updateDocumentChrome();
 updateHistoryControls();

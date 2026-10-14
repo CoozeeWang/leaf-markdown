@@ -11,6 +11,7 @@ const core = [
   'footnote-callout', 'footnote-rename', 'footnote-regressions', 'footnotes-print',
   'version-display', 'properties-insert-guard', 'image-drop', 'image-insertion', 'image-reveal', 'image-tooltips', 'image-drag',
   'paragraph-blank-lines',
+  'body-fonts',
   'list-images', 'clipboard-images',
   'recovery-notice', 'file-feedback', 'status-notices',
 ].map(name => `${name}-browser.mjs`);

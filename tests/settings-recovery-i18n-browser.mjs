@@ -31,7 +31,7 @@ for (const engine of (process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGI
           },
         };
       });
-      await page.goto('http://127.0.0.1:41732/?document=1');
+      await page.goto(`${process.env.LEAF_TEST_BASE_URL || 'http://127.0.0.1:41732'}/?document=1`);
       if (!native) await page.click('#welcomeNewButton');
       await page.click('#appearanceButton');
       await page.click('#settingsTab-recovery');

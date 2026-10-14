@@ -4,7 +4,7 @@ const browser=await chromium.launch(launchOptions);
 try {
  const page=await browser.newPage({viewport:{width:1280,height:850}}), errors=[];
  page.on('pageerror', e=>errors.push(e.message));
- await page.goto('http://127.0.0.1:41732'); await page.click('#welcomeNewButton');
+ await page.goto((process.env.LEAF_TEST_BASE_URL || 'http://127.0.0.1:41732')); await page.click('#welcomeNewButton');
  const metrics=await page.evaluate(()=>{
    const style=s=>getComputedStyle(document.querySelector(s));
    return {button:style('#openButton').height, icon:style('#openButton svg').width,
@@ -33,7 +33,7 @@ try {
    assert.equal(Number(await input.inputValue()),before+step);
    await input.press('ArrowLeft'); assert.equal(Number(await input.inputValue()),before);
  }
- for (const selector of ['#themeSelect', '#fontFamilySelect']) {
+ for (const selector of ['#themeSelect', '#englishFontSelect']) {
    const look=await page.locator(selector).evaluate(el=>{const s=getComputedStyle(el);return {appearance:s.webkitAppearance,shadow:s.boxShadow,image:s.backgroundImage,height:s.height};});
    assert.deepEqual(look,{appearance:'none',shadow:'none',image:'none',height:'36px'});
  }

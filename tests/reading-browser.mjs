@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 const browser=await chromium.launch(launchOptions);
 try {
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto('http://127.0.0.1:41732');await page.click('#welcomeNewButton');
+ await page.goto((process.env.LEAF_TEST_BASE_URL || 'http://127.0.0.1:41732'));await page.click('#welcomeNewButton');
  await page.click('#commandsButton');await page.fill('#paletteInput','文档属性');await page.getByRole('option',{name:'文档属性',exact:true}).click();
  await page.getByRole('textbox',{name:'新属性名',exact:true}).waitFor();
  await page.keyboard.press('ControlOrMeta+z');
@@ -40,7 +40,9 @@ try {
  // Heading fonts stay identical across modes, independently of body preference.
  for (const font of ['serif','sans','mono']) {
   await page.click('#appearanceButton');
-  await page.selectOption('#fontFamilySelect',font);
+  await page.selectOption('#englishFontSelect',font);
+  await page.selectOption('#chineseFontSelect',font);
+  await page.waitForSelector('.shell[data-body-fonts]');
   await page.click('#settingsClose');
   const editFonts=await page.locator('.cm-line.cm-leaf-heading').evaluateAll(els=>els.map(e=>getComputedStyle(e).fontFamily));
   assert.equal(editFonts.length,6);
@@ -48,9 +50,9 @@ try {
   const readingFonts=await page.locator('.reading-document :is(h1,h2,h3,h4,h5,h6)[data-source-line]').evaluateAll(els=>els.map(e=>getComputedStyle(e).fontFamily));
   assert.deepEqual(readingFonts,editFonts,`${font}: heading fonts match`);
   const bodyFont=await page.locator('.reading-document > p').first().evaluate(e=>getComputedStyle(e).fontFamily);
-  if (font==='serif') assert.match(bodyFont,/Georgia/);
+  if (font==='serif') assert.match(bodyFont,/Leaf Body en serif/);
   if (font==='mono') assert.match(bodyFont,/monospace/);
-  if (font==='sans') assert.equal(bodyFont,editFonts[0]);
+  if (font==='sans') assert.match(bodyFont,/Leaf Body en sans/);
   if (font!=='sans') assert.notEqual(bodyFont,readingFonts[0]);
   await page.click('#readingToggle');await page.click('[data-mode="edit"]');
   assert.equal(await getSource(),source);
