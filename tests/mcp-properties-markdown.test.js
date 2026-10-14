@@ -1,11 +1,37 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {planPropertyOperations,planMarkdownRangeOperations,planSourceChanges,planStructureOperations} from '../src/ai-structure-operations.js';
+import {planPropertyOperations,planMarkdownRangeOperations,planSourceChanges,planStructureOperations,verifyStructureResult} from '../src/ai-structure-operations.js';
+import {planMcpCommentBatch} from '../src/ai-comment-operations.js';
 import {propertySourceDocument} from '../src/markdown-model.js';
 import {parseMarkdown} from '../src/markdown-parse.js';
 
 const apply=(source,changes)=>[...changes].reverse().reduce((text,c)=>text.slice(0,c.from)+c.insert+text.slice(c.to),source);
 const property=(action,key,expected,value)=>({kind:'property',action,key,expected,value});
+
+test('final YAML union rejects malformed and duplicate keys and verifies requested property semantics',()=>{
+  const source='---\nx: old\ny: good\n---\n\nBody',scope={from:0,to:source.length},operations=[property('set','x','old','new')];
+  const structures=planStructureOperations(source,operations,scope,{deferIntegrity:true}).map(c=>({...c,expected:source.slice(c.from,c.to)}));
+  for(const patch of [
+    {from:source.indexOf('good'),to:source.indexOf('good')+4,expected:'good',insert:'['},
+    {from:source.indexOf('y:'),to:source.indexOf('y:')+1,expected:'y',insert:'x'},
+    {from:source.indexOf('x:'),to:source.indexOf('x:')+1,expected:'x',insert:'z'},
+  ]) {
+    const union=planSourceChanges(source,[...structures,patch],scope);
+    assert.throws(()=>verifyStructureResult(source,union,operations),/invalid_yaml_result|invalid_property_result/);
+    assert.throws(()=>planMcpCommentBatch(source,{changes:[patch],operations:[...operations,{kind:'comment',action:'add',from:source.indexOf('Body'),to:source.length,expected:'Body',text:'Synthetic'}]},{document_id:'document',session_id:'session',revision:0,authorization_epoch:1,source_fingerprint:'synthetic',scope}),/invalid_yaml_result|invalid_property_result/);
+  }
+  const valid=planSourceChanges(source,[...structures,{from:source.indexOf('good'),to:source.indexOf('good')+4,expected:'good',insert:'better'}],scope);
+  verifyStructureResult(source,valid,operations);
+  assert.equal(apply(source,valid),'---\nx: "new"\ny: better\n---\n\nBody');
+});
+
+test('unrelated unsupported and pre-existing invalid YAML retain their raw boundary',()=>{
+  for(const yaml of ['complex: &keep {nested: raw}','broken: [']) {
+    const source=`---\n${yaml}\n---\n\nBody`,at=source.indexOf('Body');
+    const planned=planStructureOperations(source,[{kind:'markdown',from:at,to:at+4,expected:'Body',insert:'Updated'}],{from:0,to:source.length});
+    assert.equal(apply(source,planned),source.replace('Body','Updated'));
+  }
+});
 
 test('property set preserves comments, raw types, ordering, CRLF and Unicode',()=>{
   const source='---\r\n# keep\r\ntitle: "旧😀é" # trailing\r\ncount: 0x10\r\nactive: true\r\ncomplex: &a {one: two}\r\n---\r\n\r\n正文\r\n';

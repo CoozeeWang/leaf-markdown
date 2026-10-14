@@ -519,6 +519,28 @@ async fn footnotes_tables_gate(app:&tauri::AppHandle,label:&str,broker:&super::m
 }
 
 async fn properties_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{
+    for comment in [false,true] {
+        let source="---\nx: old\ny: good\n---\n\nBody";
+        let reset=broker.bridge(app,label,"test",json!({"action":"reset","content":source})).await?;
+        let session=broker.register(label).session_id;
+        let d=broker.authorize(app,label,&session,"synthetic-client",json!({"from":0,"to":source.len()})).await?;
+        let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+        let mut begin=binding.clone();begin["request_id"]=json!(format!("yaml-begin-{comment}"));begin["revision"]=reset["revision"].clone();let task=tool(client,"begin_edit",begin).await?;
+        let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["revision"]=reset["revision"].clone();
+        let mut operations=vec![json!({"kind":"property","action":"set","key":"x","expected":"old","value":"new"})];
+        if comment {operations.push(json!({"kind":"comment","action":"add","from":source.find("Body").unwrap(),"to":source.len(),"expected":"Body","text":"Synthetic comment"}));}
+        batch["operations"]=json!(operations);
+        let before=broker.bridge(app,label,"test",json!({"action":"history-state"})).await?;
+        for (index,patch) in [json!({"from":source.find("good").unwrap(),"to":source.find("good").unwrap()+4,"expected":"good","insert":"["}),json!({"from":source.find("y:").unwrap(),"to":source.find("y:").unwrap()+1,"expected":"y","insert":"x"})].into_iter().enumerate(){
+            batch["request_id"]=json!(format!("yaml-reject-{comment}-{index}"));batch["changes"]=json!([patch]);
+            ensure(tool(client,"apply_edit_batch",batch.clone()).await.is_err(),"final mixed YAML must be rejected before mutation")?;
+            ensure(broker.bridge(app,label,"test",json!({"action":"history-state"})).await?==before,"mixed YAML rejection preserves source revision and history")?;
+        }
+        batch["request_id"]=json!(format!("yaml-valid-{comment}"));batch["changes"]=json!([{"from":source.find("good").unwrap(),"to":source.find("good").unwrap()+4,"expected":"good","insert":"better"}]);
+        ensure(tool(client,"apply_edit_batch",batch).await?["changed"]==true,"valid mixed YAML control commits")?;
+        let mut finish=binding;finish["task_id"]=task["task_id"].clone();tool(client,"finish_edit",finish).await?;
+        ensure(broker.bridge(app,label,"test",json!({"action":"undo"})).await?["content"]==source,"valid mixed YAML has one undo")?;
+    }
     let source="---\n# keep\ntitle: \"Old\" # inline\ncount: 0x10\ncomplex: &anchor {nested: value}\n---\n\n# Heading\n\nBody 😀é\n";
     let reset=broker.bridge(app,label,"test",json!({"action":"reset","content":source})).await?;
     let session=broker.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).unwrap().session_id.clone();

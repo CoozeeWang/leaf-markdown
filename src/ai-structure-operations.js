@@ -137,7 +137,17 @@ export function planStructureOperations(source,operations,scope,options={}) {
 }
 
 export function verifyStructureResult(source,planned,operations=[]) {
+  const after=resultingSource(source,planned),properties=operations.filter(operation=>operation.kind==='property');
+  // Parse the final original-snapshot union with Leaf's authoritative YAML
+  // parser. An isolated property subplan cannot validate neighboring raw edits.
+  const before=propertySourceDocument(source),result=propertySourceDocument(after);
+  const mapping=block=>block&&!block.parsed.errors.length&&(!block.parsed.contents||isMap(block.parsed.contents));
+  if(properties.length&&!mapping(result)||mapping(before)&&((result&&!mapping(result))||!result&&/^(?:\uFEFF)?---\r?\n/.test(after)))throw new Error('invalid_yaml_result');
+  for(const operation of properties) {
+    const pair=result.parsed.contents?.items.find(item=>isScalar(item.key)&&item.key.value===operation.key);
+    if(operation.action==='delete'?!!pair:!pair||JSON.stringify(pair.value?.toJSON()??null)!==JSON.stringify(operation.value))throw new Error('invalid_property_result');
+  }
   verifyMarkdownPreservation(source,planned);
-  verifyFootnoteIntegrity(source,resultingSource(source,planned));
+  verifyFootnoteIntegrity(source,after);
   verifyTableOperationsResult(source,planned,operations);
 }

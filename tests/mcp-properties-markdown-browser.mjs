@@ -94,4 +94,29 @@ try {
     assert.equal(result.snapshot.line_ending,'\r\n');assert.ok(!result.snapshot.content.includes('\r'));
     assert.equal(result.undo,result.source);assert.equal(result.redo,result.after);
   });
+  await test('final mixed YAML validation rejects malformed YAML and field tampering without revision or history changes',async()=>{
+    const rows=await page.evaluate(async()=>{
+      const {createLeafEditor}=await import('/src/editor.js');const rows=[];
+      for(const comment of [false,true]) {
+        const source='---\nx: old\ny: good\n---\n\nBody',parent=document.createElement('div');document.body.append(parent);
+        const editor=createLeafEditor({parent,doc:source}),task={task_id:`yaml-${comment}`,session_id:'session',document_id:'document',authorization_epoch:1,scope:{from:0,to:source.length},revision:0};
+        editor.beginAiTask(task);const before=editor.mcpSnapshot(),history=editor.historyDepth();
+        const operations=[{kind:'property',action:'set',key:'x',expected:'old',value:'new'},...(comment?[{kind:'comment',action:'add',from:source.indexOf('Body'),to:source.length,expected:'Body',text:'Synthetic comment'}]:[])];
+        for(const [index,patch]of [
+          {from:source.indexOf('good'),to:source.indexOf('good')+4,expected:'good',insert:'['},
+          {from:source.indexOf('y:'),to:source.indexOf('y:')+1,expected:'y',insert:'x'},
+          {from:source.indexOf('x:'),to:source.indexOf('x:')+1,expected:'x',insert:'z'},
+        ].entries()) {
+          let error;try{await editor.applyMcpBatch({...task,mutation_id:`yaml-${comment}-${index}`,request_id:`yaml-${comment}-${index}`,operations,changes:[patch]});}catch(e){error=e.message;}
+          rows.push({error,unchanged:JSON.stringify(editor.mcpSnapshot())===JSON.stringify(before)&&JSON.stringify(editor.historyDepth())===JSON.stringify(history)});
+        }
+        await editor.applyMcpBatch({...task,mutation_id:`yaml-valid-${comment}`,request_id:`yaml-valid-${comment}`,operations,changes:[{from:source.indexOf('good'),to:source.indexOf('good')+4,expected:'good',insert:'better'}]});
+        editor.finishAiTask(task);const after=editor.getValue();editor.undo();rows.push({valid:after.includes('x: "new"\ny: better'),undo:editor.getValue()===source});editor.redo();rows.push({redo:editor.getValue()===after});editor.destroy();parent.remove();
+      }return rows;
+    });
+    for(const row of rows) {
+      if('unchanged'in row){assert.match(row.error,/invalid_yaml_result|invalid_property_result/);assert.equal(row.unchanged,true);}
+      else if('valid'in row){assert.equal(row.valid,true);assert.equal(row.undo,true);}else assert.equal(row.redo,true);
+    }
+  });
 }finally{await browser.close();}
