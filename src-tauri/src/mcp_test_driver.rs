@@ -351,7 +351,8 @@ async fn tunnel_lifecycle(app:&tauri::AppHandle,label:&str,broker:&super::mcp::L
     use super::mcp::ai_credentials::{OsKeyring,random_token};
     let root=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());let evidence=root.join("tunnel-evidence.json");
     let source="Synthetic live Tunnel buffer";let exe=std::env::current_exe().map_err(|_|"Dev executable")?;
-    ensure(exe.to_string_lossy().contains(".cache/Leaf Dev.app/Contents/MacOS/leaf"),"actual lifecycle must launch from staged Leaf Dev bundle")?;
+    let root=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
+    ensure(exe==root.join("Leaf Native Test.app/Contents/MacOS/leaf"),"actual lifecycle must launch from the disposable staged native bundle")?;
     let helper=exe.parent().unwrap().join("leaf-mcp-adapter");let fixture=root.join("connector-fixture/tunnel-client");
     std::fs::create_dir_all(fixture.parent().unwrap()).map_err(|_|"fixture directory")?;std::fs::copy(&exe,&fixture).map_err(|_|"fixture copy")?;
     #[cfg(unix)]{use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(&fixture,std::fs::Permissions::from_mode(0o700)).map_err(|_|"fixture permissions")?;}

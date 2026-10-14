@@ -50,7 +50,7 @@ try {
   }
   let executable=join(root,'src-tauri/target/debug/leaf');
   if(mode.startsWith('chatgpt-tunnel-')) {
-    const options={source:executable,helper:join(root,'src-tauri/target/debug/leaf-mcp-adapter'),test:true};
+    const options={source:executable,helper:join(root,'src-tauri/target/debug/leaf-mcp-adapter'),test:true,testBundlePath:join(directory,'Leaf Native Test.app')};
     const first=await stageDevBundle(options);
     if(mode==='chatgpt-tunnel-dev-bundle') {
       const second=await stageDevBundle(options);
@@ -61,7 +61,7 @@ try {
       await writeFile(join(directory,'staging.json'),JSON.stringify({first,second}));
     }
     executable=first.executable;
-    assert(executable.includes('.cache/Leaf Dev.app/Contents/MacOS/leaf'),'native Tunnel route must use the staged bundle');
+    assert(executable.includes('Leaf Native Test.app/Contents/MacOS/leaf'),'native Tunnel route must use the disposable staged bundle');
   }
   server=start('node',['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','41731','--strictPort']);
   for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:41731')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}

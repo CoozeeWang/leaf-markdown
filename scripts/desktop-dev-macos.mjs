@@ -7,7 +7,7 @@ import { join,resolve } from 'node:path';
 // Cargo's runner keeps native development inside a recognizable app bundle.
 // No installer or Launch Services registration is involved. The executable is
 // refreshed each time Cargo rebuilds, while the app identity remains stable.
-export async function stageDevBundle({source,helper,test=false,launch=false}={}) {
+export async function stageDevBundle({source,helper,test=false,launch=false,testBundlePath}={}) {
 if(process.platform!=='darwin')throw new Error('macOS Dev bundle required');
 const staged=await stageAdapter({debug:true,nativeSmoke:test,reuseBuild:!!helper||test});
 if(helper&&resolve(helper)!==resolve(staged.binary))throw new Error('Dev helper must come from the native staging gate');
@@ -18,7 +18,8 @@ const identity=path=>{
 };
 const guiIdentity=identity(source);const helperIdentity=identity(helper);
 if(guiIdentity!==helperIdentity)throw new Error('Dev GUI/helper build identities differ');
-const bundle = fileURLToPath(new URL('../.cache/Leaf Dev.app/', import.meta.url));
+if(testBundlePath&&!test)throw new Error('Disposable bundle path requires isolated native testing');
+const bundle = testBundlePath ? resolve(testBundlePath) : fileURLToPath(new URL('../.cache/Leaf Dev.app/', import.meta.url));
 const contents = join(bundle, 'Contents');
 const executable = join(contents, 'MacOS', 'leaf');
 mkdirSync(join(contents, 'MacOS'), { recursive: true });

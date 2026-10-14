@@ -6,6 +6,7 @@ import { resolve, join } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import {stageDevBundle} from './desktop-dev-macos.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const mode = process.argv[2] || 'stdio-and-origin';
@@ -68,6 +69,10 @@ try {
     const binary = resolve(root, 'src-tauri/target/debug/leaf-mcp-adapter' + (process.platform === 'win32' ? '.exe' : ''));
     assert(existsSync(binary)); binaries = [binary];
   }
+  if(mode!=='packaged'&&process.platform==='darwin') {
+    const staged=await stageDevBundle({source:appExecutable,helper:binaries[0],test:true,testBundlePath:join(directory,'Leaf Adapter Test.app')});
+    appExecutable=staged.executable;binaries=[staged.helper];
+  }
   const server = start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '41731', '--strictPort']);
   for (let i = 0; i < 100; i++) { try { if ((await fetch('http://127.0.0.1:41731')).ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
   const app = start(appExecutable, []);
@@ -80,7 +85,17 @@ try {
       const tools = await h.request('tools/list'); assert(tools.result.tools.some(t => t.name === 'read_document'));
       const read = await h.request('tools/call', { name: 'read_document', arguments: ready.binding }); assert.equal(read.result.structuredContent.content, 'synthetic alpha omega');
       const resources = await h.request('resources/list'); assert.equal(resources.result.resources.length, 1);
-      const resource = await h.request('resources/read', { uri: resources.result.resources[0].uri }); assert.equal(resource.result.contents[0].text, 'synthetic alpha omega');
+      const discovered=resources.result.resources[0];assert.equal(discovered.uri,'ui://leaf/reader');assert.equal(discovered.mimeType,'text/html;profile=mcp-app');
+      const resource = await h.request('resources/read', { uri: discovered.uri });
+      const asset=resource.result.contents[0];assert.equal(asset.uri,discovered.uri);assert.equal(asset.mimeType,discovered.mimeType);
+      assert.match(asset.text,/<!doctype html>/i);assert.match(asset.text,/<article[^>]+id="reader"/);assert.match(asset.text,/<script>/);assert.match(asset.text,/Content-Security-Policy/);
+      assert(!asset.text.includes('synthetic alpha omega'),'UI resource contains application HTML, not the live document');
+      assert.deepEqual(asset._meta.ui.csp,{connectDomains:[],resourceDomains:[]});
+      for(const name of ['open_reader','reader_snapshot']) {
+        const live=await h.request('tools/call',{name,arguments:ready.binding});assert.equal(live.result.isError,false);
+        assert.deepEqual(live.result.structuredContent.binding,ready.binding);assert.equal(live.result.structuredContent.snapshot.content,'synthetic alpha omega');
+        assert.equal(live.result.structuredContent.snapshot.revision,read.result.structuredContent.revision);
+      }
       assert.equal(h.stderr(), '', 'no diagnostic or credential output');
     });
   }
