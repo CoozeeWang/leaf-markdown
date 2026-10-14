@@ -44,6 +44,7 @@ import { insertNewlineContinueMarkup, deleteMarkupBackward, markdown } from '@co
 import { openSearchPanel, search, searchKeymap } from '@codemirror/search';
 import { LeafSearchPanel } from './search-panel.js';
 import { tags } from '@lezer/highlight';
+import { planInlineFormat } from './inline-format.js';
 import { leafMarkdownExtensions } from './markdown-extensions.js';
 import { structuredPreview, documentName, fileNameTitle, toggleFileNameTitle } from './structured-preview.js';
 import { renderInline, citationSignature, citationLabel } from './inline-preview.js';
@@ -630,6 +631,15 @@ function wrapMark(view, left, right = left) {
   view.focus();
 }
 
+function formatInline(view, type) {
+  const { from, to } = view.state.selection.main;
+  const source = view.state.doc.toString();
+  const plan = planInlineFormat(source, from, to, type, { bodyFrom: bodyStart(source) });
+  if (plan) view.dispatch({ changes: plan.changes, selection: EditorSelection.cursor(plan.anchor),
+    userEvent: 'input', annotations: isolateHistory.of('full') });
+  view.focus();
+}
+
 function transformLines(view, transform) {
   const range = view.state.selection.main;
   const startLine = view.state.doc.lineAt(range.from);
@@ -926,11 +936,8 @@ function formatEditor(view, type) {
     return;
   }
   if (type === 'footnote') return insertFootnote(view);
+  if (['bold', 'italic', 'strike', 'highlight', 'code'].includes(type)) return formatInline(view, type);
   const marks = {
-    bold: ['**', '**'],
-    italic: ['*', '*'],
-    strike: ['~~', '~~'],
-    code: ['`', '`'],
     codeblock: ['```\n', '\n```'],
     // Obsidian renders superscript/subscript from HTML tags, not ^x^ / ~x~.
     sup: ['<sup>', '</sup>'],
