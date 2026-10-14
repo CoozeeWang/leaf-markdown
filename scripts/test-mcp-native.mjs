@@ -1,0 +1,31 @@
+import {spawn} from 'node:child_process';
+import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {tmpdir, homedir} from 'node:os';
+import {join, resolve} from 'node:path';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+const mode=process.argv[2] || 'tracer';
+assert(['tracer','task-history-gate','renderer-ack-loss'].includes(mode));
+const root=resolve(import.meta.dirname,'..');
+const directory=await mkdtemp(join(tmpdir(),'leaf-mcp-native-'));
+const result=join(directory,'result.json');
+const env={...process.env,NODE_OPTIONS:'--test-reporter=tap',PATH:`${homedir()}/.cargo/bin:${process.env.PATH}`,LEAF_MCP_TEST_DIR:directory,LEAF_MCP_TEST_MODE:mode};
+let app, server;
+function start(command,args,options={}) { return spawn(command,args,{cwd:root,env,stdio:['ignore','pipe','pipe'],...options}); }
+function completed(child) { return new Promise((res,rej)=>{ child.on('error',rej);child.on('exit',code=>code===0?res():rej(new Error(`process exited ${code}`))); }); }
+try {
+  const build=start('node',['node_modules/@tauri-apps/cli/tauri.js','build','--debug','--no-bundle','--features','native-smoke','--config','src-tauri/tauri.mcp-test.conf.json']);
+  build.stdout.pipe(process.stdout);build.stderr.pipe(process.stderr);await completed(build);
+  server=start('node',['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','41731','--strictPort']);
+  for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:41731')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+  app=start(join(root,'src-tauri/target/debug/leaf'));
+  // Only fixed diagnostics leave the native driver. Never print document/token data.
+  app.stderr.on('data',chunk=>process.stderr.write(chunk));
+  let report;
+  for(let i=0;i<900;i++){try{report=JSON.parse(await readFile(result,'utf8'));break;}catch{}if(app.exitCode!==null)break;await new Promise(r=>setTimeout(r,100));}
+  assert(report,'actual Tauri driver must return evidence');
+  await test(`native ${mode} controlled task contract`,()=>assert.equal(report.pass,true,`${mode}: ${report.failure || 'native assertions failed'}`));
+} finally {
+  app?.kill('SIGTERM');server?.kill('SIGTERM');await rm(directory,{recursive:true,force:true});
+}

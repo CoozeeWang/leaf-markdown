@@ -1,0 +1,6 @@
+{
+  "productName": "Leaf MCP Test",
+  "identifier": "studio.leaf.editor.dev.mcptest",
+  "app": {"windows": [{"label":"main", "title":"Leaf MCP Test", "width":1100, "height":800, "visible":false}]},
+  "bundle": {"active":false,"fileAssociations":[]}
+}

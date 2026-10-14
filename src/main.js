@@ -2176,6 +2176,11 @@ if (desktop) {
     await desktopRevealDocument().catch(error => console.error('Document window reveal failed', error));
     editor.setReading(state.reading);
     if (welcomeScreen.hidden && !state.reading) editor.focus();
+    const testMode=await invoke('mcp_test_mode').catch(()=>null);
+    if(testMode) {
+      const report={pass:typeof editor.beginAiTask==='function',failure:'MCP tracer requires the controlled task transaction API'};
+      await invoke('mcp_test_report',{report});
+    }
   });
 }
 

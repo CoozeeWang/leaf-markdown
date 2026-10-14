@@ -16,8 +16,18 @@ mod document_location;
 mod recent;
 mod new_markdown;
 mod i18n;
+#[cfg(feature = "native-smoke")]
+mod mcp_test_driver;
 #[cfg(target_os = "macos")]
 mod native_services;
+
+fn application_data(app: &tauri::AppHandle) -> Result<PathBuf, tauri::Error> {
+    #[cfg(feature="native-smoke")]
+    if mcp_test_driver::enabled(app) {
+        return Ok(PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").expect("isolated test directory")).join("app-data"));
+    }
+    app.path().app_data_dir()
+}
 
 #[derive(Default)]
 struct RecoveryState { gate: Mutex<()>, drafts: Mutex<HashMap<String, String>>, initial: Mutex<HashMap<String, String>> }
@@ -275,7 +285,7 @@ fn import_attachment(app: tauri::AppHandle, window: tauri::WebviewWindow, name: 
     if !window.label().starts_with("document-") { return Err(crate::i18n::error("main.open_or_create_a_document_first", serde_json::json!({})).into()); }
     let doc = resource_document(&app, window.label())?;
     let data = match (data, source) { (Some(data), None) => data, (None, Some(path)) => resources::bytes(std::path::Path::new(&path))?, _ => return Err(crate::i18n::error("main.invalid_attachment_source", serde_json::json!({})).into()) };
-    resources::import_managed(&doc, &name, &data, Some(&app.path().app_data_dir().map_err(|e| e.to_string())?.join("removed-images-v1")))
+    resources::import_managed(&doc, &name, &data, Some(&application_data(&app).map_err(|e| e.to_string())?.join("removed-images-v1")))
 }
 fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -315,7 +325,7 @@ fn reveal_resource(app: tauri::AppHandle, window: tauri::WebviewWindow, relative
 #[tauri::command(async)]
 fn read_resource(app: tauri::AppHandle, window: tauri::WebviewWindow, relative: String) -> Result<Vec<u8>, String> {
     let doc = resource_document(&app, window.label())?;
-    resources::restore(&app.path().app_data_dir().map_err(|e| e.to_string())?.join("removed-images-v1"), &doc, &relative)?;
+    resources::restore(&application_data(&app).map_err(|e| e.to_string())?.join("removed-images-v1"), &doc, &relative)?;
     resources::bytes(&resources::resolve(&doc, &relative)?)
 }
 #[tauri::command(async)]
@@ -602,14 +612,14 @@ fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: 
 }
 
 fn recovery_store(app: &tauri::AppHandle) -> Result<recovery::Store, String> {
-    Ok(recovery::Store::new(app.path().app_data_dir().map_err(|e| e.to_string())?.join("recovery-v1")))
+    Ok(recovery::Store::new(application_data(&app).map_err(|e| e.to_string())?.join("recovery-v1")))
 }
 fn recovery_key(window: &tauri::WebviewWindow, docs: &Documents, recovery: &RecoveryState) -> String {
     if let Some(Some(path)) = docs.0.lock().unwrap().get(window.label()) { return recovery::file_key(path); }
     recovery.drafts.lock().unwrap().entry(window.label().into()).or_insert_with(recovery::draft_key).clone()
 }
 fn retention_days(app: &tauri::AppHandle) -> Result<u32,String> {
-    let path=app.path().app_data_dir().map_err(|e|e.to_string())?.join("recovery-retention.json");
+    let path=application_data(&app).map_err(|e|e.to_string())?.join("recovery-retention.json");
     let days:u32=match fs::read(path) {Ok(bytes)=>serde_json::from_slice(&bytes).map_err(|e|crate::i18n::error("main.could_not_read_the_recovery_retention_setting", serde_json::json!({"error": (e).to_string()})))?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>30,Err(e)=>return Err(e.to_string())};
     if ![7,30,90].contains(&days){return Err(crate::i18n::error("main.invalid_recovery_retention_period", serde_json::json!({})).into());}Ok(days)
 }
@@ -618,7 +628,7 @@ fn recovery_retention(app:tauri::AppHandle,recovery:tauri::State<RecoveryState>,
     let _guard=recovery.gate.lock().unwrap();
     if let Some(days)=days {
         if ![7,30,90].contains(&days){return Err(crate::i18n::error("main.invalid_recovery_retention_period", serde_json::json!({})).into());}
-        let root=app.path().app_data_dir().map_err(|e|e.to_string())?;fs::create_dir_all(&root).map_err(|e|e.to_string())?;
+        let root=application_data(&app).map_err(|e|e.to_string())?;fs::create_dir_all(&root).map_err(|e|e.to_string())?;
         let mut temp=tempfile::NamedTempFile::new_in(&root).map_err(|e|e.to_string())?;
         temp.write_all(days.to_string().as_bytes()).map_err(|e|e.to_string())?;temp.as_file().sync_all().map_err(|e|e.to_string())?;
         temp.persist(root.join("recovery-retention.json")).map_err(|e|e.to_string())?;
@@ -798,7 +808,7 @@ fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tau
     let store = recovery_store(&app)?;
     // If the local history cannot be protected, do not silently overwrite disk.
     store.before_save(&key, target_string.into(), expected.as_deref())?;
-    let image_store = app.path().app_data_dir().map_err(|e| e.to_string())?.join("removed-images-v1");
+    let image_store = application_data(&app).map_err(|e| e.to_string())?.join("removed-images-v1");
     resources::restore_references(&image_store, &target, &content)?;
     let mut previous = expected.clone();
     // Seed cleanup from this exact file's retained history, so a removal
@@ -1049,6 +1059,8 @@ fn main() {
     #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
     configure_development(context.config_mut());
+    #[cfg(feature = "native-smoke")]
+    mcp_test_driver::configure(context.config_mut());
     #[cfg(all(target_os = "windows", feature = "native-smoke"))]
     for window in &mut context.config_mut().app.windows {
         window.additional_browser_args = Some(native_smoke_browser_args());
@@ -1062,10 +1074,20 @@ fn main() {
     let builder = builder.manage(OpenRequests::default());
     builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, show_comment_context, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open])
+        .invoke_handler({
+            let production: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, show_comment_context, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open]);
+            move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+                #[cfg(feature = "native-smoke")]
+                if invoke.message.command().starts_with("mcp_test_") {
+                    let test: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp_test_driver::mcp_test_mode, mcp_test_driver::mcp_test_report]);
+                    return test(invoke);
+                }
+                production(invoke)
+            }
+        })
         .setup(|app| {
-            app.manage(i18n::Language::load(app.path().app_data_dir()?.join("language-v1.json")));
-            let recent_path = app.path().app_data_dir()?.join("recent-files-v1.json");
+            app.manage(i18n::Language::load(application_data(app.handle())?.join("language-v1.json")));
+            let recent_path = application_data(app.handle())?.join("recent-files-v1.json");
             app.manage(recent::Recent::load(recent_path));
             #[cfg(target_os = "macos")]
             native_shortcuts::install(app.handle().clone());
@@ -1111,7 +1133,7 @@ fn main() {
             app.state::<i18n::Language>().attach_menu(&menu)?;
             app.set_menu(menu)?;
             #[cfg(target_os = "macos")]
-            if app.config().identifier != "studio.leaf.editor.dev" { native_services::install(app.handle().clone()); }
+            if !app.config().identifier.starts_with("studio.leaf.editor.dev") { native_services::install(app.handle().clone()); }
             app.state::<recent::Recent>().set_menu(handle, recent_menu).map_err(std::io::Error::other)?;
             #[cfg(target_os = "macos")]
             if app.config().identifier == "studio.leaf.editor.dev" {
@@ -1192,6 +1214,8 @@ fn main() {
         .build(context).expect("Leaf could not start")
         .run(|app, event| match event {
             tauri::RunEvent::Ready => {
+                #[cfg(feature = "native-smoke")]
+                if let Err(_) = mcp_test_driver::start(app) { eprintln!("MCP test startup failed"); app.exit(1); }
                 #[cfg(target_os = "macos")]
                 if app.state::<OpenRequests>().mark_ready() { drain_open_requests(app.clone()); }
                 #[cfg(target_os = "windows")]
