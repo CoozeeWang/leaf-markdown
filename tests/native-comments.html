@@ -1,0 +1,23 @@
+<!doctype html><html><meta charset="utf-8"><div id="editor" style="height:600px"></div><div id="printed"></div>
+<script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import {renderPrintDocument} from '/src/print-document.js';
+import {isCommentShortcut} from '/src/comment-view.js';
+import '/src/style.css';import '/src/comments.css';
+const source='正文{==**范围文字**==}{>>范围批注<<}。{>>位置批注<<}\r\n\r\n%%隐藏\r\n\r\n# 隐藏标题\r\n%%\r\n\r\n普通段落';
+window.testEditor=createLeafEditor({parent:document.querySelector('#editor'),doc:source,onCommentActivate:id=>window.activated=id});window.v=testEditor.view;
+window.addEventListener('keydown',e=>{if(isCommentShortcut(e)){e.preventDefault();window.nativeShortcut=e.isTrusted;window.added=testEditor.addComment();}},true);
+window.startTest=async()=>{
+ const pause=()=>new Promise(r=>setTimeout(r,180)),check=(ok,message)=>{if(!ok)throw Error(message);};
+ try{
+  await pause();check(document.querySelectorAll('.leaf-comment-bubble').length===2,'range and point bubbles');check(document.querySelector('.leaf-comment-range').textContent==='范围文字','range rendered');check(!document.querySelector('#editor').textContent.includes('范围批注'),'body hides comments');check(document.querySelector('#editor').textContent.includes('# 隐藏标题'),'hidden comment raw text visible');check(getComputedStyle(document.querySelector('.leaf-hidden-comment')).fontWeight==='400','hidden comment plain text');
+  const bubble=document.querySelector('.leaf-comment-bubble');bubble.click();check(window.activated===testEditor.comments().notes[0].id,'native bubble activation');check(getComputedStyle(bubble.querySelector('svg')).width==='11px','small bubble');
+  const note=testEditor.comments().notes[0];testEditor.setCommentBody(note.id,'修改批注');check(testEditor.getValue().includes('{>>修改批注<<}'),'write through');testEditor.undo();check(testEditor.getValue()===source,'CRLF undo');testEditor.redo();testEditor.deleteComment(testEditor.comments().notes[0].id);check(testEditor.getValue().includes('正文**范围文字**。'),'delete preserves body');
+  testEditor.setValue(source);testEditor.setSource(true);await pause();check(document.querySelector('#editor').textContent.includes('{>>范围批注<<}'),'source markers');testEditor.setSource(false);await pause();check(testEditor.getValue()===source,'switch does not write');
+  const hidden=testEditor.comments().notes.find(n=>n.kind==='hidden');testEditor.goToComment(hidden.id);await pause();check(!!document.querySelector('.leaf-hidden-comment.leaf-comment-located'),'visible hidden comment locating cue');check(testEditor.getValue()===source,'locating does not write');v.dispatch({changes:{from:hidden.bodyFrom,to:hidden.bodyFrom+2,insert:'改写'},userEvent:'input.type'});check(testEditor.comments().notes.find(n=>n.kind==='hidden').text.startsWith('改写'),'direct hidden comment edit');testEditor.undo();check(testEditor.getValue()===source,'direct hidden comment CRLF undo');
+  renderPrintDocument(document.querySelector('#printed'),source,{fallbackTitle:false});check(!document.querySelector('#printed').textContent.includes('批注'),'export stripped');check(document.querySelector('#printed strong')?.textContent==='范围文字','export preserves formatting');
+  testEditor.setValue('普通段落');v.dispatch({selection:{anchor:0,head:4}});v.focus();document.title='LeafKey CmdOptionA';await pause();check(window.nativeShortcut,'AppKit shortcut trusted');check(window.added?.note?.kind==='range','native shortcut range');testEditor.undo();check(testEditor.getValue()==='普通段落','native insertion undo');
+  document.title='LeafTest PASS comments, superscript bubbles, CRLF history, source, print and AppKit comment shortcut';
+ }catch(e){document.title='LeafTest FAIL '+e.message;}
+};document.title='LeafSource';
+</script></html>

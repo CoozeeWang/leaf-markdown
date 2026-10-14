@@ -60,6 +60,8 @@ import { imageDrag } from './image-drag.js';
 import { shortcutText, documentHistoryShortcut } from './platform-shortcuts.js';
 import { footnoteRegion, footnoteRegionEnabled, footnoteBoundaryGuard, prepareBodyBeforeNotes } from './footnote-region.js';
 import { footnoteInlineNodes } from './footnote-inline.js';
+import {commentIndex,commentDecorations,commentLocation,activeComment,locateComment} from './comment-view.js';
+import {planCommentInsertion,planCommentBody,planCommentDeletion} from './comments.js';
 
 const toggleBlankMarkers = StateEffect.define();
 const typedProperties = StateEffect.define();
@@ -83,20 +85,21 @@ const headingNumbers = StateField.define({
 });
 
 class InlinePreview extends WidgetType {
-  constructor(from, text, { rule = false, title = '', footnotes = null, signature = '', note = null } = {}) {
+  constructor(from, text, { rule = false, title = '', footnotes = null, signature = '', note = null, commentId = '', commentActive = false } = {}) {
     super();
     this.from = from; this.text = text; this.rule = rule; this.title = title;
     this.footnotes = footnotes; this.signature = signature; this.note = note;
+    this.commentId = commentId; this.commentActive = commentActive;
   }
   // Rendered widgets are compared by value, and a citation's number is not part
   // of its source text: without the signature, adding or removing a definition
   // elsewhere would leave the marker printed with its old number.
   eq(other) {
-    return this.from === other.from && this.text === other.text && this.rule === other.rule && this.title === other.title && this.signature === other.signature && this.note === other.note;
+    return this.from === other.from && this.text === other.text && this.rule === other.rule && this.title === other.title && this.signature === other.signature && this.note === other.note && this.commentId === other.commentId && this.commentActive === other.commentActive;
   }
   updateDOM(span) {
     const old = span._preview;
-    if (!old || this.text !== old.text || this.rule !== old.rule || this.title !== old.title || this.signature !== old.signature || this.note !== old.note) return false;
+    if (!old || this.text !== old.text || this.rule !== old.rule || this.title !== old.title || this.signature !== old.signature || this.note !== old.note || this.commentId !== old.commentId || this.commentActive !== old.commentActive) return false;
     span._preview = this;
     return true;
   }
@@ -106,6 +109,7 @@ class InlinePreview extends WidgetType {
     if (this.rule) { span.className = 'leaf-rule'; span.setAttribute('role', 'separator'); }
     else {
       renderInline(span, this.text, this.footnotes && { ...this.footnotes, seen: new Map() });
+      if(this.commentId){span.className='leaf-comment-range'+(this.commentActive?' active':'');span.dataset.commentId=this.commentId;}
       if (this.title) {
         if (span.querySelector('.leaf-image')) {
           span.dataset.tooltip = this.title;
@@ -116,7 +120,8 @@ class InlinePreview extends WidgetType {
     }
     span.addEventListener('mousedown', event => {
       if (event.button !== 0) return;
-      event.preventDefault(); view.dispatch({ selection: { anchor: span._preview.from } }); view.focus();
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: span._preview.from } }); view.focus();
       // A marker stands for a note: clicking it takes the reader to that note in
       // the notes panel, the way a printed footnote sends you to the foot of the
       // page, instead of leaving the caret on a label with nothing to edit.
@@ -401,6 +406,10 @@ function livePreviewDecorations(view) {
   tree.iterate({
     enter(node) {
       if (node.from < suppressUntil) return false;
+      const annotations=view.state.field(commentIndex,false);
+      const commentFor=(from,to)=>{const note=annotations?.notes.find(n=>n.range&&from>=n.range.bodyFrom&&to<=n.range.bodyTo);return note?{commentId:note.id,commentActive:note.id===annotations.active}:{};};
+      if(node.name!=='Document' && annotations && annotations.notes.some(n=>node.from>=n.from&&node.to<=n.to))return false;
+      if(node.name==='CriticMark'||node.name==='CriticRevision')return false;
       const line = doc.lineAt(node.from);
       const heading = node.name.match(/^(?:ATX|Setext)Heading([1-6])$/);
       const yaml = view.state.field(structuredPreview).model.yaml;
@@ -412,7 +421,7 @@ function livePreviewDecorations(view) {
 
       const inline = inlineSpans.get(node.from);
       if (inline && !caretInRange(view.state, inline.openFrom, inline.closeTo)) {
-        ranges.push(Decoration.replace({ widget: new InlinePreview(inline.openFrom, doc.sliceString(inline.openFrom, inline.closeTo)) }).range(inline.openFrom, inline.closeTo));
+        ranges.push(Decoration.replace({ widget: new InlinePreview(inline.openFrom, doc.sliceString(inline.openFrom, inline.closeTo),commentFor(inline.openFrom,inline.closeTo)) }).range(inline.openFrom, inline.closeTo));
         suppressUntil = inline.closeTo;
         return false;
       }
@@ -452,7 +461,7 @@ function livePreviewDecorations(view) {
         // "click to edit link" -- that promises an action the marker has not got.
         const title = node.name === 'Image' ? t("editor.hold_to_drag_the_image", {"shortcut": shortcutText('⌘').replace(/\+$/, '')}) : node.name === 'Link' && signature !== null ? '' : t("editor.click_to_edit_link");
         const note = node.name === 'Link' ? citationLabel(raw, noteNumbers) : null;
-        ranges.push(Decoration.replace({ widget: new InlinePreview(node.from, raw, { rule: node.name === 'HorizontalRule', title, footnotes, signature: signature ?? '', note }) }).range(node.from, node.to));
+        ranges.push(Decoration.replace({ widget: new InlinePreview(node.from, raw, { rule: node.name === 'HorizontalRule', title, footnotes, signature: signature ?? '', note, ...commentFor(node.from,node.to) }) }).range(node.from, node.to));
         return false;
       }
 
@@ -523,7 +532,7 @@ const livePreview = ViewPlugin.fromClass(
     }
 
     update(update) {
-      if (update.transactions.some(tr => tr.effects.some(effect => effect.is(languageChanged) || effect.is(setNoteFocus))) || update.docChanged || update.selectionSet || update.viewportChanged || update.startState.field(sourceMode) !== update.state.field(sourceMode) || update.startState.field(blankMarkers) !== update.state.field(blankMarkers) || update.startState.field(headingNumbers) !== update.state.field(headingNumbers)) {
+      if (update.transactions.some(tr => tr.effects.some(effect => effect.is(languageChanged) || effect.is(setNoteFocus) || effect.is(activeComment))) || update.docChanged || update.selectionSet || update.viewportChanged || update.startState.field(sourceMode) !== update.state.field(sourceMode) || update.startState.field(blankMarkers) !== update.state.field(blankMarkers) || update.startState.field(headingNumbers) !== update.state.field(headingNumbers)) {
         this.decorations = livePreviewDecorations(update.view);
       }
     }
@@ -1211,6 +1220,9 @@ export function createLeafEditor(options) {
       bracketMatching(),
       markdown({ extensions: leafMarkdownExtensions, addKeymap: false }),
       sourceMode,
+      commentIndex,
+      commentDecorations,
+      commentLocation,
       fileNameTitle.init(() => options.showFileNameTitle !== false),
       structuredPreview,
       propertiesFolded,
@@ -1309,6 +1321,7 @@ export function createLeafEditor(options) {
   });
 
   const view = new EditorView({ state, parent: options.parent });
+  view.dom.addEventListener('leaf-comment-activate',event=>options.onCommentActivate?.(event.detail.id));
   view.dom.addEventListener("leaf-image-ready", () => view.requestMeasure());
   // Dragging a file over the property block must not offer a position there: the
   // drop lands in the body instead, so a cursor drawn over the block would point
@@ -1457,6 +1470,27 @@ export function createLeafEditor(options) {
     // The notes panel writes through here rather than keeping a copy of the note:
     // what it shows and what the file holds are the same words, so the reading
     // view and the PDF follow the panel as it is typed into.
+    comments:()=>view.state.field(commentIndex),
+    activateComment(id){view.dispatch({effects:activeComment.of(id)});},
+    addComment(){
+      if(reading||view.compositionStarted)return {error:'selection'};
+      const range=view.state.selection.main,plan=planCommentInsertion(view.state.doc.toString(),range.from,range.to);
+      if(plan.error)return plan;
+      view.dispatch({changes:plan.change,selection:{anchor:plan.anchor},userEvent:'input.comment',annotations:isolateHistory.of('full')});
+      return {note:view.state.field(commentIndex).notes.find(n=>n.from===plan.commentFrom)};
+    },
+    setCommentBody(id,text){
+      if(reading)return false;const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;
+      const change=planCommentBody(view.state.doc.toString(),note,text);if(!change)return false;
+      if(view.state.doc.sliceString(change.from,change.to)!==text)view.dispatch({changes:change,userEvent:'input.comment-body'});
+      return true;
+    },
+    deleteComment(id){
+      if(reading)return false;const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;
+      const changes=planCommentDeletion(view.state.doc.toString(),note);if(!changes.length)return false;
+      view.dispatch({changes,userEvent:'delete.comment',annotations:isolateHistory.of('full')});return true;
+    },
+    goToComment(id){const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;view.dispatch({effects:[activeComment.of(id),locateComment.of(note.kind==='hidden'?id:null),EditorView.scrollIntoView(note.kind==='hidden'?note.bodyFrom:note.range?.bodyFrom??note.from,{y:'center'})]});return true;},
     setFootnoteBody(label, body) { applyFootnoteBody(view, label, body); },
     deleteFootnote(label) {
       if (reading) return false;

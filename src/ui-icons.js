@@ -1,5 +1,6 @@
 // Series-wide UI glyphs. Product-specific editor symbols remain in main.js.
 export const uiIconPaths = {
+  comment: '<path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H8l-5 4V6a2 2 0 0 1 2-2Z"/><path d="M7 9h10M7 13h6"/>',
   outline: '<path d="M4 5h16M4 12h3m4 0h9M4 19h3m4 0h9"/>',
   notes: '<path d="M4 11h8M4 15h13M4 19h13"/><path d="M17 5.4 19 4.1V10"/>',
   open: '<path d="M3 7V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1"/><path d="M3.5 9h17l-2.4 8.5a2 2 0 0 1-1.9 1.5H5.8a2 2 0 0 1-1.9-1.5Z"/>',

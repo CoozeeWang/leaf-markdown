@@ -2,6 +2,7 @@ import { t, h, onLanguageChange, setText } from './i18n.js';
 import { setResourceReader, waitForImages } from './resources.js';
 import { isTauri, invoke } from '@tauri-apps/api/core';
 import { renderPrintDocument } from './print-document.js';
+import {indexComments} from './comments.js';
 import './pdf-export.css';
 import './callout.css';
 import { listen } from '@tauri-apps/api/event';
@@ -37,6 +38,10 @@ async function init() {
   document.title = snapshot.name.replace(/\.(md|markdown|mdown)$/i, '');
   document.querySelector('#app').innerHTML = `<header class="export-toolbar"><div><strong>${h("pdf_export.export_pdf")}</strong><small>${h("pdf_export.export_preview_of_the_current_document_editing")}</small></div><label><input id="properties" type="checkbox">${h("pdf_export.document_properties")}</label><label><input id="numbered" type="checkbox">${h("pdf_export.heading_numbering")}</label><button id="print">${h("pdf_export.save_as_pdf")}</button></header><p class="export-help">${h(/win/i.test(navigator.platform) ? 'MO0254' : 'pdf_export.click_save_then_choose_pdf_save_as')}</p><article class="print-document"></article><p id="export-error" role="alert"></p>`;
   document.querySelector('#numbered').checked = snapshot.numbered;
+  const comments=indexComments(snapshot.source);
+  const help=document.querySelector('.export-help');
+  if(comments.notes.length){const note=document.createElement('span');note.className='export-comment-help';setText(note,()=>t('comments.pdf_omit'));help.append(note);}
+  if(comments.revisions.length){const note=document.createElement('span');note.className='export-comment-help';setText(note,()=>t('comments.pdf_revision'));help.append(note);}
   const render = () => renderPrintDocument(document.querySelector('article'), snapshot.source, {
     name: snapshot.name, numbered: document.querySelector('#numbered').checked, properties: document.querySelector('#properties').checked,
   });
