@@ -321,7 +321,8 @@ impl LeafMcpBroker {
                 if task["task_id"]!=args["task_id"]{return Err("stale_task".into());}
                 let snapshot=self.bridge(app,&d.label,"snapshot",json!({})).await?;
                 if args["revision"]!=snapshot["revision"]{return Err("stale_revision".into());}
-                let record=MutationRecord{mutation_id:id("mutation"),request_digest:hash,changes_digest:digest(&args["changes"]),source_digest:text_digest(snapshot["content"].as_str().ok_or("renderer_snapshot")?),session_id:d.session_id.clone(),task_id:required(&args,"task_id")?.into(),request_id:request.into(),authorization_epoch:d.authorization_epoch,source_revision:snapshot["revision"].as_u64().ok_or("renderer_revision")?,state:"PREPARED".into(),transitions:vec!["PREPARED".into()],result:None};
+                let edit_payload=if args.get("operations").is_some(){json!({"changes":args["changes"],"operations":args["operations"]})}else{args["changes"].clone()};
+                let record=MutationRecord{mutation_id:id("mutation"),request_digest:hash,changes_digest:digest(&edit_payload),source_digest:text_digest(snapshot["content"].as_str().ok_or("renderer_snapshot")?),session_id:d.session_id.clone(),task_id:required(&args,"task_id")?.into(),request_id:request.into(),authorization_epoch:d.authorization_epoch,source_revision:snapshot["revision"].as_u64().ok_or("renderer_revision")?,state:"PREPARED".into(),transitions:vec!["PREPARED".into()],result:None};
                 self.inner.ledger.save(record.clone(),key.clone())?;
                 let mut batch=args.clone();batch["mutation_id"]=json!(record.mutation_id);batch["request_digest"]=json!(record.request_digest);
                 let dispatched=self.bridge(app,&d.label,"apply",batch).await;
@@ -440,14 +441,17 @@ fn tool_definition(name:&str)->Tool {
         "apply_edit_batch"=>{
             for key in ["request_id","task_id"] {properties.insert(key.into(),json!({"type":"string","minLength":1}));required.push(key);}
             properties.insert("revision".into(),json!({"type":"integer","minimum":0}));required.push("revision");
-            properties.insert("changes".into(),json!({"type":"array","maxItems":256,"items":{"type":"object","required":["from","to","expected","insert"],"properties":{"from":{"type":"integer","minimum":0},"to":{"type":"integer","minimum":0},"expected":{"type":"string"},"insert":{"type":"string","description":"Exact replacement using LF; retain Unicode representation"}},"additionalProperties":false}}));required.push("changes");
-            "Atomically apply nonoverlapping patches in original UTF-16 coordinates. Every exact expected source must match. Reuse the identical request to query an outcome; never replay unknown mutations. Returns buffer revision and separate disk status."
+            properties.insert("changes".into(),json!({"type":"array","maxItems":256,"items":{"type":"object","required":["from","to","expected","insert"],"properties":{"from":{"type":"integer","minimum":0},"to":{"type":"integer","minimum":0},"expected":{"type":"string"},"insert":{"type":"string","description":"Exact replacement using LF; retain Unicode representation"}},"additionalProperties":false}}));
+            properties.insert("operations".into(),json!({"type":"array","minItems":1,"maxItems":256,"items":{"type":"object","required":["kind","action","key","expected"],"properties":{"kind":{"const":"property"},"action":{"enum":["add","set","delete"]},"key":{"type":"string","minLength":1},"expected":{"type":"string","description":"Exact old YAML value token; empty for add"},"value":{"oneOf":[{"type":["string","number","boolean","null"]},{"type":"array","items":{"type":"string"}}],"description":"Required for add/set"}},"additionalProperties":false}}));
+            "Atomically apply changes and/or operations, planned together in original UTF-16 coordinates. Property add/set/delete preserves source tokens and rejects unsupported complex YAML. Every exact expected source must match. Omit changes only when operations is present. Reuse the identical request to query an outcome; never replay unknown mutations. Returns buffer revision and separate disk status."
         },
         "finish_edit"|"stop_edit"=>{properties.insert("task_id".into(),json!({"type":"string","minLength":1}));required.push("task_id");"End the current edit task, preserving already applied batches as one undo event. Repeated ending is harmless; it does not save disk."},
         "reconcile_request"=>{properties.insert("request_id".into(),json!({"type":"string","minLength":1}));required.push("request_id");"Query and reconcile the durable outcome of a prior request. Unknown outcomes fail closed; this never redispatches an edit."},
         _=>"Read current task ownership, authorized buffer revision and disk status without mutating.",
     };
-    serde_json::from_value(json!({"name":name,"description":description,"inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":false}})).expect("static MCP tool schema")
+    let mut schema=json!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
+    if name=="apply_edit_batch"{schema["anyOf"]=json!([{"required":["changes"]},{"required":["operations"]}]);}
+    serde_json::from_value(json!({"name":name,"description":description,"inputSchema":schema})).expect("static MCP tool schema")
 }
 
 #[cfg(feature="native-smoke")]

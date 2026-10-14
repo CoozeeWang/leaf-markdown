@@ -128,9 +128,51 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     if mode=="renderer-ack-loss" {ack_loss_gate(app,label,broker,&client).await?;edge_gate(app,label,broker,&client).await?;}
     if mode=="all-write-entrances" {entrances_gate(app,label,broker,&client).await?;}
     if mode=="stop-late-second-window" {stop_late_gate(app,broker,&client).await?;}
+    if mode=="properties-markdown" {
+        ensure(apply["inputSchema"]["properties"]["operations"].is_object(),"structured operations are discoverable through actual MCP tools/list")?;
+        properties_gate(app,label,broker,&client).await?;
+    }
     broker.unregister(label);
     ensure(tool(&client,"read_document",binding).await.is_err(),"closed session must fail")?;
     let _=client.cancel().await;Ok(())
+}
+
+async fn properties_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{
+    let source="---\n# keep\ntitle: \"Old\" # inline\ncount: 0x10\ncomplex: &anchor {nested: value}\n---\n\n# Heading\n\nBody 😀é\n";
+    let reset=broker.bridge(app,label,"test",json!({"action":"reset","content":source})).await?;
+    let session=broker.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).unwrap().session_id.clone();
+    let d=broker.authorize(app,label,&session,"synthetic-client",json!({"from":0,"to":source.encode_utf16().count()})).await?;
+    let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+    let mut begin=binding.clone();begin["request_id"]=json!("structure-begin");begin["revision"]=reset["revision"].clone();
+    let task=tool(client,"begin_edit",begin).await?;
+    let mut revision=reset["revision"].clone();
+    for (index,operation) in [
+        json!({"kind":"property","action":"set","key":"title","expected":"\"Old\"","value":"New"}),
+        json!({"kind":"property","action":"add","key":"tags","expected":"","value":["synthetic","😀"]}),
+        json!({"kind":"property","action":"delete","key":"title","expected":"\"New\""})
+    ].into_iter().enumerate(){
+        let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!(format!("property-{index}"));batch["revision"]=revision.clone();batch["operations"]=json!([operation]);
+        let result=tool(client,"apply_edit_batch",batch.clone()).await?;
+        ensure(result["changed"]==true,"property operation must reach actual editor")?;
+        ensure(tool(client,"apply_edit_batch",batch.clone()).await?==result,"property retry must return exact receipt")?;
+        batch["operations"][0]["expected"]=json!("different source");
+        ensure(tool(client,"apply_edit_batch",batch).await.is_err(),"operations are bound to request digest")?;
+        revision=result["applied_revision"].clone();
+    }
+    let before=broker.bridge(app,label,"snapshot",json!({})).await?;
+    ensure(before["content"].as_str().unwrap()==source.replace("title: \"Old\" ","").replace("---\n\n# Heading","\"tags\": [\"synthetic\",\"😀\"]\n---\n\n# Heading"),"property source and comments preserved")?;
+    for (index,operations) in [
+        json!([{"kind":"property","action":"set","key":"complex","expected":"{nested: value}","value":"bad"}]),
+        json!([{"kind":"property","action":"set","key":"count","expected":"0x10","value":20},{"kind":"unknown"}])
+    ].into_iter().enumerate(){
+        let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!(format!("property-refused-{index}"));batch["revision"]=revision.clone();batch["operations"]=operations;
+        ensure(tool(client,"apply_edit_batch",batch).await.is_err(),"unsupported batch must fail before any mutation")?;
+        ensure(broker.bridge(app,label,"snapshot",json!({})).await?==before,"rejected property batch leaves exact snapshot")?;
+    }
+    let mut end=binding.clone();end["task_id"]=task["task_id"].clone();tool(client,"finish_edit",end).await?;
+    ensure(broker.bridge(app,label,"test",json!({"action":"undo"})).await?["content"]==source,"whole property task undo")?;
+    ensure(broker.bridge(app,label,"test",json!({"action":"redo"})).await?["content"]==before["content"],"whole property task redo")?;
+    Ok(())
 }
 
 async fn stop_late_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{

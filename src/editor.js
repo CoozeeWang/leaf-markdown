@@ -51,6 +51,7 @@ import { renderInline, citationSignature, citationLabel } from './inline-preview
 import { paragraphBlankLineChanges } from './blank-lines.js';
 import { insertPlainParagraphNewline } from './paragraph-enter.js';
 import { frontmatter, bodyStart } from './markdown-model.js';
+import {planSourceChanges,planStructureOperations} from './ai-structure-operations.js';
 import { protectPropertyInsertions } from './properties-insert-guard.js';
 import { fileDropTarget, fileDropFeedback, setFileDropTarget, setFileDragging } from './file-drop.js';
 import { paragraphDeletion, selectedParagraphDeletion } from './paragraph-delete.js';
@@ -1071,16 +1072,8 @@ export async function mcpDigest(value) {
 }
 
 export function planMcpChanges(source, changes, scope) {
-  if(!Array.isArray(changes) || changes.length>256 || !scope || !Number.isInteger(scope.from) || !Number.isInteger(scope.to)) throw new Error('invalid_batch');
-  const boundaries=new Set([0,source.length]);
-  for(const item of new Intl.Segmenter('und',{granularity:'grapheme'}).segment(source)) boundaries.add(item.index);
-  const planned=changes.map(change=>{
-    const {from,to,insert,expected}=change;
-    if(!Number.isInteger(from)||!Number.isInteger(to)||from<scope.from||to>scope.to||from>to||to>source.length||typeof insert!=='string'||typeof expected!=='string'||!boundaries.has(from)||!boundaries.has(to)||source.slice(from,to)!==expected||insert.includes('\r')) throw new Error('invalid_patch');
-    return {from,to,insert};
-  }).sort((a,b)=>a.from-b.from||a.to-b.to);
-  for(let i=1;i<planned.length;i++) if(planned[i].from<planned[i-1].to || planned[i].from===planned[i-1].from) throw new Error('overlapping_patches');
-  return planned.filter(change=>source.slice(change.from,change.to)!==change.insert);
+  if(changes?.some(change=>change?.insert?.includes('\r')))throw new Error('invalid_patch');
+  return planSourceChanges(source,changes,scope);
 }
 
 class AiTaskHistory {
@@ -1457,10 +1450,12 @@ export function createLeafEditor(options) {
       return mutationReceipts.apply(batch.mutation_id,batch.request_digest || await mcpDigest(JSON.stringify(batch)),async()=>{
       if(!aiTask || batch.task_id!==aiTask.id || batch.session_id!==aiTask.session || batch.authorization_epoch!==aiTask.epoch) throw new Error('stale_task');
       if(batch.revision!==bufferRevision) throw new Error('stale_revision');
-      const changes=planMcpChanges(view.state.doc.toString(),batch.changes,aiTask.scope);
       const before=view.state.doc.toString();
+      const structural=batch.operations===undefined?[]:planStructureOperations(before,batch.operations,aiTask.scope);
+      const patches=batch.changes===undefined&&batch.operations!==undefined?[]:batch.changes;
+      const changes=planMcpChanges(before,[...planMcpChanges(before,patches,aiTask.scope),...structural].map(change=>({...change,expected:before.slice(change.from,change.to)})),aiTask.scope);
       const after=view.state.changes(changes).apply(view.state.doc).toString();
-      const sourceDigest=await mcpDigest(before),resultDigest=await mcpDigest(after),changesDigest=await mcpDigest(JSON.stringify(batch.changes));
+      const sourceDigest=await mcpDigest(before),resultDigest=await mcpDigest(after),changesDigest=await mcpDigest(JSON.stringify(batch.operations===undefined?batch.changes:{changes:batch.changes??null,operations:batch.operations}));
       if(!aiTask || batch.task_id!==aiTask.id || batch.revision!==bufferRevision)throw new Error('stale_task');
       if(changes.length) {
         aiTask.historyTime ??= Date.now();

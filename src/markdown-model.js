@@ -3,6 +3,19 @@ import { parseMarkdown } from './markdown-parse.js';
 import { parseDocument, isMap, isScalar, isSeq } from 'yaml';
 import { parseCallout } from './callout.js';
 
+// Exact YAML source and token coordinates, shared by structural AI planners.
+// Unlike the visual-property model, an empty delimiter pair is meaningful here.
+export function propertySourceDocument(source) {
+  const opening=/^(?:\uFEFF)?---\r?\n/.exec(source);
+  if(!opening)return null;
+  const closing=/^(?:---|\.\.\.)(?=\r?$)/gm;
+  closing.lastIndex=opening[0].length;
+  const end=closing.exec(source);
+  if(!end)return null;
+  const offset=opening[0].length,raw=source.slice(offset,end.index);
+  return {offset,closing:end.index,raw,parsed:parseDocument(raw,{keepSourceTokens:true,uniqueKeys:true})};
+}
+
 
 
 export function frontmatter(source) {
