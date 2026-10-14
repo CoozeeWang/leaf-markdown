@@ -56,6 +56,8 @@ Claude Desktop 也可使用为对应平台制作的 Leaf `.mcpb` 包；安装时
 
 没有打开文档、总开关关闭、客户端尚未启用或当前文档正在执行 AI 编辑时，授权入口不可用。文档在授权过程中变化时会拒绝过期请求，重新核对范围后再操作。
 
+人工修改、撤销、重做、重新载入或恢复稿件会立即撤销当前文档授权，包括全文授权。已有 AI 修改和撤销记录保留；继续使用 AI 前，请重新核对文档与范围并授权。
+
 ## 编辑、结束与保存
 
 先让 AI 调用 `list_documents`，使用返回的 `document_id`、`session_id` 和 `authorization_epoch`，再用 `read_document` 读取当前缓冲区和 revision。不要手写文档身份或把旧 revision 当作当前稿。

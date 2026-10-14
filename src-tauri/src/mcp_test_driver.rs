@@ -90,6 +90,7 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     ensure(().serve(StreamableHttpClientTransport::from_config(bad_auth)).await.is_err(),"wrong bearer must be rejected")?;
     let config=StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp")).auth_header(token).reinit_on_expired_session(false);
     let client=().serve(StreamableHttpClientTransport::from_config(config)).await.map_err(|_|"standard MCP initialize")?;
+    if mode=="authorization-retirement" {return authorization_retirement(app,label,broker,&client).await;}
     let listing=serde_json::to_value(client.list_tools(None).await.map_err(|_|"standard MCP tools discovery")?).map_err(|_|"tools encoding")?;
     let apply=listing["tools"].as_array().unwrap().iter().find(|tool|tool["name"]=="apply_edit_batch").ok_or("batch tool missing")?;
     ensure(apply["inputSchema"]["required"].as_array().unwrap().contains(&json!("request_id")),"MCP discovery explains mutation request identity")?;
@@ -205,6 +206,49 @@ async fn reader_http(port:u16,path:&str,origin:&str,host:&str,cookie:Option<&str
     let (headers,body)=response.split_once("\r\n\r\n").ok_or("reader HTTP response")?;
     let code=headers.split_whitespace().nth(1).ok_or("reader HTTP status")?.parse().map_err(|_|"reader HTTP status")?;
     Ok((code,headers.into(),body.into()))
+}
+
+async fn authorization_retirement(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{
+    let source="PUBLIC\n\nPRIVATE TRAILING CONTENT RETAINED HERE";
+    let reset=broker.bridge(app,label,"test",json!({"action":"reset","content":source})).await?;
+    let session=broker.register(label).session_id;
+    let d=broker.authorize(app,label,&session,"synthetic-client",json!({"from":0,"to":6})).await?;
+    let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+    let mut cached=binding.clone();cached["request_id"]=json!("cached-before-undo");cached["revision"]=reset["revision"].clone();
+    ensure(tool(client,"read_document",cached.clone()).await?["content"]=="PUBLIC","initial selection contains only public text")?;
+    let mut begin=binding.clone();begin["request_id"]=json!("selection-expansion");begin["revision"]=reset["revision"].clone();
+    let task=tool(client,"begin_edit",begin).await?;
+    let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!("selection-expansion-batch");batch["revision"]=reset["revision"].clone();batch["changes"]=json!([{"from":0,"to":6,"expected":"PUBLIC","insert":"PUBLIC EXPANDED TEXT"}]);
+    tool(client,"apply_edit_batch",batch).await?;
+    let mut end=binding.clone();end["task_id"]=task["task_id"].clone();tool(client,"finish_edit",end).await?;
+    let undone=broker.bridge(app,label,"test",json!({"action":"undo"})).await?;
+    ensure(undone["content"]==source,"retiring capability does not discard the task draft/history")?;
+    for name in ["read_document","open_reader","reader_snapshot","open_browser_reader"] {ensure(tool(client,name,binding.clone()).await.is_err(),"undo retires every reader capability")?;}
+    ensure(tool(client,"read_document",cached).await.is_err(),"undo cannot return a cached authorized reply")?;
+    let mut begin=binding.clone();begin["request_id"]=json!("begin-after-undo");begin["revision"]=undone["revision"].clone();
+    ensure(tool(client,"begin_edit",begin).await.is_err(),"fresh revision cannot reuse expanded selection")?;
+    ensure(tool(client,"list_documents",json!({})).await?["documents"].as_array().unwrap().is_empty(),"retired grant disappears from discovery")?;
+    for (index,action) in ["human","undo","redo","reset"].into_iter().enumerate(){
+        // Each mutation must retire a fresh whole-document or selection grant.
+        if action=="redo" {broker.bridge(app,label,"test",json!({"action":"undo"})).await?;}
+        let before=broker.bridge(app,label,"snapshot",json!({})).await?;
+        let len=before["content"].as_str().unwrap().encode_utf16().count();
+        let d=broker.authorize(app,label,&session,"synthetic-client",json!({"from":0,"to":len})).await?;
+        let old=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+        let mutated=broker.bridge(app,label,"test",json!({"action":action,"content":format!("Human prefix {index}\n{source}")})).await?;
+        ensure(mutated["revision"]!=before["revision"],"fixture performs a real human mutation")?;
+        ensure(tool(client,"read_document",old).await.is_err(),"human/undo/redo/reload retire whole-document grants")?;
+    }
+    let selected="BEFORE\n\nPUBLIC\n\nPRIVATE";
+    broker.bridge(app,label,"test",json!({"action":"reset","content":selected})).await?;
+    let d=broker.authorize(app,label,&session,"synthetic-client",json!({"from":8,"to":14})).await?;
+    let old=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+    broker.bridge(app,label,"test",json!({"action":"human","content":format!("INSERTED\n{selected}")})).await?;
+    ensure(tool(client,"read_document",old.clone()).await.is_err(),"manual insertion before selection cannot widen read scope")?;
+    let snapshot=broker.bridge(app,label,"snapshot",json!({})).await?;
+    let mut begin=old;begin["revision"]=snapshot["revision"].clone();begin["request_id"]=json!("begin-after-prefix");
+    ensure(tool(client,"begin_edit",begin).await.is_err(),"manual insertion before selection cannot start old capability")?;
+    Ok(())
 }
 
 async fn tunnel_tracer(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,_mode:&str)->Result<(),String>{

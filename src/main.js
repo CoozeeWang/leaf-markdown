@@ -953,7 +953,7 @@ function updateHeadingControl(level) {
 }
 
 let commentPanel=null;
-let mutationGeneration=0,mcpBinding=null,nativeTestMode=null,nativeTestDelay=null,nativeTestPending=null,nativeTestRecovery=null,aiPresentationTask=null;
+let mutationGeneration=0,mcpBinding=null,mcpAuthorizationActive=false,nativeTestMode=null,nativeTestDelay=null,nativeTestPending=null,nativeTestRecovery=null,aiPresentationTask=null;
 const editor = createLeafEditor({
   parent: document.querySelector('#editor'),
   doc: welcome,
@@ -997,6 +997,16 @@ const editor = createLeafEditor({
     }
     updateHistoryControls();
     queueMicrotask(renderAiDocumentGrant);
+  },
+  onHumanMutation() {
+    if(!mcpBinding||!mcpAuthorizationActive)return;
+    const retired={...mcpBinding};
+    mcpAuthorizationActive=false;
+    mcpBinding={...mcpBinding,authorization_epoch:mcpBinding.authorization_epoch+1,client:null,scope:null};
+    mutationGeneration++;
+    renderAiDocumentGrant();
+    // Broker gates independently check the live renderer across this IPC gap.
+    if(desktop)invoke('mcp_retire_authorization',{sessionId:retired.session_id,authorizationEpoch:retired.authorization_epoch}).catch(()=>{});
   },
   onChange(content, labels) {
     for (const card of notesList.querySelectorAll('.note-card')) {
@@ -2550,11 +2560,15 @@ if (desktop) {
       try {
         const {operation,args}=payload;
         let result;
+        if(['authorization','begin'].includes(operation)||['snapshot','reader_snapshot'].includes(operation)&&args.session_id) {
+          if(!mcpAuthorizationActive||mcpBinding?.document_id!==args.document_id||mcpBinding?.session_id!==args.session_id||mcpBinding?.authorization_epoch!==args.authorization_epoch)throw new Error('not_authorized');
+        }
         if(['binding','begin','finish'].includes(operation)&&mcpBinding?.session_id===args.session_id&&args.authorization_epoch<mcpBinding.authorization_epoch)throw new Error('stale_projection');
-        if(operation==='snapshot')result=editor.mcpSnapshot();
+        if(operation==='authorization')result={authorized:true};
+        else if(operation==='snapshot')result=editor.mcpSnapshot();
         else if(operation==='reader_snapshot')result={...editor.mcpSnapshot(),name:state.fileName,saved:state.savedContent===editor.getValue(),language:currentLanguage(),theme:currentTheme()};
         else if(operation==='comment_query')result=await handleMcpCommentQuery(args);
-        else if(operation==='binding'){if(args.revision!==undefined&&args.revision!==editor.mcpSnapshot().revision)throw new Error('stale_revision');mcpBinding=args;mutationGeneration++;result=editor.mcpSnapshot();renderAiDocumentGrant();}
+        else if(operation==='binding'){if(args.revision!==undefined&&args.revision!==editor.mcpSnapshot().revision)throw new Error('stale_revision');mcpBinding=args;mcpAuthorizationActive=args.revision!==undefined;mutationGeneration++;result=editor.mcpSnapshot();renderAiDocumentGrant();}
         else if(operation==='begin'){if(desktopFileState()?.paused)throw new Error('document_conflict_pending');result=editor.beginAiTask(args);mcpBinding=args;}
         else if(operation==='apply') {
           if(testMode && args.test_fault==='before-dispatch')throw new Error('test_before_dispatch');

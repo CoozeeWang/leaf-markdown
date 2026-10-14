@@ -1381,6 +1381,8 @@ export function createLeafEditor(options) {
     dispatchTransactions(transactions, target) {
       // filter:false (restore, async attachments, undo) still crosses here.
       if (transactions.some(tr=>tr.docChanged && !assertDocumentMutationAllowed(target,tr.annotation(aiTaskAnnotation)))) return;
+      // Retire offsets before history/reload/recovery exposes the new buffer.
+      if (transactions.some(tr=>tr.docChanged && (!aiTask || tr.annotation(aiTaskAnnotation)!==aiTask))) options.onHumanMutation?.();
       target.update(transactions);
       bufferRevision += transactions.filter(tr=>tr.docChanged).length;
       if(aiTask) syncLockedControls();

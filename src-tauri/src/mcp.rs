@@ -349,12 +349,26 @@ impl LeafMcpBroker {
         self.bridge(app,label,"binding",json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch,"mutation_generation":d.mutation_generation,"revision":snapshot["revision"]})).await?;
         self.inner.registry.lock().unwrap().documents.insert(session.into(),d.clone());Ok(d)
     }
-    fn document(&self,app:&tauri::AppHandle,client:&str,args:&Value)->Result<OpenedDocument,String> {
+    pub(crate) async fn retire_authorization(&self,app:&tauri::AppHandle,label:&str,session:&str,epoch:u64)->Result<(),String>{
+        let Some(mut d)=self.window_binding(label).filter(|d|d.session_id==session&&d.authorization_epoch==epoch) else{return Ok(());};
+        self.finalize(app,&mut d).await?;
+        d.authorization_epoch+=1;d.client=None;d.scope=None;
+        self.inner.reader_grants.lock().unwrap().retain(|_,grant|grant.binding["session_id"]!=session);
+        self.inner.registry.lock().unwrap().documents.insert(session.into(),d);
+        Ok(())
+    }
+    async fn document(&self,app:&tauri::AppHandle,client:&str,args:&Value)->Result<OpenedDocument,String> {
         if !*self.inner.enabled.lock().unwrap() {return Err("connection_disabled".into());}
         let session=required(args,"session_id")?;
         let d=self.inner.registry.lock().unwrap().documents.get(session).cloned().ok_or("stale_session")?;
         if d.document_id!=required(args,"document_id")?||d.client.as_deref()!=Some(client)||args["authorization_epoch"].as_u64()!=Some(d.authorization_epoch) {return Err("not_authorized".into());}
-        if !app.state::<super::Documents>().0.lock().unwrap().contains_key(&d.label)||app.get_webview_window(&d.label).is_none(){return Err("stale_session".into());}Ok(d)
+        if !app.state::<super::Documents>().0.lock().unwrap().contains_key(&d.label)||app.get_webview_window(&d.label).is_none(){return Err("stale_session".into());}
+        // The renderer retires its epoch before human dispatch. Consult it even
+        // on cached replies, before the queued native retirement can arrive.
+        if self.bridge(app,&d.label,"authorization",json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch})).await.is_err(){
+            self.retire_authorization(app,&d.label,&d.session_id,d.authorization_epoch).await?;
+            return Err("not_authorized".into());
+        }Ok(d)
     }
     pub async fn call(&self,app:&tauri::AppHandle,client:&str,name:&str,args:Value)->Result<Value,String> {
         self.call_with_bearer(app,client,None,name,args).await
@@ -365,14 +379,17 @@ impl LeafMcpBroker {
         if bearer.is_some_and(|token|self.inner.credentials.lock().unwrap().get(client).is_none_or(|current|current!=token)) {return Err("client_revoked".into());}
         if name=="list_documents" {
             if !*self.inner.enabled.lock().unwrap(){return Err("connection_disabled".into());}
-            let mut docs:Vec<_>=self.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(client)).cloned().collect();docs.sort_by(|a,b|a.session_id.cmp(&b.session_id));return Ok(json!({"documents":docs}));
+            let candidates:Vec<_>=self.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(client)).cloned().collect();
+            let mut docs=Vec::new();
+            for d in candidates {if let Ok(current)=self.document(app,client,&json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch})).await{docs.push(current);}}
+            docs.sort_by(|a,b|a.session_id.cmp(&b.session_id));return Ok(json!({"documents":docs}));
         }
         if name=="adapter_disconnect"{
             let docs:Vec<_>=self.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(client)).cloned().collect();
             for mut d in docs {let _=self.finalize(app,&mut d).await;}
             return Ok(json!({"state":"disconnected"}));
         }
-        let mut d=self.document(app,client,&args)?;
+        let mut d=self.document(app,client,&args).await?;
         if d.task.as_ref().is_some_and(|task|self.inner.leases.lock().unwrap().expired(task["task_id"].as_str().unwrap_or(""),lease_now())){self.finalize(app,&mut d).await?;}
         match name {
             "open_browser_reader"=>{
@@ -385,7 +402,7 @@ impl LeafMcpBroker {
                 Ok(json!({"url":format!("http://127.0.0.1:{port}/reader#{ticket}"),"view_type":"browser_live","label":"浏览器实时视图"}))
             },
             "open_reader"|"reader_snapshot"=>{
-                let mut snapshot=self.bridge(app,&d.label,"reader_snapshot",json!({})).await?;
+                let mut snapshot=self.bridge(app,&d.label,"reader_snapshot",args.clone()).await?;
                 let scope=d.scope.as_ref().ok_or("not_authorized")?;
                 let content=snapshot["content"].as_str().ok_or("renderer_snapshot")?;
                 let units:Vec<_>=content.encode_utf16().collect();
@@ -415,7 +432,7 @@ impl LeafMcpBroker {
                     if let Some((old,result))=self.inner.results.lock().unwrap().get(&key){if old==&hash{return Ok(result.clone());}return Err("request_id_conflict".into());}
                     Some((key,hash))
                 }else{None};
-                let mut snapshot=self.bridge(app,&d.label,"snapshot",json!({})).await?;
+                let mut snapshot=self.bridge(app,&d.label,"snapshot",args.clone()).await?;
                 if let Some(rev)=args["revision"].as_u64(){if snapshot["revision"].as_u64()!=Some(rev){return Err("stale_revision".into());}}
                 let content=snapshot["content"].as_str().ok_or("renderer_snapshot")?;
                 let scope=d.scope.as_ref().ok_or("not_authorized")?;
@@ -434,14 +451,14 @@ impl LeafMcpBroker {
                 if d.task.is_some() {return Err("document_locked".into());}
                 if self.inner.registry.lock().unwrap().documents.values().any(|other|other.label!=d.label&&other.logical_identity==d.logical_identity){return Err("document_buffer_conflict".into());}
                 if self.inner.pending_finishes.lock().unwrap().contains_key(&d.label){return Err("task_finalizing".into());}
-                let snapshot=self.bridge(app,&d.label,"snapshot",json!({})).await?;
+                let snapshot=self.bridge(app,&d.label,"snapshot",args.clone()).await?;
                 if args["revision"]!=snapshot["revision"] {return Err("stale_revision".into());}
                 d.mutation_generation+=1;
                 let task=json!({"task_id":id("task"),"request_id":request,"session_id":d.session_id,"document_id":d.document_id,"client":client,"authorization_epoch":d.authorization_epoch,"mutation_generation":d.mutation_generation,"scope":d.scope,"revision":snapshot["revision"]});
                 if let Err(error)=self.bridge(app,&d.label,"begin",task.clone()).await{
                     // Explicit prepare refusals have no lock. An uncertain ACK
                     // may have locked the renderer; schedule its idempotent close.
-                    if !["composition_pending","structural_draft_pending","stale_revision","document_locked","document_conflict_pending"].contains(&error.as_str()){self.inner.pending_finishes.lock().unwrap().insert(d.label.clone(),task.clone());}
+                    if !["not_authorized","composition_pending","structural_draft_pending","stale_revision","document_locked","document_conflict_pending"].contains(&error.as_str()){self.inner.pending_finishes.lock().unwrap().insert(d.label.clone(),task.clone());}
                     return Err(error);
                 }
                 self.inner.leases.lock().unwrap().begin(task["task_id"].as_str().unwrap(),client,lease_now());d.task=Some(task.clone());self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d);
@@ -776,6 +793,12 @@ pub fn mcp_renderer_reply(window:tauri::WebviewWindow,broker:tauri::State<LeafMc
 }
 #[tauri::command]
 pub async fn mcp_authorize(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,session_id:String,client:String,scope:Value,revision:u64)->Result<OpenedDocument,String> {broker.authorize_snapshot(&app,window.label(),&session_id,&client,scope,Some(revision)).await}
+
+#[tauri::command]
+pub async fn mcp_retire_authorization(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,session_id:String,authorization_epoch:u64)->Result<(),String>{
+    let _serial=broker.inner.queue.lock().await;
+    broker.retire_authorization(&app,window.label(),&session_id,authorization_epoch).await
+}
 
 #[tauri::command]
 pub async fn mcp_stop_edit(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,task_id:String)->Result<Value,String>{broker.stop_from_leaf(&app,window.label(),&task_id).await}
