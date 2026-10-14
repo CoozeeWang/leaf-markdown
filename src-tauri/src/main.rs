@@ -577,7 +577,18 @@ fn moved_missing_images(source: &Path, target: &Path, loaded: &[String]) -> Vec<
 }
 
 #[tauri::command(async)]
-fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
+async fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<'_,Documents>, anchors: tauri::State<'_,DocumentAnchors>, recovery: tauri::State<'_,RecoveryState>, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
+    let broker=app.state::<mcp::LeafMcpBroker>();
+    let _serial=broker.inner.queue.lock().await;
+    let moved={
+        let source=docs.0.lock().unwrap().get(window.label()).cloned().flatten();
+        anchors.0.lock().unwrap().get(window.label()).and_then(|a|a.locate().ok()).is_some_and(|located|Some(located.path)!=source)
+    };
+    if moved {broker.identity_boundary(&app,window.label()).await?;}
+    observe_document_io(app.clone(),window,docs,anchors,recovery,loaded_images)
+}
+
+fn observe_document_io(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
     let _guard = recovery.gate.lock().unwrap();
     let mut documents = docs.0.lock().unwrap();
     let source = documents.get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})))?;
@@ -627,7 +638,14 @@ fn verify_relocation(path: &str, expected: &str) -> Result<RelocationCandidate, 
 }
 
 #[tauri::command(async)]
-fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, expected: String, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
+async fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<'_,Documents>, anchors: tauri::State<'_,DocumentAnchors>, recovery: tauri::State<'_,RecoveryState>, path: String, expected: String, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
+    let broker=app.state::<mcp::LeafMcpBroker>();let _serial=broker.inner.queue.lock().await;
+    broker.identity_boundary(&app,window.label()).await?;
+    let result=relocate_document_io(app.clone(),window.clone(),docs,anchors,recovery,path,expected,loaded_images);
+    if result.is_ok(){broker.saved_anchor(&app,window.label());}result
+}
+
+fn relocate_document_io(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, expected: String, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
     let _guard = recovery.gate.lock().unwrap();
     let mut documents = docs.0.lock().unwrap();
     let source = documents.get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})))?;
@@ -777,7 +795,14 @@ fn rename_file(source: &std::path::Path, name: &str, expected: &str) -> Result<P
 #[derive(serde::Serialize)]
 struct ResourceWrite { path: String, content: String, mappings: Vec<(String,String)>, warning: Option<String> }
 #[tauri::command(async)]
-fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::State<Documents>,anchors:tauri::State<DocumentAnchors>,recovery:tauri::State<RecoveryState>,path:String,name:String,expected:String,content:String)->Result<ResourceWrite,String>{
+async fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::State<'_,Documents>,anchors:tauri::State<'_,DocumentAnchors>,recovery:tauri::State<'_,RecoveryState>,path:String,name:String,expected:String,content:String)->Result<ResourceWrite,String>{
+    let broker=app.state::<mcp::LeafMcpBroker>();let _serial=broker.inner.queue.lock().await;
+    broker.identity_boundary(&app,window.label()).await?;
+    let result=rename_document_io(app.clone(),window.clone(),docs,anchors,recovery,path,name,expected,content);
+    if result.is_ok(){broker.saved_anchor(&app,window.label());}result
+}
+
+fn rename_document_io(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::State<Documents>,anchors:tauri::State<DocumentAnchors>,recovery:tauri::State<RecoveryState>,path:String,name:String,expected:String,content:String)->Result<ResourceWrite,String>{
     let _guard=recovery.gate.lock().unwrap();
     let mut documents=docs.0.lock().unwrap();
     let source=documents.get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})))?;
@@ -826,7 +851,16 @@ fn export_bundle(window:tauri::WebviewWindow,docs:tauri::State<Documents>,direct
     resources::export_bundle_localized(&source,std::path::Path::new(&directory),&content,&resources,&window.app_handle().state::<i18n::Language>().current()).map(|p|p.to_string_lossy().into_owned())
 }
 #[tauri::command(async)]
-fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>) -> Result<ResourceWrite, String> {
+async fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<'_,Documents>, anchors: tauri::State<'_,DocumentAnchors>, recovery: tauri::State<'_,RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>) -> Result<ResourceWrite, String> {
+    let broker=app.state::<mcp::LeafMcpBroker>();let _serial=broker.inner.queue.lock().await;
+    let target=fs::canonicalize(&path).unwrap_or_else(|_|PathBuf::from(&path));
+    let changed=docs.0.lock().unwrap().get(window.label()).cloned().flatten().as_ref()!=Some(&target);
+    if changed {broker.identity_boundary(&app,window.label()).await?;}
+    let result=write_document_io(app.clone(),window.clone(),docs,anchors,recovery,path,content,expected,resources);
+    if result.is_ok(){broker.saved_anchor(&app,window.label());}result
+}
+
+fn write_document_io(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>) -> Result<ResourceWrite, String> {
     if !window.label().starts_with("document-") { return Err(crate::i18n::error("main.open_or_create_a_document_first", serde_json::json!({})).into()); }
     let _guard = recovery.gate.lock().unwrap();
     let old_key = recovery_key(&window, &docs, &recovery);

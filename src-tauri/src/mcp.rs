@@ -73,6 +73,7 @@ impl Default for LeafMcpBroker {
 }
 impl LeafMcpBroker {
     pub fn register_window(&self,app:&tauri::AppHandle,label:&str)->OpenedDocument {
+        if let Some(existing)=self.window_binding(label){return existing;}
         let identity=app.state::<super::DocumentAnchors>().0.lock().unwrap().get(label).map(|anchor|format!("file:{:?}",anchor.token())).unwrap_or_else(||format!("window:{label}"));
         let mut d=self.register(label);
         let mut registry=self.inner.registry.lock().unwrap();
@@ -83,7 +84,7 @@ impl LeafMcpBroker {
     pub fn window_locked(&self,label:&str)->bool{self.window_binding(label).is_some_and(|d|d.task.is_some())||self.inner.pending_finishes.lock().unwrap().contains_key(label)}
     // Caller owns the native queue. Invalidate first, then close renderer history;
     // retries cannot resurrect a capability or discard any applied draft.
-    async fn finalize(&self,app:&tauri::AppHandle,d:&mut OpenedDocument)->Result<(),String>{
+    pub(crate) async fn finalize(&self,app:&tauri::AppHandle,d:&mut OpenedDocument)->Result<(),String>{
         if let Some(task)=d.task.take(){
             d.mutation_generation+=1;
             self.inner.leases.lock().unwrap().finish(task["task_id"].as_str().unwrap_or(""));
@@ -94,6 +95,25 @@ impl LeafMcpBroker {
             self.inner.pending_finishes.lock().unwrap().remove(&d.label);
             super::refresh_document_menu(app);
         }Ok(())
+    }
+    // The caller holds the broker queue until its native identity operation
+    // completes. End the old capability before changing its target.
+    pub(crate) async fn identity_boundary(&self,app:&tauri::AppHandle,label:&str)->Result<(),String>{
+        if let Some(mut d)=self.window_binding(label){
+            self.finalize(app,&mut d).await?;
+            if d.client.is_some(){
+                d.authorization_epoch+=1;d.client=None;d.scope=None;
+                self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d.clone());
+                self.bridge(app,label,"binding",json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch,"mutation_generation":d.mutation_generation})).await?;
+            }
+        }Ok(())
+    }
+    pub(crate) fn saved_anchor(&self,app:&tauri::AppHandle,label:&str){
+        let identity=app.state::<super::DocumentAnchors>().0.lock().unwrap().get(label).map(|a|format!("file:{:?}",a.token()));
+        if let Some(identity)=identity {
+            let mut registry=self.inner.registry.lock().unwrap();
+            if let Some(d)=registry.documents.values_mut().find(|d|d.label==label){d.logical_identity=identity;}
+        }
     }
     fn start_watchdog(&self,app:tauri::AppHandle){
         if self.inner.watchdog_started.swap(true,Ordering::SeqCst){return;}
@@ -208,7 +228,7 @@ impl LeafMcpBroker {
     }
     pub fn register(&self,label:&str)->OpenedDocument {
         let mut registry=self.inner.registry.lock().unwrap();
-        registry.documents.retain(|_,d|d.label!=label);
+        if let Some(existing)=registry.documents.values().find(|d|d.label==label){return existing.clone();}
         let d=OpenedDocument{document_id:id("document"),session_id:id("session"),label:label.into(),logical_identity:format!("window:{label}"),mutation_generation:0,authorization_epoch:0,client:None,scope:None,task:None};
         registry.documents.insert(d.session_id.clone(),d.clone());d
     }
