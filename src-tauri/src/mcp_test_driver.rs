@@ -141,6 +141,11 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
         ensure(schema.iter().any(|s|s["properties"]["kind"]["const"]=="footnote")&&schema.iter().any(|s|s["properties"]["kind"]["const"]=="table"),"footnote/table operations discoverable through actual MCP")?;
         footnotes_tables_gate(app,label,broker,&client).await?;
     }
+    if mode=="comments-task" {
+        let schema=apply["inputSchema"]["properties"]["operations"]["items"]["oneOf"].as_array().ok_or("comment discovery")?;
+        ensure(schema.iter().any(|s|s["properties"]["kind"]["const"]=="comment"),"comment operations discoverable through real MCP tools/list")?;
+        comments_task_gate(app,label,broker,&client).await?;
+    }
     broker.unregister(label);
     ensure(tool(&client,"read_document",binding).await.is_err(),"closed session must fail")?;
     let _=client.cancel().await;Ok(())
@@ -697,6 +702,87 @@ async fn edge_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpB
     ensure(d.authorization_epoch>binding["authorization_epoch"].as_u64().unwrap(),"new authorization advances epoch")?;
     ensure(tool(client,"read_document",binding.clone()).await.is_err(),"old epoch fails after reauthorization")?;
     let undo=broker.bridge(app,label,"test",json!({"action":"undo"})).await?;ensure(undo["content"]==content&&undo["history"]["undo"]==0,"one concurrent winning batch has one history item")?;
+    Ok(())
+}
+
+async fn comments_task_gate(app:&tauri::AppHandle,other:&str,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String> {
+    let root=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
+    let source="---\ntitle: \"Old\"\n---\n\n{==**重复😀é**==}{>>one<<}{==重复😀é==}{>>two<<} end{>>point<<}.\n\n%%hidden\n\nliteral%%\n\nPlain😀é end.";
+    let disk=source.replace('\n',"\r\n");
+    for (i,reason) in ["normal","partial-stop","renderer-exception","save-failed"].into_iter().enumerate() {
+        let path=root.join(format!("comments-{reason}.md"));std::fs::write(&path,&disk).map_err(|_|"comment fixture seed")?;
+        let previous=broker.inner.registry.lock().unwrap().documents.values().map(|d|d.label.clone()).collect::<Vec<_>>();
+        super::create_document(app.clone(),Some(path.to_string_lossy().into()),None,None)?;
+        let label=wait_document(app,broker,&previous).await?;
+        broker.bridge(app,&label,"test",json!({"action":"human","content":format!("{disk}H")})).await?;
+        broker.bridge(app,&label,"test",json!({"action":"pause-auto-timer"})).await?;
+        let before=broker.bridge(app,&label,"snapshot",json!({})).await?;
+        let session=broker.window_binding(&label).unwrap().session_id;
+        let d=broker.authorize(app,&label,&session,"synthetic-client",json!({"from":0,"to":before["content"].as_str().unwrap().encode_utf16().count()})).await?;
+        let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+        let mut query=binding.clone();query["revision"]=before["revision"].clone();query["request_id"]=json!(format!("comments-list-{i}"));
+        let listing=tool(client,"list_comments",query.clone()).await?;
+        ensure(tool(client,"list_comments",query.clone()).await?==listing,"fixed revision query retry returns original result")?;
+        let notes=listing["comments"].as_array().ok_or("comment descriptors")?;
+        ensure(notes.len()==4&&notes[0]["kind"]=="range"&&notes[2]["kind"]=="point"&&notes[3]["kind"]=="hidden"&&notes[0]["id"]!=notes[1]["id"],"adjacent repeated Unicode quotes remain distinct")?;
+        let mut read=query.clone();read["request_id"]=json!(format!("comments-read-{i}"));read["id"]=notes[3]["id"].clone();
+        ensure(tool(client,"read_comment",read).await?["comment"]["text"]=="hidden\n\nliteral","hidden comments read from live LF editor buffer")?;
+        let mut locate=query.clone();locate["request_id"]=json!(format!("comments-locate-{i}"));locate["id"]=notes[1]["id"].clone();
+        ensure(tool(client,"locate_comment",locate).await?["range"]==notes[1]["anchor"],"repeated quote locates exact UTF-16 anchor")?;
+        let mut unknown=query.clone();unknown["request_id"]=json!(format!("comments-unknown-{i}"));unknown["id"]=json!("unknown");
+        ensure(tool(client,"read_comment",unknown).await?["comment"].is_null(),"unknown comment returns explicit null")?;
+        let mut begin=binding.clone();begin["request_id"]=json!(format!("comments-begin-{i}"));begin["revision"]=before["revision"].clone();
+        let task=tool(client,"begin_edit",begin).await?;
+        broker.bridge(app,other,"test",json!({"action":"human","content":format!("Independent document editable {i}")})).await?;
+        ensure(broker.bridge(app,other,"snapshot",json!({})).await?["content"]==format!("Independent document editable {i}"),"another actual native document stays editable")?;
+        let operation=|note:&Value,action:&str,text:Option<&str>|{let mut op=json!({"kind":"comment","action":action,"id":note["id"],"source_fingerprint":note["source_fingerprint"],"expected":note["source"]});if let Some(text)=text{op["text"]=json!(text);}op};
+        let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!(format!("comments-first-{i}"));batch["revision"]=before["revision"].clone();
+        batch["operations"]=json!([operation(&notes[0],"delete",None),operation(&notes[3],"set",Some("Updated隐藏😀é\n\nliteral")),{"kind":"property","action":"set","key":"title","expected":"\"Old\"","value":"New"}]);
+        let first=tool(client,"apply_edit_batch",batch.clone()).await?;
+        ensure(first["changed"]==true&&first["mutation_id"].is_string()&&first["source_digest"]==listing["source_fingerprint"]&&first["source_revision"]==before["revision"],"broker reconciles exact renderer comment receipt")?;
+        broker.bridge(app,&label,"test",json!({"action":"pause-auto-timer"})).await?;
+        ensure(tool(client,"apply_edit_batch",batch.clone()).await?==first,"comment retry never dispatches twice")?;
+        let mut conflict=batch.clone();conflict["operations"][1]["text"]=json!("different");ensure(tool(client,"apply_edit_batch",conflict).await.is_err(),"changed payload cannot reuse comment request identity")?;
+        let first_snapshot=broker.bridge(app,&label,"snapshot",json!({})).await?;
+        let mut stale=query.clone();stale["request_id"]=json!(format!("comments-stale-{i}"));ensure(tool(client,"list_comments",stale).await.is_err(),"new read cannot use stale comment revision")?;
+        if reason!="partial-stop" {
+            let text=first_snapshot["content"].as_str().unwrap();
+            query["revision"]=first_snapshot["revision"].clone();query["request_id"]=json!(format!("comments-list-next-{i}"));
+            let current=tool(client,"list_comments",query.clone()).await?;let notes=current["comments"].as_array().unwrap();
+            let at=text[..text.find("Plain").unwrap()].encode_utf16().count();let end=text.encode_utf16().count();
+            batch["request_id"]=json!(format!("comments-second-{i}"));batch["revision"]=first_snapshot["revision"].clone();
+            batch["operations"]=json!([operation(&notes[0],"set",Some("range updated")),operation(&notes[1],"delete",None),{"kind":"comment","action":"add","from":at,"to":at+"Plain😀é".encode_utf16().count(),"expected":"Plain😀é","text":"added range"},{"kind":"comment","action":"add","from":end,"to":end,"expected":"","text":"added point"}]);
+            if reason=="renderer-exception" {batch["operations"][0]["expected"]=json!("stale");ensure(tool(client,"apply_edit_batch",batch.clone()).await.is_err(),"comment preflight exception rejects entire union")?;ensure(broker.bridge(app,&label,"snapshot",json!({})).await?==first_snapshot,"rejected mixed batch has zero mutation")?;}
+            else {
+                tool(client,"apply_edit_batch",batch.clone()).await?;broker.bridge(app,&label,"test",json!({"action":"pause-auto-timer"})).await?;
+                let next=broker.bridge(app,&label,"snapshot",json!({})).await?;query["revision"]=next["revision"].clone();query["request_id"]=json!(format!("comments-list-final-{i}"));
+                let current=tool(client,"list_comments",query.clone()).await?;let hidden=current["comments"].as_array().unwrap().iter().find(|note|note["kind"]=="hidden").unwrap();
+                batch["request_id"]=json!(format!("comments-third-{i}"));batch["revision"]=next["revision"].clone();batch["operations"]=json!([operation(hidden,"delete",None)]);
+                tool(client,"apply_edit_batch",batch.clone()).await?;broker.bridge(app,&label,"test",json!({"action":"pause-auto-timer"})).await?;
+            }
+        }
+        let applied=broker.bridge(app,&label,"snapshot",json!({})).await?;let text=applied["content"].as_str().unwrap();
+        ensure(text.contains("**重复😀é**{==重复😀é==}")&&text.contains("title: \"New\"")&&applied["line_ending"]=="\r\n","deleting comment preserves body format Unicode and CRLF metadata")?;
+        if reason=="normal"||reason=="save-failed" {ensure(text.contains("{==Plain😀é==}{>>added range<<}")&&text.ends_with("H{>>added point<<}")&&!text.contains("%%"),"normal add/edit/delete comment capabilities reach actual CodeMirror")?;}
+        let mut end=binding.clone();end["task_id"]=task["task_id"].clone();
+        if reason=="save-failed" {
+            let permissions=std::fs::metadata(&path).unwrap().permissions();let mut readonly=permissions.clone();readonly.set_readonly(true);std::fs::set_permissions(&path,readonly).map_err(|_|"readonly comments")?;
+            let saved=broker.bridge(app,&label,"test",json!({"action":"save"})).await?;std::fs::set_permissions(&path,permissions).map_err(|_|"restore comments permissions")?;
+            ensure(saved["saved"]==false&&std::fs::read_to_string(&path).unwrap()==disk,"comment save failure keeps original CRLF disk")?;
+            let mut receipt=binding.clone();receipt["request_id"]=batch["request_id"].clone();let result=tool(client,"reconcile_request",receipt).await?;
+            ensure(result["bufferResult"]["revision"]==applied["revision"]&&result["diskResult"]["state"]=="failed"&&result["checkpoint"]["state"]=="protected","failed save retains applied comment receipt and recovery")?;
+        }else {tool(client,if reason=="normal"{"finish_edit"}else{"stop_edit"},end.clone()).await?;}
+        ensure(!broker.window_locked(&label),"all comment task ending paths unlock")?;
+        let mut late=batch.clone();late["request_id"]=json!(format!("comments-late-{i}"));late["revision"]=applied["revision"].clone();ensure(tool(client,"apply_edit_batch",late).await.is_err(),"late comments rejected after stop/failure")?;
+        ensure(broker.bridge(app,&label,"test",json!({"action":"undo"})).await?["content"]==before["content"],"one undo restores complete multi-batch comment task")?;
+        ensure(broker.bridge(app,&label,"test",json!({"action":"redo"})).await?["content"]==applied["content"],"one redo restores complete multi-batch comment task")?;
+        if reason=="normal" {let save=broker.bridge(app,&label,"test",json!({"action":"save"})).await?;ensure(save["saved"]==true&&std::fs::read_to_string(&path).unwrap()==text.replace('\n',"\r\n"),"normal comment task saves actual CRLF disk")?;}
+        broker.bridge(app,&label,"test",json!({"action":"human","content":format!("{text}!")})).await?;
+        ensure(broker.bridge(app,&label,"test",json!({"action":"undo"})).await?["content"]==applied["content"],"next human edit remains separate from comment task")?;
+        ensure(broker.bridge(app,&label,"test",json!({"action":"undo"})).await?["content"]==before["content"],"comment task stays one history item after human edit")?;
+        ensure(broker.bridge(app,&label,"test",json!({"action":"undo"})).await?["content"]==source,"prior human comment history survives")?;
+        query["request_id"]=json!(format!("comments-retired-{i}"));query["session_id"]=json!("retired-session");ensure(tool(client,"list_comments",query).await.is_err(),"retired session cannot expose comments")?;
+    }
     Ok(())
 }
 

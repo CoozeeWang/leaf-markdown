@@ -26,7 +26,7 @@ if (mode==='chatgpt-tunnel-contract') {
     assert.equal(staged.gui_build_identity,staged.helper_build_identity,'actual helper must share the GUI build identity');
   });
 } else {
-assert(['chatgpt-tunnel-tracer','chatgpt-tunnel-dev-bundle','chatgpt-tunnel-ui','tracer','task-history-gate','renderer-ack-loss','all-write-entrances','stop-late-second-window','properties-markdown','footnotes-tables','file-identity-conflict'].includes(mode));
+assert(['chatgpt-tunnel-tracer','chatgpt-tunnel-dev-bundle','chatgpt-tunnel-ui','tracer','task-history-gate','renderer-ack-loss','all-write-entrances','stop-late-second-window','properties-markdown','footnotes-tables','comments-task','file-identity-conflict'].includes(mode));
 const root=resolve(import.meta.dirname,'..');
 const directory=await mkdtemp(join(tmpdir(),'leaf-mcp-native-'));
 const result=join(directory,'result.json');
