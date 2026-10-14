@@ -11,6 +11,15 @@ test('legacy presets migrate both scripts without writing the old setting', () =
   }
   assert.deepEqual(readBodyFonts(storage({ 'leaf-reading-v2-font': 'invalid' })), { zh: 'sans', en: 'sans' });
 });
+test('Latin letters and combining accents share a range, while Chinese punctuation stays separate', () => {
+  const contains=(range,point)=>range.split(',').some(part=>{const [from,to]=part.replace('U+','').split('-').map(value=>parseInt(value,16));return point>=from&&point<=(to??from);});
+  for(const point of [0x41,0xe9,0x301,0x1ab0,0x1dc0,0xfe20]) {
+    assert.equal(contains(LATIN_RANGE,point),true);assert.equal(contains(CHINESE_RANGE,point),false);
+  }
+  for(const point of [0x201c,0x3002,0x4e2d,0xff0c]) {
+    assert.equal(contains(CHINESE_RANGE,point),true);assert.equal(contains(LATIN_RANGE,point),false);
+  }
+});
 test('independent saved choices survive; corrupt or unknown values use the legacy preset', () => {
   const entries = { 'leaf-reading-v2-font': 'serif', [BODY_FONT_STORAGE]: '{broken' };
   assert.deepEqual(readBodyFonts(storage(entries)), { en: 'serif', zh: 'serif' });

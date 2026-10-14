@@ -1,7 +1,7 @@
 // Display preferences only. Local faces are never downloaded or copied into a document.
 export const BODY_FONT_STORAGE = 'leaf-body-fonts-v1';
-export const LATIN_RANGE = 'U+0000-024F,U+1E00-1EFF';
-export const CHINESE_RANGE = 'U+0250-1DFF,U+1F00-10FFFF';
+export const LATIN_RANGE = 'U+0000-036F,U+1AB0-1AFF,U+1DC0-1EFF,U+FE20-FE2F';
+export const CHINESE_RANGE = 'U+0370-1AAF,U+1B00-1DBF,U+1F00-FE1F,U+FE30-10FFFF';
 const generic = id => ({ id, label: `fonts.${id}`, generic: true });
 export const BODY_FONTS = {
   en: [generic('sans'), generic('serif'), generic('mono'),

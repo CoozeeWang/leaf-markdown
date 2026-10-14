@@ -57,12 +57,16 @@ for (const engine of process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGIN
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       const cdp=await context.newCDPSession(page);
       await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
+      // Decomposed accents must remain with their Latin base, not the CJK font.
+      await page.locator('.body-font-preview [lang="en"]').evaluate(el=>el.textContent='Café e\u0301 ma\u0304. 123');
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       const {root}=await cdp.send('DOM.getDocument');
       for(const [script,selector] of [['en','.body-font-preview [lang="en"]'],['zh','.body-font-preview [lang="zh"] [data-i18n]']]) {
         const {nodeId}=await cdp.send('DOM.querySelector',{nodeId:root.nodeId,selector});
         const {fonts}=await cdp.send('CSS.getPlatformFontsForNode',{nodeId});
         const expected=script==='en' ? {georgia:/Georgia/i,palatino:/Palatino/i,serif:/Georgia|Times|Liberation Serif/i}[english] : {songti:/Songti/i,pingfang:/PingFang/i,serif:/Songti|SimSun|Noto Serif/i}[chinese];
         assert.ok(fonts.some(font=>expected.test(font.familyName) && font.glyphCount>0),`${script}: requested local font renders glyphs: ${JSON.stringify(fonts)}`);
+        if(script==='en') assert.ok(fonts.every(font=>expected.test(font.familyName)),`Combining Latin accents stay in the chosen English family: ${JSON.stringify(fonts)}`);
         console.log(`${engine} actual ${script} fonts: ${fonts.map(font=>font.familyName).join(', ')}`);
       }
       await cdp.detach();
