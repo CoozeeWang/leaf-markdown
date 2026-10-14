@@ -194,7 +194,7 @@ const alignLineNumbers = ViewPlugin.fromClass(class {
       }
       if (!coords) return [el, parseFloat(el.style.paddingTop) || 0];
       const labelHeight = parseFloat(getComputedStyle(el).lineHeight) || 11;
-      return [el, coords ? Math.max(0, (coords.top + coords.bottom - labelHeight) / 2 - el.getBoundingClientRect().top) : 0];
+      return [el, coords ? Math.max(0, ((coords.top + coords.bottom - labelHeight * view.scaleY) / 2 - el.getBoundingClientRect().top) / view.scaleY) : 0];
     });
   }
   write(rows) {

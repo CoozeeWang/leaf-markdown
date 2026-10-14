@@ -690,5 +690,10 @@
   "search_panel.matches_one": "共 {{total}} 处",
   "search_panel.matches_other": "共 {{total}} 处",
   "main.removed_unavailable_entries_one": "已清理 {{count}} 条失效记录。",
-  "main.removed_unavailable_entries_other": "已清理 {{count}} 条失效记录。"
+  "main.removed_unavailable_entries_other": "已清理 {{count}} 条失效记录。",
+  "main.body_zoom": "正文缩放",
+  "main.zoom_in": "放大正文",
+  "main.zoom_out": "缩小正文",
+  "main.zoom_reset": "恢复 100%",
+  "main.zoom_level": "正文缩放 {{percent}}%，选择缩放比例"
 }

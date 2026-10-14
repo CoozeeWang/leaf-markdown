@@ -690,5 +690,10 @@
   "search_panel.matches_one": "{{total}} match",
   "search_panel.matches_other": "{{total}} matches",
   "main.removed_unavailable_entries_one": "Removed {{count}} unavailable entry.",
-  "main.removed_unavailable_entries_other": "Removed {{count}} unavailable entries."
+  "main.removed_unavailable_entries_other": "Removed {{count}} unavailable entries.",
+  "main.body_zoom": "Body Zoom",
+  "main.zoom_in": "Zoom In",
+  "main.zoom_out": "Zoom Out",
+  "main.zoom_reset": "Reset to 100%",
+  "main.zoom_level": "Body zoom {{percent}}%, choose zoom level"
 }

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 process.chdir(fileURLToPath(new URL('..', import.meta.url)));
 const core = [
-  'welcome', 'reading', 'sidebars', 'platform-shortcuts', 'inline-format-shortcuts', 'table-edges', 'recovery', 'long-document', 'writing', 'attachments', 'writing-structure-regressions',
+  'welcome', 'reading', 'sidebars', 'platform-shortcuts', 'body-zoom', 'inline-format-shortcuts', 'table-edges', 'recovery', 'long-document', 'writing', 'attachments', 'writing-structure-regressions',
   'highlight-band', 'selection-compositing', 'selection-edges',
   'footnote-insert', 'footnote-live-preview', 'footnote-definition-format', 'footnote-panel', 'footnote-sidebar-modes', 'footnote-input-performance', 'footnote-auto-delete', 'footnote-completion',
   'footnote-callout', 'footnote-rename', 'footnote-regressions', 'footnotes-print',

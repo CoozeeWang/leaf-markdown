@@ -21,6 +21,7 @@ import { labels as calloutLabels } from './callout.js';
 import { indexFootnotes, notePanelRows } from './footnotes.js';
 import { uiIcon, uiIconPaths } from './ui-icons.js';
 import {readingFolding} from './outline-folding.js';
+import { BODY_ZOOM_LEVELS, stepBodyZoom, bodyZoomShortcut } from './body-zoom.js';
 
 const welcome = t("main.leaf_a_lightweight_markdown_editor");
 const leafDev = typeof __LEAF_DESKTOP_DEV__ !== 'undefined' && __LEAF_DESKTOP_DEV__ && desktop;
@@ -54,6 +55,7 @@ const state = {
   notesSkeleton: '',
   reading: false,
   source: false,
+  bodyZoom: 100,
 };
 
 const iconPaths = {
@@ -166,7 +168,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
         </div>
         <p class="welcome-drop-hint">${h("main.drop_a_markdown_file_to_open_it")}</p>
       </section>
-      <section id="readingPane" class="reading-pane" aria-label="${t("main.reading_mode")}" data-i18n-aria-label="main.reading_mode" tabindex="0" hidden><article class="reading-document"></article></section>
+      <section id="readingPane" class="reading-pane" aria-label="${t("main.reading_mode")}" data-i18n-aria-label="main.reading_mode" tabindex="0" hidden><div class="reading-zoom-frame"><div class="reading-zoom-canvas"><article class="reading-document"></article></div></div></section>
       <button id="outlineButton" class="sidebar-rail sidebar-rail-left" aria-label="${t("main.expand_outline")}" data-i18n-aria-label="main.expand_outline" aria-controls="outlineDrawer" aria-expanded="false" data-tooltip="${t("main.expand_outline")}" data-i18n-data-tooltip="main.expand_outline">${icon('outline')}</button>
       <aside id="outlineDrawer" class="outline-drawer" aria-label="${t("main.document_outline")}" data-i18n-aria-label="main.document_outline">
         <div class="outline-resizer" role="separator" aria-label="${t("main.resize_outline")}" data-i18n-aria-label="main.resize_outline" aria-orientation="vertical" tabindex="0" title="${t("main.drag_to_resize_double_click_to_reset")}" data-i18n-title="main.drag_to_resize_double_click_to_reset"></div>
@@ -184,10 +186,21 @@ document.querySelector('#app').innerHTML = shortcutText(`
     <footer class="statusbar">
       <span class="cursor-and-save"><span id="cursorStatus">${h("main.line_1_column_1")}</span><span id="saveIndicator" role="status"></span></span>
       <span id="stats"></span>
+      <div class="body-zoom" role="group" aria-label="${t('main.body_zoom')}" data-i18n-aria-label="main.body_zoom">
+        <button id="zoomOut" type="button" aria-label="${t('main.zoom_out')}" data-i18n-aria-label="main.zoom_out">−</button>
+        <button id="zoomLevel" type="button" aria-haspopup="menu" aria-controls="zoomPopover" aria-expanded="false">100%</button>
+        <button id="zoomIn" type="button" aria-label="${t('main.zoom_in')}" data-i18n-aria-label="main.zoom_in">+</button>
+      </div>
       <button id="focusButton" class="status-button icon-control" aria-label="${t("main.focus_mode")}" data-i18n-aria-label="main.focus_mode" data-tooltip="${t("main.focus_mode_press_esc_to_exit")}" data-i18n-data-tooltip="main.focus_mode_press_esc_to_exit">${icon('focus', 15)}</button>
     </footer>
 
     <div id="dropOverlay" class="drop-overlay">${h("main.drop_to_open_a_markdown_file")}</div>
+
+    <section id="zoomPopover" class="popover action-popover zoom-popover" role="menu" aria-label="${t('main.body_zoom')}" data-i18n-aria-label="main.body_zoom" hidden>
+      ${BODY_ZOOM_LEVELS.map(level => `<button type="button" role="menuitemradio" data-zoom="${level}" aria-checked="${level === 100}">${level}%</button>`).join('')}
+      <div class="zoom-menu-divider" role="separator"></div>
+      <button type="button" role="menuitem" data-zoom="100">${h('main.zoom_reset')}<kbd>⇧⌘0</kbd></button>
+    </section>
 
     <section id="appearancePopover" class="popover appearance-popover" role="dialog" aria-label="${t("main.settings_ui0078")}" data-i18n-aria-label="main.settings_ui0078" tabindex="-1" hidden>
       <div class="settings-heading"><h2>${h("main.settings_ui0078")}</h2><button id="settingsClose" aria-label="${t("main.close_settings")}" data-i18n-aria-label="main.close_settings">${icon('close')}</button></div>
@@ -308,6 +321,8 @@ const exportPopover = document.querySelector('#exportPopover');
 const languagePopover = document.querySelector('#languagePopover');
 const displayPopover = document.querySelector('#displayPopover');
 const displayButton = document.querySelector('#displayButton');
+const zoomPopover = document.querySelector('#zoomPopover');
+const zoomLevelButton = document.querySelector('#zoomLevel');
 const palette = document.querySelector('#palette');
 const paletteInput = document.querySelector('#paletteInput');
 const paletteList = document.querySelector('#paletteList');
@@ -375,6 +390,88 @@ function updateAppearance() {
   document.querySelector('#fileNameTitleToggle').checked = state.showFileNameTitle;
   document.querySelector('#lineNumberToggle').checked = state.showLineNumbers;
 }
+
+function updateZoomControls() {
+  zoomLevelButton.textContent = `${state.bodyZoom}%`;
+  setAttr(zoomLevelButton, 'aria-label', () => t('main.zoom_level', { percent: state.bodyZoom }));
+  for (const [id, key, shortcut] of [['zoomIn', 'main.zoom_in', '⇧⌘='], ['zoomOut', 'main.zoom_out', '⇧⌘−']]) {
+    setAttr(document.getElementById(id), 'data-tooltip', () => `${t(key)}  ${shortcutText(shortcut)}`);
+  }
+  document.querySelector('#zoomOut').disabled = state.bodyZoom === BODY_ZOOM_LEVELS[0];
+  document.querySelector('#zoomIn').disabled = state.bodyZoom === BODY_ZOOM_LEVELS.at(-1);
+  for (const button of zoomPopover.querySelectorAll('[role="menuitemradio"]')) button.setAttribute('aria-checked', String(Number(button.dataset.zoom) === state.bodyZoom));
+}
+
+let zoomRevision = 0;
+function setBodyZoom(percent) {
+  if (!BODY_ZOOM_LEVELS.includes(percent) || percent === state.bodyZoom || editor.view.composing) return;
+  const view = editor.view;
+  const snapshot = view.state;
+  const revision = ++zoomRevision;
+  const readingPosition = state.reading ? visibleReadingPosition() : null;
+  const pane = state.reading ? null : view.scrollDOM.getBoundingClientRect();
+  const caret = pane ? view.coordsAtPos(snapshot.selection.main.head) : null;
+  const anchor = pane ? (view.hasFocus && caret && caret.top >= pane.top && caret.bottom <= pane.bottom
+    ? snapshot.selection.main.head : editor.visiblePosition()) : null;
+  const offset = pane ? (view.coordsAtPos(anchor)?.top ?? pane.top) - pane.top : 0;
+  state.bodyZoom = percent;
+  shell.style.setProperty('--body-zoom', String(percent / 100));
+  updateZoomControls();
+  if (readingPosition !== null) { syncReadingZoom(); revealReadingPosition(readingPosition); scheduleOutlineCurrent(); return; }
+  // Measure at the new scale before correcting the scroll position. A display
+  // change must not dispatch a document transaction or disturb its selection.
+  // First let CodeMirror finish rebuilding its height map/viewport. Anchoring
+  // in that same measurement is too early for a virtualized long document.
+  view.requestMeasure({ key: setBodyZoom, read: () => null, write: () => requestAnimationFrame(() => {
+    if (revision !== zoomRevision || state.reading || view.state.doc !== snapshot.doc || !view.state.selection.eq(snapshot.selection)) return;
+    view.requestMeasure({ key: setBodyZoom, read: () => view.coordsAtPos(anchor), write: coords => {
+      if (coords && revision === zoomRevision && !state.reading && view.state.doc === snapshot.doc && view.state.selection.eq(snapshot.selection)) {
+        view.scrollDOM.scrollTop += (coords.top - view.scrollDOM.getBoundingClientRect().top - offset) / view.scaleY;
+      }
+      scheduleOutlineCurrent();
+    }});
+  })});
+}
+
+function runBodyZoom(action) {
+  setBodyZoom(action === 'reset' ? 100 : stepBodyZoom(state.bodyZoom, action === 'in' ? 1 : -1));
+}
+
+updateZoomControls();
+for (const [id, action] of [['zoomIn', 'in'], ['zoomOut', 'out']]) {
+  const button = document.getElementById(id);
+  button.addEventListener('mousedown', event => event.preventDefault());
+  button.addEventListener('click', () => runBodyZoom(action));
+}
+zoomLevelButton.addEventListener('click', () => {
+  const opening = zoomPopover.hidden;
+  closePopovers();
+  zoomPopover.hidden = !opening;
+  zoomLevelButton.setAttribute('aria-expanded', String(opening));
+  if (opening) {
+    positionMenu(zoomPopover, zoomLevelButton.getBoundingClientRect());
+    zoomPopover.querySelector('[aria-checked="true"]')?.focus({preventScroll: true});
+  }
+});
+zoomPopover.addEventListener('click', event => {
+  const button = event.target.closest('button[data-zoom]');
+  if (!button) return;
+  setBodyZoom(Number(button.dataset.zoom));
+  closePopovers();
+  zoomLevelButton.focus({preventScroll: true});
+});
+zoomPopover.addEventListener('keydown', event => {
+  if (event.key === 'Escape' || event.key === 'Tab') {
+    event.preventDefault(); event.stopPropagation(); closePopovers(); zoomLevelButton.focus({preventScroll: true});
+  }
+});
+window.addEventListener('keydown', event => {
+  if (event.defaultPrevented || shell.classList.contains('welcome-state') || !appearancePopover.hidden || !palette.hidden) return;
+  const action = bodyZoomShortcut(event);
+  if (!action) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  runBodyZoom(action);
+}, true);
 
 function parseOutline(markdown) {
   const result = [];
@@ -840,12 +937,15 @@ function updateHistoryControls() {
 
 const readingPane = document.querySelector('#readingPane');
 const reader = readingPane.querySelector('article');
+function syncReadingZoom() {
+  readingPane.querySelector('.reading-zoom-frame').style.height = `${reader.offsetHeight * state.bodyZoom / 100}px`;
+}
 reader.addEventListener('dblclick',event=>{if(event.target.closest('.leaf-file-name-title'))renameCurrentDocument();});
 reader.addEventListener('keydown',event=>{if(event.target.matches('.leaf-file-name-title')&&['Enter',' '].includes(event.key)){event.preventDefault();renameCurrentDocument();}});
 readingPane.addEventListener('scroll', scheduleOutlineCurrent, {passive: true});
 readingPane.addEventListener('click', scheduleOutlineCurrent);
 new ResizeObserver(scheduleOutlineCurrent).observe(readingPane);
-new ResizeObserver(scheduleOutlineCurrent).observe(reader);
+new ResizeObserver(() => { syncReadingZoom(); scheduleOutlineCurrent(); }).observe(reader);
 function renderReading() {
   scheduleOutlineCurrent();
   renderPrintDocument(reader,state.content,{name:state.fileName,numbered:state.showHeadingNumbers,properties:true,expandCallouts:false,fallbackTitle:false,fileNameTitle:state.showFileNameTitle,sourcePositions:true});
@@ -860,6 +960,7 @@ function renderReading() {
     pre.prepend(label);
   }
   readingFolding(reader);
+  syncReadingZoom();
 }
 function toggleReading() {
   scheduleOutlineCurrent();
@@ -1271,7 +1372,7 @@ async function checkExternalChanges() {
 }
 
 function closePopovers(except = null) {
-  for (const popover of [appearancePopover, recentPopover, headingPopover, calloutPopover, modePopover, documentPopover, exportPopover, displayPopover, languagePopover]) {
+  for (const popover of [appearancePopover, recentPopover, headingPopover, calloutPopover, modePopover, documentPopover, exportPopover, displayPopover, languagePopover, zoomPopover]) {
     if (popover !== except) popover.hidden = true;
     if (popover===modePopover && popover.hidden) document.querySelector('#readingToggle').setAttribute('aria-expanded','false');
   }
@@ -1282,6 +1383,7 @@ function closePopovers(except = null) {
   document.querySelector('#documentMenuButton').setAttribute('aria-expanded', String(!documentPopover.hidden));
   document.querySelector('#exportMenuButton').setAttribute('aria-expanded', String(!exportPopover.hidden));
   displayButton.setAttribute('aria-expanded', String(!displayPopover.hidden));
+  zoomLevelButton.setAttribute('aria-expanded', String(!zoomPopover.hidden));
 }
 
 function fuzzyMatch(text, query) {
@@ -1318,6 +1420,9 @@ async function exportPdf() {
 }
 
 const commands = [
+  { id: 'main.zoom_in', get name() { return t('main.zoom_in'); }, shortcut: '⇧⌘=', action: () => runBodyZoom('in') },
+  { id: 'main.zoom_out', get name() { return t('main.zoom_out'); }, shortcut: '⇧⌘−', action: () => runBodyZoom('out') },
+  { id: 'main.zoom_reset', get name() { return t('main.zoom_reset'); }, shortcut: '⇧⌘0', action: () => runBodyZoom('reset') },
   { id: 'main.appearance_typography_ui0202', get name() { return t('main.appearance_typography_ui0202'); }, action: () => openSettings('appearance') },
   { id: 'main.display_options', get name() { return t('main.display_options'); }, action: () => document.querySelector('#displayButton').click() },
   { id: 'main.saving_recovery_ui0204', get name() { return t('main.saving_recovery_ui0204'); }, action: () => openSettings('recovery') },
@@ -1373,7 +1478,7 @@ const commandGroups = [
   ['main.file', ['main.open_file_ui0212', 'main.save_file', 'main.export_pdf_ui0211', 'main.document_properties_ui0217']],
   ['main.edit_ui0240', ['main.undo_ui0209', 'main.redo_ui0210', 'main.copy_as_rich_text', 'main.paste_as_plain_text', 'main.find_in_document', 'main.clean_up_blank_lines', 'main.renumber_footnotes_in_reference_order']],
   ['main.insert_format', ['main.insert_image', 'main.insert_attachment', 'main.set_to_heading_1', 'main.bold_ui0226', 'main.italic_ui0227', 'main.highlight', 'main.inline_code', 'main.blockquote_ui0228', 'main.insert_footnote_ui0229', 'main.insert_callout_ui0230', 'main.bulleted_list_ui0232', 'main.insert_table_ui0233']],
-  ['main.view', ['main.display_options', 'main.cycle_view_mode', 'main.show_or_hide_editing_marks', 'main.show_or_hide_outline', 'main.show_or_hide_footnotes', 'main.show_or_hide_source_line_numbers', 'main.toggle_focus_mode', 'main.toggle_light_dark_theme']],
+  ['main.view', ['main.display_options', 'main.cycle_view_mode', 'main.zoom_in', 'main.zoom_out', 'main.zoom_reset', 'main.show_or_hide_editing_marks', 'main.show_or_hide_outline', 'main.show_or_hide_footnotes', 'main.show_or_hide_source_line_numbers', 'main.toggle_focus_mode', 'main.toggle_light_dark_theme']],
   ['main.recovery', ['main.versions_drafts_ui0234', 'main.recover_unsaved_drafts', 'main.restore_version_before_last_save_ui0236']],
 ];
 function selectPaletteItem(button) {
@@ -1824,7 +1929,7 @@ palette.addEventListener('mousedown', (event) => {
 });
 
 document.addEventListener('mousedown', (event) => {
-    if (!event.target.closest('.quick-language-button') && !event.target.closest('.popover') && !event.target.closest('#readingToggle') && !event.target.closest('#appearanceButton') && !event.target.closest('#welcomeSettings') && !event.target.closest('#recentButton') && !event.target.closest('#welcomeRecentButton') && !event.target.closest('#headingButton') && !event.target.closest('#documentMenuButton') && !event.target.closest('#exportMenuButton') && !event.target.closest('#displayButton')) closePopovers();
+    if (!event.target.closest('.quick-language-button') && !event.target.closest('.popover') && !event.target.closest('#readingToggle') && !event.target.closest('#appearanceButton') && !event.target.closest('#welcomeSettings') && !event.target.closest('#recentButton') && !event.target.closest('#welcomeRecentButton') && !event.target.closest('#headingButton') && !event.target.closest('#documentMenuButton') && !event.target.closest('#exportMenuButton') && !event.target.closest('#displayButton') && !event.target.closest('#zoomLevel')) closePopovers();
 });
 
 let tooltipTimer = null;
@@ -2083,6 +2188,7 @@ languagePopover.addEventListener('keydown', event => {
 syncLanguageControls();
 onLanguageChange(() => {
   syncLanguageControls();
+  updateZoomControls();
   updateDocumentChrome(); updateModeControl(); updateHeadingControl(editor.headingLevel());
   if (!palette.hidden) renderPalette(paletteInput.value);
   for (const el of document.querySelectorAll('[data-callout-label]')) el.textContent = calloutLabels[el.dataset.calloutLabel];

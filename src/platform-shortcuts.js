@@ -24,7 +24,7 @@ const modifierNames = {'⇧':'Shift','⌥':'Option','⌃':'Control','⌘':'Comma
 export function renderShortcutText(container, text) {
   container.replaceChildren();
   let from = 0;
-  for (const match of text.matchAll(/([⌃⌥⇧⌘]+)([A-Za-z0-9\\.,=])/g)) {
+  for (const match of text.matchAll(/([⌃⌥⇧⌘]+)([A-Za-z0-9\\.,=−-])/g)) {
     container.append(document.createTextNode(text.slice(from, match.index)));
     const group = document.createElement('span'); group.className = 'shortcut-keys';
     const keys = [...'⌃⌥⇧⌘'].filter(key=>match[1].includes(key));
@@ -44,7 +44,7 @@ export function renderShortcutText(container, text) {
 
 // Tooltips share one convention; menus keep their separate shortcut column.
 export function tooltipShortcutText(text) {
-  return text.replace(/[⌃⌥⇧⌘]+(?:[A-Za-z0-9\\.,=](?:[–-][0-9])?)?|\b(?:(?:Ctrl|Alt|Shift|Cmd|Command|Option)\+)+(?:[A-Za-z0-9\\.,=](?:[–-][0-9])?)|\b(?:Esc|Enter|Tab|Ctrl|Alt|Shift|Cmd)\b/g, (key, offset) => {
+  return text.replace(/[⌃⌥⇧⌘]+(?:[A-Za-z0-9\\.,=−-](?:[–-][0-9])?)?|\b(?:(?:Ctrl|Alt|Shift|Cmd|Command|Option)\+)+(?:[A-Za-z0-9\\.,=−-](?:[–-][0-9])?)|\b(?:Esc|Enter|Tab|Ctrl|Alt|Shift|Cmd)\b/g, (key, offset) => {
     const before = text.slice(0, offset);
     const open = Math.max(before.lastIndexOf('('), before.lastIndexOf('（'));
     const close = Math.max(before.lastIndexOf(')'), before.lastIndexOf('）'));

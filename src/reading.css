@@ -9,6 +9,8 @@
 .reading-mode .format-toolbar { justify-content:flex-end; gap:8px; }
 .reading-mode .format-toolbar #richCopy { margin-left:0; }
 .reading-mode .format-toolbar #richCopy::before { display:none; }
+.reading-zoom-frame { position:relative; width:100%; overflow:hidden; }
+.reading-zoom-canvas { position:absolute; top:0; left:0; width:calc(100% / var(--body-zoom)); transform:scale(var(--body-zoom)); transform-origin:top left; }
 .reading-document { max-width:calc(var(--content-width) + 64px); margin:0 auto; padding:36px 32px 100px; color:var(--text); font:var(--editor-font-size)/1.85 var(--ui-font); overflow-wrap:anywhere; user-select:text; }
 .shell[data-font="serif"] .reading-document { font-family:Georgia,"Songti SC",serif; }
 .shell[data-font="mono"] .reading-document { font-family:var(--ui-mono); }

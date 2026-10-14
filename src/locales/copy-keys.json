@@ -676,5 +676,10 @@
   "NA0159": "native.print_cancel",
   "NA0160": "native.provided_by_the_operating_system",
   "NA0161": "native.use_the_built_in_nsis_language_packs",
-  "NA0162": "main.could_not_move_the_original_file_to_na0162"
+  "NA0162": "main.could_not_move_the_original_file_to_na0162",
+  "UI0263": "main.body_zoom",
+  "UI0264": "main.zoom_in",
+  "UI0265": "main.zoom_out",
+  "UI0266": "main.zoom_reset",
+  "UI0267": "main.zoom_level"
 }

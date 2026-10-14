@@ -94,6 +94,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .shell {
   --editor-font-size: 17px;
   --content-width: 780px;
+  --body-zoom: 1;
   height: 100%;
   display: grid;
   grid-template-rows: 64px 42px auto minmax(0, 1fr) auto;
@@ -201,7 +202,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .welcome-state .recent-popover { top: calc(50% + 96px); left: 50%; transform: translate(-50%, 0); max-height: min(260px, calc(50vh - 112px)); overflow-y: auto; }
 
 .document-area { grid-row: 4; isolation: isolate; min-width: 0; min-height: 0; display: flex; position: relative; background: var(--canvas); }
-.editor-host { min-width: 0; flex: 1; height: 100%; }
+.editor-host { min-width: 0; flex: 1; height: 100%; overflow: hidden; }
+
+/* Transforms have consistent DOM geometry in Chromium and native WKWebView.
+   The inverse layout dimensions keep the scaled editor in its fixed viewport.
+   Search panels cancel the content scale; sidebar editors remain independent. */
+.editor-host > .cm-editor { width: calc(100% / var(--body-zoom)); height: calc(100% / var(--body-zoom)); transform: scale(var(--body-zoom)); transform-origin: top left; }
+.editor-host > .cm-editor > .cm-panels { width: calc(100% * var(--body-zoom)); transform: scale(calc(1 / var(--body-zoom))); transform-origin: top left; }
 
 .cm-editor { background: var(--canvas); color: var(--text); }
 .cm-editor.cm-focused { outline: none; }
@@ -666,9 +673,22 @@ button.leaf-list-marker { cursor:pointer; }
 .note-body::placeholder { color: var(--faint); }
 .note-card.active .note-body { color: var(--text); }
 
-.statusbar { grid-row: 5; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 14px; min-height: 28px; padding: 0 16px; border-top: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: var(--ui-metadata); }
+.statusbar { grid-row: 5; display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto auto; align-items: center; column-gap: 14px; min-height: 28px; padding: 0 16px; border-top: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: var(--ui-metadata); }
 .statusbar #stats { margin-left: auto; }
 .status-button { color: var(--muted); padding: 2px 6px; }
+.body-zoom { display: flex; align-items: center; gap: 2px; }
+.body-zoom button { height: 30px; min-width: 30px; padding: 0 4px; color: var(--muted); font: inherit; }
+.body-zoom #zoomLevel { min-width: 48px; font-variant-numeric: tabular-nums; }
+.body-zoom button:disabled { opacity: .4; cursor: default; background: transparent; }
+#zoomPopover { width: 180px; overflow-y: auto; }
+.zoom-popover [role="menuitemradio"]::after { content: ''; width: 1em; margin-left: auto; }
+.zoom-popover [aria-checked="true"]::after { content: '✓'; }
+.zoom-menu-divider { border-top: 1px solid var(--line); margin: 4px; }
+@media (max-width: 640px) {
+  .statusbar { gap: 6px; padding-inline: 8px; }
+  .statusbar #stats { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .cursor-and-save { gap: 6px; }
+}
 
 .popover {
   position: absolute;
