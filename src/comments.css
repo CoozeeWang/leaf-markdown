@@ -1,5 +1,5 @@
 .annotation-tabs{display:flex;gap:8px;align-items:center;flex:1;min-width:0}
-.annotation-tabs button{font:inherit;border:0;border-radius:0;background:none;color:var(--muted);padding:6px 9px;display:flex;gap:6px;align-items:center;min-height:30px}
+.drawer-header .annotation-tabs button{font:inherit;border:0;border-radius:0;background:none;color:var(--muted);padding:6px 9px;display:flex;gap:6px;align-items:center;min-height:30px;width:auto;height:auto;white-space:nowrap;flex:none}
 .annotation-tabs button[aria-selected="true"]{color:var(--text);box-shadow:inset 0 -2px var(--accent)}
 .annotation-tabs button:focus-visible{outline:1px solid var(--accent);outline-offset:-1px;border-radius:4px}
 .comments-list{overflow:auto;min-height:0;display:grid;align-content:start;gap:12px;padding:4px 0 12px}
