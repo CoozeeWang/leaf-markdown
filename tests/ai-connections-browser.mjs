@@ -16,6 +16,7 @@ async function nativePage() {
     window.aiMock = {enabled:false, clients, runtime, calls:[], fail:null, hold:false, pending:[], keySeen:false};
     const copy = value => JSON.parse(JSON.stringify(value));
     window.emitNative = (event,payload) => handlers[event]?.({event,payload});
+    window.aiEditorReady = () => !!handlers['leaf-mcp-editor'];
     window.__TAURI_INTERNALS__ = {
       metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},
       transformCallback:fn=>{callbacks[++id]=fn; return id;},
@@ -58,6 +59,7 @@ async function nativePage() {
   await page.goto(`${process.env.LEAF_TEST_BASE_URL || 'http://127.0.0.1:41732'}/?document=1`);
   await page.locator('#appearanceButton').click(); await page.locator('#settingsTab-ai').click();
   await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled, null, {timeout:5000});
+  await page.waitForFunction(()=>aiEditorReady(), null, {timeout:5000});
   return page;
 }
 try {
@@ -162,6 +164,40 @@ try {
     await page.waitForTimeout(50);
     assert.match(await page.locator('#aiClient option[value="claude-desktop"]').innerText(), /已配置/);
     await page.evaluate(()=>aiMock.hold=false);
+    await page.close();
+  });
+  await test('persistent AI notice has one localized sentence, a lock, reachable stop and an independent save error', async () => {
+    const page = await nativePage();
+    await page.keyboard.press('Escape');
+    await page.evaluate(async()=>{
+      const content='# Synthetic\n\nUnchanged body.';
+      await emitNative('leaf-mcp-editor',{call_id:'notice-snapshot',operation:'snapshot',args:{}});
+      const revision=aiMock.calls.findLast(call=>call.command==='mcp_renderer_reply').args.reply.result.revision;
+      await emitNative('leaf-mcp-editor',{call_id:'notice-begin',operation:'begin',args:{document_id:'doc-ui',session_id:'session-ui',task_id:'task-ui',client:'chatgpt',authorization_epoch:4,mutation_generation:0,scope:{from:0,to:content.length},revision}});
+    });
+    const notice=page.locator('#aiTaskNotice');
+    await notice.waitFor();
+    assert.equal(await notice.locator('.ai-task-lock').count(), 1, 'persistent task must expose the approved linear lock icon');
+    const copies={'zh-Hans':'ChatGPT 正在辅助编辑，此文档暂时只读，可浏览、查找。','zh-Hant-TW':'ChatGPT 正在輔助編輯，此文件暫時唯讀，可瀏覽、尋找。','en':'ChatGPT is editing. This document is temporarily read-only; you can browse and find.'};
+    await page.evaluate(()=>document.dispatchEvent(new CustomEvent('leaf-image-reveal-failed',{detail:'Synthetic save failure · 路径Δ'.repeat(120)})));
+    for(const [language,copy]of Object.entries(copies)) {
+      await page.evaluate(async value=>{const {setLanguagePreference}=await import('/src/i18n.js');await setLanguagePreference(value);},language);
+      assert.equal(await notice.locator('.ai-task-copy').innerText(),copy);
+      assert.equal(await notice.locator('.ai-task-copy').count(),1);
+      assert.ok(await page.locator('#statusNotice').isVisible());
+      for(const width of [320,390,720,1000]) for(const theme of ['light','dark']) {
+        await page.setViewportSize({width,height:720});await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);
+        const bounds=await page.evaluate(()=>{const box=id=>document.querySelector(id).getBoundingClientRect().toJSON();return {task:box('#aiTaskNotice'),stop:box('#aiTaskNotice button'),toolbar:box('.format-toolbar'),document:box('.document-area'),scroll:document.documentElement.scrollWidth};});
+        assert.ok(bounds.task.top>=bounds.toolbar.bottom-1&&bounds.task.bottom<=bounds.document.top+1);
+        assert.ok(bounds.stop.right<=width&&bounds.stop.bottom<=720,'stop remains in viewport');
+        assert.ok(bounds.scroll<=width,'notices do not widen the window');
+        if(width===390) await page.screenshot({path:artifactPath(`ai-notice-${language}-${theme}.png`)});
+      }
+    }
+    await notice.locator('button').focus();assert.equal(await notice.locator('button').evaluate(n=>n===document.activeElement),true);
+    await page.locator('#dismissStatus').click();assert.ok(await notice.isVisible());
+    await page.evaluate(async()=>{await emitNative('leaf-mcp-editor',{call_id:'notice-finish',operation:'finish',args:{task_id:'retired-task',session_id:'session-ui',document_id:'doc-ui',authorization_epoch:1,mutation_generation:0}});});
+    assert.ok(await notice.isVisible(),'retired task event cannot clear the current notice');
     await page.close();
   });
 } finally { await browser.close(); }
