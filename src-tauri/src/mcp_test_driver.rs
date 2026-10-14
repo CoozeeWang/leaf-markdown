@@ -128,6 +128,7 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     if mode=="renderer-ack-loss" {ack_loss_gate(app,label,broker,&client).await?;edge_gate(app,label,broker,&client).await?;}
     if mode=="all-write-entrances" {entrances_gate(app,label,broker,&client).await?;}
     if mode=="stop-late-second-window" {stop_late_gate(app,broker,&client).await?;}
+    if mode=="file-identity-conflict" {file_identity_gate(app,broker,&client).await?;}
     if mode=="properties-markdown" {
         ensure(apply["inputSchema"]["properties"]["operations"].is_object(),"structured operations are discoverable through actual MCP tools/list")?;
         properties_gate(app,label,broker,&client).await?;
@@ -304,6 +305,136 @@ async fn wait_document(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBroker,p
         if let Some(label)=label {if broker.bridge(app,&label,"snapshot",json!({})).await.is_ok(){return Ok(label);}}
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }Err("second renderer registration timeout".into())
+}
+
+async fn file_identity_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{
+    let root=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
+    for (index,atomic) in [false,true].into_iter().enumerate() {
+        let path=root.join(if atomic{"different.md"}else{"synthetic.md"});
+        let initial=std::fs::read_to_string(&path).map_err(|_|"synthetic seed")?;
+        let previous=broker.inner.registry.lock().unwrap().documents.values().map(|d|d.label.clone()).collect::<Vec<_>>();
+        super::create_document(app.clone(),Some(path.to_string_lossy().into()),None,None)?;
+        let label=wait_document(app,broker,&previous).await?;
+        let registered=broker.window_binding(&label).ok_or("saved registration")?;
+        let original_identity=registered.logical_identity.clone();
+        ensure(original_identity.starts_with("file:"),"production registry binds actual anchor identity")?;
+        ensure(broker.register_window(app,&label).session_id==registered.session_id,"registration is stable")?;
+        let snapshot=broker.bridge(app,&label,"snapshot",json!({})).await?;
+        ensure(snapshot["content"]==initial,"production initial path loads actual disk")?;
+        let d=broker.authorize(app,&label,&registered.session_id,"synthetic-client",json!({"from":0,"to":initial.encode_utf16().count()})).await?;
+        let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+        let mut begin=binding.clone();begin["revision"]=snapshot["revision"].clone();begin["request_id"]=json!(format!("file-begin-{index}"));
+        let task=tool(client,"begin_edit",begin).await?;
+        let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!(format!("file-first-{index}"));batch["revision"]=snapshot["revision"].clone();batch["changes"]=json!([{"from":0,"to":9,"expected":&initial[..9],"insert":"Assisted!"}]);
+        let first=tool(client,"apply_edit_batch",batch.clone()).await?;
+        ensure(first["bufferResult"]["state"]=="applied"&&first["diskResult"]["state"]=="pending","buffer receipt does not claim disk success")?;
+        let mut revision=first["applied_revision"].clone();
+        if !atomic {
+            batch["request_id"]=json!("file-second");batch["revision"]=revision;batch["changes"]=json!([{"from":10,"to":15,"expected":"saved","insert":"draft"}]);
+            let second=tool(client,"apply_edit_batch",batch.clone()).await?;revision=second["applied_revision"].clone();
+            let saved=broker.bridge(app,&label,"test",json!({"action":"save"})).await?;
+            ensure(saved["saved"]==true,"real renderer save IPC succeeds")?;
+            ensure(std::fs::read_to_string(&path).map_err(|_|"saved disk read")?=="Assisted! draft draft","actual native disk matches saved snapshot")?;
+            let mut query=binding.clone();query["request_id"]=json!("file-first-0");let old=tool(client,"reconcile_request",query.clone()).await?;
+            ensure(old["diskResult"]["state"]=="superseded"&&old["bufferResult"]["revision"]==first["applied_revision"],"later disk revision does not relabel prior exact buffer")?;
+            query["request_id"]=json!("file-second");ensure(tool(client,"reconcile_request",query).await?["diskResult"]["state"]=="saved","actual tool observes native save ledger")?;
+            let current=broker.window_binding(&label).unwrap();
+            ensure(current.document_id==registered.document_id && current.session_id==registered.session_id && current.logical_identity!=original_identity,"own atomic save updates anchor alias while keeping logical session")?;
+            let alias=root.join("saved-alias.md");std::fs::hard_link(&path,&alias).map_err(|_|"synthetic alias")?;
+            let count=app.state::<super::Documents>().0.lock().unwrap().len();
+            super::create_document(app.clone(),Some(alias.to_string_lossy().into()),None,None)?;
+            ensure(app.state::<super::Documents>().0.lock().unwrap().len()==count,"saved anchor alias focuses existing window")?;
+            batch["request_id"]=json!("file-third");batch["revision"]=revision;batch["changes"]=json!([{"from":0,"to":9,"expected":"Assisted!","insert":"AI draft!"}]);
+            revision=tool(client,"apply_edit_batch",batch.clone()).await?["applied_revision"].clone();
+        }
+        broker.bridge(app,&label,"test",json!({"action":"pause-auto-timer"})).await?;
+        let before=broker.bridge(app,&label,"snapshot",json!({})).await?;
+        let before_identity=broker.window_binding(&label).unwrap().logical_identity;
+        let external=if atomic{"External replacement draft"}else{"External in-place draft"};
+        if atomic {let replacement=root.join("external-replacement.md");std::fs::write(&replacement,external).map_err(|_|"replacement seed")?;std::fs::rename(replacement,&path).map_err(|_|"external atomic replacement")?;}else{std::fs::write(&path,external).map_err(|_|"external in-place write")?;}
+        // Observe the application's real three-second file watcher, not a
+        // mocked event or forced read in this driver.
+        for _ in 0..100 {
+            let state=broker.bridge(app,&label,"test",json!({"action":"session-state"})).await?;
+            if broker.window_binding(&label).is_some_and(|d|d.task.is_none()) && state["aiEditResult"]["diskResult"]["state"]=="conflict" {break;}
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        ensure(!broker.window_locked(&label),"actual watcher stops and unlocks task")?;
+        let state=broker.bridge(app,&label,"test",json!({"action":"session-state"})).await?;
+        ensure(state["paused"]==true,"actual watcher pauses autosave")?;
+        ensure(state["aiEditResult"]["checkpoint"]["state"]=="protected","wait for completed recovery boundary after capability invalidation")?;
+        ensure(broker.window_binding(&label).unwrap().logical_identity==before_identity,"external replacement must never impersonate an own-save anchor rebind")?;
+        ensure(broker.bridge(app,&label,"snapshot",json!({})).await?==before,"watcher preserves applied buffer and revision")?;
+        ensure(std::fs::read_to_string(&path).map_err(|_|"external disk read")?==external,"external disk remains untouched")?;
+        let mut restart=binding.clone();restart["request_id"]=json!(format!("conflict-restart-{index}"));restart["revision"]=before["revision"].clone();
+        ensure(tool(client,"begin_edit",restart).await.is_err(),"unresolved conflict cannot acquire a new AI write capability")?;
+        let canonical_path=app.state::<super::Documents>().0.lock().unwrap().get(&label).cloned().flatten().ok_or("actual saved path absent")?;
+        let protected=super::recovery_store(app)?.read(&super::recovery::file_key(&canonical_path))?;
+        ensure(protected.versions.iter().any(|v|v.content==before["content"].as_str().unwrap()),"actual local recovery protects AI draft")?;
+        batch["request_id"]=json!(format!("file-late-{index}"));batch["revision"]=revision;batch["changes"]=json!([]);
+        ensure(tool(client,"apply_edit_batch",batch.clone()).await.is_err(),"late task mutation is refused")?;
+        let undone=broker.bridge(app,&label,"test",json!({"action":"undo"})).await?;ensure(undone["content"]==initial,"conflicted task remains one whole undo")?;
+        ensure(broker.bridge(app,&label,"test",json!({"action":"redo"})).await?["content"]==before["content"],"whole redo preserves applied task")?;
+        let destroyed=app.get_webview_window(&label).unwrap();destroyed.destroy().map_err(|_|"test close")?;
+        for _ in 0..100 {if broker.window_binding(&label).is_none(){break;}tokio::time::sleep(std::time::Duration::from_millis(30)).await;}
+        let previous=broker.inner.registry.lock().unwrap().documents.values().map(|d|d.label.clone()).collect::<Vec<_>>();
+        super::create_document(app.clone(),Some(path.to_string_lossy().into()),None,None)?;
+        let reopened=wait_document(app,broker,&previous).await?;
+        ensure(broker.window_binding(&reopened).unwrap().session_id!=d.session_id,"actual close/reopen retires session")?;
+        ensure(tool(client,"apply_edit_batch",batch).await.is_err(),"old session cannot target reopened file")?;
+        ensure(broker.bridge(app,&reopened,"snapshot",json!({})).await?["content"]==external,"reopen reads surviving external disk")?;
+    }
+    file_transition_gate(app,broker,client,&root).await?;
+    Ok(())
+}
+
+async fn file_transition_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>,root:&std::path::Path)->Result<(),String>{
+    for action in ["save-as","rename","relocate","external-rename","save-failure"] {
+        let source=root.join(format!("{action}-source.md"));let target=root.join(format!("{action}-target.md"));
+        let initial="Synthetic saved draft";std::fs::write(&source,initial).map_err(|_|"transition seed")?;
+        let previous=broker.inner.registry.lock().unwrap().documents.values().map(|d|d.label.clone()).collect::<Vec<_>>();
+        super::create_document(app.clone(),Some(source.to_string_lossy().into()),None,None)?;
+        let label=wait_document(app,broker,&previous).await?;let window=app.get_webview_window(&label).unwrap();
+        let d=broker.window_binding(&label).unwrap();let d=broker.authorize(app,&label,&d.session_id,"synthetic-client",json!({"from":0,"to":initial.len()})).await?;
+        let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+        let before=broker.bridge(app,&label,"snapshot",json!({})).await?;
+        let mut begin=binding.clone();begin["revision"]=before["revision"].clone();begin["request_id"]=json!(format!("transition-{action}"));let task=tool(client,"begin_edit",begin).await?;
+        let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["revision"]=before["revision"].clone();batch["request_id"]=json!(format!("transition-batch-{action}"));batch["changes"]=json!([{"from":0,"to":9,"expected":"Synthetic","insert":"Assisted!"}]);
+        let receipt=tool(client,"apply_edit_batch",batch.clone()).await?;
+        broker.bridge(app,&label,"test",json!({"action":"pause-auto-timer"})).await?;
+        let applied=broker.bridge(app,&label,"snapshot",json!({})).await?;
+        if action=="save-as" {
+            let save_binding=json!({"document_id":d.document_id,"session_id":d.session_id,"revision":receipt["applied_revision"]});
+            super::write_document(app.clone(),window.clone(),app.state::<super::Documents>(),app.state::<super::DocumentAnchors>(),app.state::<super::RecoveryState>(),target.to_string_lossy().into(),"Assisted! saved draft".into(),None,vec![],Some(save_binding)).await?;
+            ensure(std::fs::read_to_string(&source).unwrap()==initial,"save-as leaves original disk unchanged")?;
+        }else if action=="rename" {
+            let canonical=app.state::<super::Documents>().0.lock().unwrap().get(&label).cloned().flatten().ok_or("rename source absent")?;
+            super::rename_document(app.clone(),window.clone(),app.state::<super::Documents>(),app.state::<super::DocumentAnchors>(),app.state::<super::RecoveryState>(),canonical.to_string_lossy().into(),"rename-target.md".into(),initial.into(),"Assisted! saved draft".into()).await?;
+        }else if action=="relocate" {
+            std::fs::write(&target,initial).map_err(|_|"relocation seed")?;
+            super::relocate_document(app.clone(),window.clone(),app.state::<super::Documents>(),app.state::<super::DocumentAnchors>(),app.state::<super::RecoveryState>(),target.to_string_lossy().into(),initial.into(),vec![]).await?;
+            ensure(std::fs::read_to_string(&target).unwrap()==initial,"relocation never overwrites chosen disk")?;
+        }else if action=="external-rename" {
+            std::fs::rename(&source,&target).map_err(|_|"external rename")?;
+            super::observe_document(app.clone(),window.clone(),app.state::<super::Documents>(),app.state::<super::DocumentAnchors>(),app.state::<super::RecoveryState>(),vec![]).await?;
+        }else {
+            let permissions=std::fs::metadata(&source).unwrap().permissions();let mut readonly=permissions.clone();readonly.set_readonly(true);std::fs::set_permissions(&source,readonly).map_err(|_|"readonly fixture")?;
+            let save=broker.bridge(app,&label,"test",json!({"action":"save"})).await?;
+            std::fs::set_permissions(&source,permissions).map_err(|_|"restore synthetic permission")?;
+            ensure(save["saved"]==false,"real save IPC reports injected readonly failure")?;
+            let mut query=binding.clone();query["request_id"]=batch["request_id"].clone();let result=tool(client,"reconcile_request",query).await?;
+            ensure(result["bufferResult"]["revision"]==receipt["applied_revision"] && result["diskResult"]["state"]=="failed" && result["checkpoint"]["state"]=="protected","real failure preserves applied receipt and recovery proof")?;
+            ensure(std::fs::read_to_string(&source).unwrap()==initial,"save failure cannot overwrite original disk")?;
+            let canonical=app.state::<super::Documents>().0.lock().unwrap().get(&label).cloned().flatten().unwrap();let record=super::recovery_store(app)?.read(&super::recovery::file_key(&canonical))?;
+            ensure(record.draft.iter().chain(record.versions.iter()).any(|v|v.content=="Assisted! saved draft"),"failed real save retains local draft")?;
+        }
+        ensure(!broker.window_locked(&label),"identity change or failed save finalizes before returning")?;
+        ensure(broker.bridge(app,&label,"snapshot",json!({})).await?==applied,"identity boundary preserves applied buffer")?;
+        batch["request_id"]=json!(format!("late-transition-{action}"));batch["revision"]=receipt["applied_revision"].clone();batch["changes"]=json!([]);
+        ensure(tool(client,"apply_edit_batch",batch).await.is_err(),"identity boundary invalidates late task")?;
+        ensure(broker.bridge(app,&label,"test",json!({"action":"undo"})).await?["content"]==initial,"identity boundary retains whole undo")?;
+        window.destroy().map_err(|_|"transition cleanup")?;
+    }Ok(())
 }
 async fn entrances_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{
     let source="---\ntitle: Synthetic\n---\n\n# Heading\n\nBody[^1] {==quote==}{>>note<<}\n\n| A | B |\n| --- | --- |\n| one | two |\n\n[^1]: Footnote\n";

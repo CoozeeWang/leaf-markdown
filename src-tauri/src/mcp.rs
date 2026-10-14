@@ -338,7 +338,7 @@ impl LeafMcpBroker {
                 if let Err(error)=self.bridge(app,&d.label,"begin",task.clone()).await{
                     // Explicit prepare refusals have no lock. An uncertain ACK
                     // may have locked the renderer; schedule its idempotent close.
-                    if !["composition_pending","structural_draft_pending","stale_revision","document_locked"].contains(&error.as_str()){self.inner.pending_finishes.lock().unwrap().insert(d.label.clone(),task.clone());}
+                    if !["composition_pending","structural_draft_pending","stale_revision","document_locked","document_conflict_pending"].contains(&error.as_str()){self.inner.pending_finishes.lock().unwrap().insert(d.label.clone(),task.clone());}
                     return Err(error);
                 }
                 self.inner.leases.lock().unwrap().begin(task["task_id"].as_str().unwrap(),client,lease_now());d.task=Some(task.clone());self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d);
@@ -622,6 +622,19 @@ pub async fn mcp_save_result(app:tauri::AppHandle,window:tauri::WebviewWindow,br
     let mut d=broker.window_binding(window.label()).filter(|d|d.session_id==session_id).ok_or("stale_session")?;
     broker.disk_result(&session_id,revision,None,failed,checkpoint)?;
     if failed {broker.finalize(&app,&mut d).await?;}Ok(())
+}
+
+#[tauri::command]
+pub async fn mcp_document_boundary(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,reason:String)->Result<(),String>{
+    let _serial=broker.inner.queue.lock().await;
+    if reason=="close" {return broker.identity_boundary(&app,window.label()).await;}
+    if reason!="external-conflict" {return Err("unknown_document_boundary".into());}
+    if let Some(mut d)=broker.window_binding(window.label()) {
+        broker.finalize(&app,&mut d).await?;
+        let records=broker.inner.ledger.records.lock().unwrap().iter().filter(|(_,r)|r.session_id==d.session_id).map(|(k,r)|(k.clone(),r.clone())).collect::<Vec<_>>();
+        for (key,mut record) in records {if let Some(receipt)=record.result.as_mut(){if receipt["diskResult"]["state"]=="pending" {receipt["diskResult"]=json!({"state":"conflict","revision":null});receipt["disk_status"]=json!("conflict");broker.inner.ledger.save(record,key)?;}}}
+    }
+    Ok(())
 }
 
 #[cfg(test)]

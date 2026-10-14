@@ -51,3 +51,11 @@ test('external disk change stops AI and pauses autosave while retaining both dra
   assert.equal(await session.save({manual:false}),false);assert.equal(writes,0);
   await session.poll();assert.equal(stops,1,'duplicate conflict cannot checkpoint or stop twice');
 });
+
+test('failed conflict checkpoint keeps the draft paused without reporting protection', async () => {
+  let content='original',active=true;
+  const session=createDocumentSession({content:()=>content,load:async()=>{},status:()=>{},aiActive:()=>active,aiConflict:async()=>{active=false;},checkpoint:async()=>{throw new Error('synthetic recovery failure');},observe:async()=>({path:'/synthetic.md',content:'external'})});
+  await session.initialize('/synthetic.md','original');content='AI draft';session.edited();session.aiApplied({session_id:'session',mutation_id:'mutation',applied_revision:1,changed:true});
+  await session.poll();assert.equal(active,false);assert.equal(session.paused,true);assert.equal(content,'AI draft');
+  assert.equal(session.aiEditResult.checkpoint.state,'pending','failed protection cannot be represented as protected');
+});

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Leaf file identity fixture</title></head><body>
+<div id="editor"></div>
+<script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import {createDocumentSession} from '/src/document-session.js';
+const assert=(condition,message)=>{if(!condition)throw new Error(message);};
+window.runTest=async()=>{
+  const source='Synthetic saved draft';let disk=source,stops=0,writes=0;const checkpoints=[];
+  let session;
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:source,onChange(){session?.edited();}});
+  const io={content:()=>editor.getValue(),load:async content=>editor.setValue(content),status(){},checkpoint:async content=>checkpoints.push(content),observe:async()=>({path:'/synthetic.md',content:disk}),saved(){},write:async(path,content,expected)=>{assert(expected===disk,'expected disk baseline must match');writes++;disk=content;},aiActive:()=>!editor.mutationAllowed(),aiConflict:async()=>{stops++;editor.finishAiTask({task_id:'task'});}};
+  session=createDocumentSession(io);await session.initialize('/synthetic.md',source);
+  const start=editor.mcpSnapshot();
+  const task={task_id:'task',session_id:'synthetic-session',authorization_epoch:1,revision:start.revision,scope:{from:0,to:source.length}};
+  editor.beginAiTask(task);
+  const first=await editor.applyMcpBatch({...task,request_id:'first',mutation_id:'first',changes:[{from:0,to:9,expected:'Synthetic',insert:'Assisted!'}]});session.aiApplied(first);
+  assert(session.aiEditResult.diskResult.state==='pending','applied buffer must report pending disk');
+  const second=await editor.applyMcpBatch({...task,revision:first.applied_revision,request_id:'second',mutation_id:'second',changes:[{from:10,to:15,expected:'saved',insert:'draft'}]});session.aiApplied(second);
+  const applied=editor.mcpSnapshot();disk='External retained draft';
+  await session.poll();await session.poll();
+  assert(stops===1&&session.paused,'external observer stops exactly once and pauses');
+  assert(editor.mcpSnapshot().content===applied.content&&editor.mcpSnapshot().revision===applied.revision,'buffer and revision survive external change');
+  assert(checkpoints.filter(c=>c===applied.content).length===1,'conflict protects one recovery draft');
+  assert(editor.view.contentDOM.getAttribute('aria-readonly')!=='true','actual editor unlocks after conflict');
+  assert(!await session.save({manual:false})&&writes===0&&disk==='External retained draft','autosave cannot overwrite external draft');
+  let late=false;try{await editor.applyMcpBatch({...task,revision:second.applied_revision,request_id:'late',mutation_id:'late',changes:[]});}catch{late=true;}
+  assert(late,'stopped task must reject late batch');
+  editor.undo();assert(editor.getValue()===source,'conflict task has one whole undo');
+  editor.redo();assert(editor.mcpSnapshot().content===applied.content,'conflict task has one whole redo');
+  editor.destroy();return {pass:true,stops,writes,late,bufferRevision:applied.revision,externalDraft:disk};
+};
+if(!new URLSearchParams(location.search).has('browser')) {
+  try{await window.runTest();document.title='LeafTest PASS MCP file identity controls';}
+  catch(error){document.title='LeafTest FAIL '+error.message;}
+}
+</script></body></html>

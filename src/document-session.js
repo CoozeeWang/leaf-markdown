@@ -11,6 +11,13 @@ export function createDocumentSession(io) {
     Object.assign(result,update);
     await io.aiSaveResult?.(structuredClone(result));
   };
+  const conflict=async () => {
+    if(paused)return;
+    paused=true;
+    await io.aiConflict?.();
+    await io.checkpoint(io.content(),true);
+    await publishAi(aiResult,{diskResult:{state:'conflict',revision:null},checkpoint:{state:'protected'}});
+  };
   const unavailable = error => ['NA0024','NA0025','NA0038'].some(id => errorCode(error)?.code === copyKeys[id]) || /\b(?:ENOENT|os error 2)\b|no such file or directory|the system cannot find the file specified|无法确认当前文件的位置|原文件在原位置找不到/i.test(String(error));
   let queue = Promise.resolve();
   const serialize = action => {
@@ -140,13 +147,18 @@ export function createDocumentSession(io) {
             if (recovered) status(translatedMessage("document_session.reading_the_original_file_resumed"), 'saved', { announce: false });
             return;
           }
+          if(io.aiActive?.()) {
+            await conflict();status(translatedMessage("document_session.another_app_has_changed_this_file_use"));return;
+          }
           if (revision !== at || io.content() !== disk) {
+            await conflict();
             status(translatedMessage("document_session.another_app_has_changed_this_file_use")); return;
           }
           await io.load(current, path);
           disk = current;
           status(translatedMessage("document_session.external_changes_loaded"), 'saved');
         } catch (error) {
+          if(io.aiActive?.())await conflict().catch(()=>{});
           const detail = String(error);
           if (detail === pollFailure) return;
           pollFailure = detail;

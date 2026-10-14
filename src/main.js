@@ -14,7 +14,7 @@ import './style.css';
 import { renderPrintDocument } from './print-document.js';
 import { frontmatter } from './markdown-model.js';
 import './reading.css';
-import { desktop, desktopRevealDocument, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopAiApplied, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
+import { desktop, desktopRevealDocument, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopAiApplied, desktopFileState, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
 import { invoke } from '@tauri-apps/api/core';
 import { listen as listenNative } from '@tauri-apps/api/event';
 import { shortcutText, renderShortcutText, renderTooltipText } from './platform-shortcuts.js';
@@ -2232,7 +2232,7 @@ if (desktop) {
         let result;
         if(operation==='snapshot')result=editor.mcpSnapshot();
         else if(operation==='binding'){mcpBinding=args;mutationGeneration++;result=editor.mcpSnapshot();}
-        else if(operation==='begin'){result=editor.beginAiTask(args);mcpBinding=args;}
+        else if(operation==='begin'){if(desktopFileState()?.paused)throw new Error('document_conflict_pending');result=editor.beginAiTask(args);mcpBinding=args;}
         else if(operation==='apply') {
           if(testMode && args.test_fault==='before-dispatch')throw new Error('test_before_dispatch');
           const realClock=Date.now;
@@ -2255,6 +2255,9 @@ if (desktop) {
             queueMicrotask(()=>{Date.now=nativeClock;});
           }
           if(args.action==='reset') await setDocument(args.content,'Synthetic MCP.md');
+          else if(args.action==='save') result={saved:await desktopSave(false,false),...desktopFileState()};
+          else if(args.action==='session-state') result=desktopFileState();
+          else if(args.action==='pause-auto-timer') {clearTimeout(state.saveTimer);result={paused_timer:true};}
           else if(args.action==='undo') editor.undo();
           else if(args.action==='redo') editor.redo();
           else if(args.action==='human') editor.restoreValue(args.content);
