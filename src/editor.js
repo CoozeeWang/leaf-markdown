@@ -57,7 +57,7 @@ import { paragraphDeletion, selectedParagraphDeletion } from './paragraph-delete
 import {outlineFolding} from './outline-folding.js';
 import { classifyInlineTag, pairInlineTags } from './inline-html.js';
 import { imageDrag } from './image-drag.js';
-import { shortcutText } from './platform-shortcuts.js';
+import { shortcutText, documentHistoryShortcut } from './platform-shortcuts.js';
 import { footnoteRegion, footnoteRegionEnabled, footnoteBoundaryGuard, prepareBodyBeforeNotes } from './footnote-region.js';
 import { footnoteInlineNodes } from './footnote-inline.js';
 
@@ -789,6 +789,7 @@ function dispatchFootnoteInsertion(view, changes, plan, select = true) {
     effects: insertedFootnoteAt.of(plan.caret),
     ...(select ? {selection: EditorSelection.cursor(plan.caret), scrollIntoView: true} : {}),
     userEvent: 'input',
+    annotations: isolateHistory.of('full'),
   });
   const caret = tr.effects.find(effect => effect.is(insertedFootnoteAt)).value;
   const note = tr.state.field(footnoteIndex).notes.find(note => note.refs.some(ref => ref.to === caret));
@@ -856,6 +857,24 @@ function closeFootnotePopup() {
   footnoteBox = null; footnoteBoxView = null; footnoteBoxOutside = null; footnoteBoxAnchor = null; footnoteBoxLabel = null;
 }
 
+function resizeFootnotePopup() {
+  const input = footnoteBox?.querySelector('textarea');
+  if (!input) return;
+  input.style.height = 'auto';
+  input.style.height = `${input.scrollHeight}px`;
+  placeFootnotePopup();
+}
+
+function documentHistory(view, action) {
+  const input = footnoteBoxView === view && footnoteBox?.querySelector('textarea');
+  const focused = input && document.activeElement === input;
+  const changed = action(view);
+  // Undoing the insertion removes the popup along with its reference. Keep the
+  // next redo shortcut in the document rather than on the now-detached input.
+  if (focused && !input.isConnected) view.focus();
+  return changed;
+}
+
 function placeFootnotePopup() {
   if (!footnoteBox) return;
   const view = footnoteBoxView;
@@ -909,14 +928,16 @@ function openFootnotePopup(view, label, pos, anchor = null) {
   document.body.append(box);
   footnoteBox = box; footnoteBoxView = view; footnoteBoxAt = pos ?? 0; footnoteBoxAnchor = anchor; footnoteBoxLabel = label;
 
-  const grow = () => {
-    input.style.height = 'auto';
-    input.style.height = `${input.scrollHeight}px`;
-    placeFootnotePopup();
-  };
-  input.addEventListener('input', () => { applyFootnoteBody(view, footnoteBoxLabel, input.value); grow(); });
+  input.addEventListener('input', event => { applyFootnoteBody(view, footnoteBoxLabel, input.value, event.isComposing, 0, true); resizeFootnotePopup(); });
   input.addEventListener('keydown', event => {
     if (event.isComposing) return;
+    const history = documentHistoryShortcut(event);
+    if (history) {
+      event.preventDefault();
+      event.stopPropagation();
+      documentHistory(view, history === 'undo' ? undo : redo);
+      return;
+    }
     if (event.key === 'Escape' || (event.key === 'Enter' && !event.shiftKey)) {
       event.preventDefault();
       const currentLabel = footnoteBoxLabel;
@@ -936,7 +957,8 @@ function openFootnotePopup(view, label, pos, anchor = null) {
   window.addEventListener('scroll', placeFootnotePopup, true);
   window.addEventListener('resize', placeFootnotePopup);
   requestAnimationFrame(() => {
-    grow();
+    if (!box.isConnected) return;
+    resizeFootnotePopup();
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
   });
@@ -1093,9 +1115,20 @@ export function createLeafEditor(options) {
     if (update.docChanged && !suppressChanges) {
       const labels = footnoteLabelMap(update.startState.field(footnoteIndex), update.state.field(footnoteIndex), update.changes);
       if (footnoteBox && footnoteBoxView === update.view) {
-        footnoteBoxLabel = labels.get(footnoteBoxLabel) ?? footnoteBoxLabel;
+        const label = labels.get(footnoteBoxLabel);
         footnoteBoxAt = update.changes.mapPos(footnoteBoxAt, 1);
-        if (!update.state.field(footnoteIndex).notes.some(note => note.id === footnoteBoxLabel)) closeFootnotePopup();
+        const note = label === undefined ? null : update.state.field(footnoteIndex).notes.find(note => note.id === label);
+        if (!note) closeFootnotePopup();
+        else {
+          footnoteBoxLabel = label;
+          const input = footnoteBox.querySelector('textarea'), body = note.def?.body ?? '';
+          if (update.transactions.some(tr => tr.isUserEvent('undo') || tr.isUserEvent('redo')) && input.value !== body) {
+            const {selectionStart, selectionEnd} = input;
+            input.value = body;
+            input.setSelectionRange(Math.min(selectionStart, body.length), Math.min(selectionEnd, body.length));
+            requestAnimationFrame(resizeFootnotePopup);
+          }
+        }
       }
       options.onChange?.(sourceOf(update.state), labels);
     }
@@ -1407,8 +1440,9 @@ export function createLeafEditor(options) {
     format: (type) => formatEditor(view, type),
     // Driven by the application menu: on macOS the menu owns Cmd-Z, so the
     // key never reaches the editor's own historyKeymap binding.
-    undo: () => undo(view),
-    redo: () => redo(view),
+    undo: () => documentHistory(view, undo),
+    redo: () => documentHistory(view, redo),
+    ownsHistoryTarget: target => !!target && (view.dom.contains(target) || (footnoteBoxView === view && !!footnoteBox?.contains(target))),
     // Drives the toolbar buttons' disabled state.
     historyDepth: () => ({ undo: undoDepth(view.state), redo: redoDepth(view.state) }),
     headingLevel: () => selectionHeadingLevel(view.state),

@@ -68,3 +68,14 @@ export function renderTooltipText(container, text) {
 export function isWindowsNewShortcut(event, platform = globalThis.navigator?.userAgentData?.platform || globalThis.navigator?.platform || '') {
   return /win/i.test(platform) && !event.isComposing && !event.repeat && event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (event.code === 'KeyN' || event.key?.toLowerCase() === 'n');
 }
+
+// Plain note inputs share document history instead of the browser's textarea
+// undo stack. Native macOS menu events use the same document route separately.
+export function documentHistoryShortcut(event, platform = globalThis.navigator?.userAgentData?.platform || globalThis.navigator?.platform || '') {
+  if (event.isComposing || event.altKey) return null;
+  const mac = /mac|iphone|ipad|ipod/i.test(platform);
+  if (mac ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey) return null;
+  const key = event.key?.toLowerCase();
+  if (key === 'z') return event.shiftKey ? 'redo' : 'undo';
+  return !mac && key === 'y' && !event.shiftKey ? 'redo' : null;
+}
