@@ -19,7 +19,7 @@
     "test:browser:all": "node scripts/test-browser.mjs --all",
     "check": "npm test && npm run build",
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/build-mcp-panel.mjs",
     "preview": "vite preview",
     "desktop:dev": "node scripts/desktop-dev.mjs",
     "desktop:build": "node scripts/desktop-build.mjs"

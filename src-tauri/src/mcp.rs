@@ -367,6 +367,19 @@ impl LeafMcpBroker {
         let mut d=self.document(app,client,&args)?;
         if d.task.as_ref().is_some_and(|task|self.inner.leases.lock().unwrap().expired(task["task_id"].as_str().unwrap_or(""),lease_now())){self.finalize(app,&mut d).await?;}
         match name {
+            "open_reader"|"reader_snapshot"=>{
+                let mut snapshot=self.bridge(app,&d.label,"reader_snapshot",json!({})).await?;
+                let scope=d.scope.as_ref().ok_or("not_authorized")?;
+                let content=snapshot["content"].as_str().ok_or("renderer_snapshot")?;
+                let units:Vec<_>=content.encode_utf16().collect();
+                let from=scope["from"].as_u64().ok_or("invalid_scope")? as usize;let to=scope["to"].as_u64().ok_or("invalid_scope")? as usize;
+                if from>to||to>units.len(){return Err("stale_scope".into());}
+                let comments=self.bridge(app,&d.label,"comment_query",json!({"query":"list_comments","document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch,"revision":snapshot["revision"],"scope":scope})).await?;
+                snapshot["content"]=json!(String::from_utf16(&units[from..to]).map_err(|_|"invalid_unicode_boundary")?);
+                snapshot["range"]=json!({"from":from,"to":to});snapshot.as_object_mut().unwrap().remove("selection");
+                let saves=self.inner.ledger.records.lock().unwrap().values().filter(|r|r.session_id==d.session_id).filter_map(|r|r.result.clone()).collect::<Vec<_>>();
+                Ok(json!({"binding":{"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch},"task":d.task,"snapshot":snapshot,"comments":comments["comments"],"saveResults":saves}))
+            },
             "list_comments"|"read_comment"|"locate_comment"=>{
                 required(&args,"request_id")?;
                 if args["revision"].as_u64().is_none(){return Err("invalid_read_identity".into());}
@@ -515,17 +528,22 @@ impl ServerHandler for LeafMcpHandler {
     async fn list_resources(&self,_:Option<PaginatedRequestParams>,_:RequestContext<RoleServer>)->Result<ListResourcesResult,ErrorData> {
         let _serial=self.broker.inner.queue.lock().await;
         if !*self.broker.inner.enabled.lock().unwrap()||self.broker.inner.credentials.lock().unwrap().get(&self.client)!=Some(&self.bearer) {return Err(ErrorData::invalid_params("client_revoked",None));}
-        let resources=self.broker.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(&self.client)).map(|d|serde_json::from_value(json!({"uri":format!("leaf://document/{}",d.session_id),"name":d.document_id,"mimeType":"text/markdown"})).unwrap()).collect();
+        let resources=vec![serde_json::from_value(json!({"uri":"ui://leaf/reader","name":"Leaf Reader","mimeType":"text/html;profile=mcp-app"})).unwrap()];
         Ok(ListResourcesResult{resources,..Default::default()})
     }
     async fn read_resource(&self,p:ReadResourceRequestParams,_:RequestContext<RoleServer>)->Result<ReadResourceResponse,ErrorData> {
+        if p.uri=="ui://leaf/reader" {
+            self.broker.health(&self.client,&self.bearer).await.map_err(|_|ErrorData::invalid_params("client_revoked",None))?;
+            let html=reader_html(&self.app).map_err(|_|ErrorData::internal_error("reader_asset_unavailable",None))?;
+            return serde_json::from_value::<ReadResourceResult>(json!({"contents":[{"uri":p.uri,"mimeType":"text/html;profile=mcp-app","text":html,"_meta":{"ui":{"csp":{"connectDomains":[],"resourceDomains":[]},"prefersBorder":true}}}]})).map(Into::into).map_err(|_|ErrorData::internal_error("resource_encoding",None));
+        }
         let session=p.uri.strip_prefix("leaf://document/").ok_or_else(||ErrorData::invalid_params("unknown_resource",None))?;
         let d=self.broker.inner.registry.lock().unwrap().documents.get(session).cloned().ok_or_else(||ErrorData::invalid_params("stale_session",None))?;
         let result=self.broker.call_with_bearer(&self.app,&self.client,Some(&self.bearer),"read_document",json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch})).await.map_err(|_|ErrorData::invalid_params("resource_not_authorized",None))?;
         serde_json::from_value::<ReadResourceResult>(json!({"contents":[{"uri":p.uri,"mimeType":"text/markdown","text":result["content"]}]})).map(Into::into).map_err(|_|ErrorData::internal_error("resource_encoding",None))
     }
     async fn list_tools(&self,_:Option<PaginatedRequestParams>,_:RequestContext<RoleServer>)->Result<ListToolsResult,ErrorData> {
-        let names=["list_documents","read_document","list_comments","read_comment","locate_comment","begin_edit","apply_edit_batch","task_status","finish_edit","stop_edit","reconcile_request"];
+        let names=["list_documents","open_reader","reader_snapshot","read_document","list_comments","read_comment","locate_comment","begin_edit","apply_edit_batch","task_status","finish_edit","stop_edit","reconcile_request"];
         let tools=names.into_iter().map(tool_definition).collect();Ok(ListToolsResult{tools,..Default::default()})
     }
     async fn call_tool(&self,params:CallToolRequestParams,_:RequestContext<RoleServer>)->Result<CallToolResponse,ErrorData> {
@@ -579,7 +597,16 @@ fn tool_definition(name:&str)->Tool {
     };
     let mut schema=json!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
     if name=="apply_edit_batch"{schema["anyOf"]=json!([{"required":["changes"]},{"required":["operations"]}]);}
-    serde_json::from_value(json!({"name":name,"description":description,"inputSchema":schema})).expect("static MCP tool schema")
+    let mut tool=json!({"name":name,"description":description,"inputSchema":schema});
+    if name=="open_reader" {tool["description"]=json!("Open Leaf's read-only live reader beside the conversation for this explicitly authorized current document. Reads unsaved buffer, properties, footnotes, tables and comments; never writes.");tool["_meta"]=json!({"ui":{"resourceUri":"ui://leaf/reader"}});}
+    if name=="reader_snapshot" {tool["_meta"]=json!({"ui":{"visibility":["app"]}});}
+    if ["open_reader","reader_snapshot"].contains(&name){tool["annotations"]=json!({"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false});}
+    serde_json::from_value(tool).expect("static MCP tool schema")
+}
+
+fn reader_html(app:&tauri::AppHandle)->Result<String,String>{
+    let asset=app.asset_resolver().get("mcp-reader.html".into()).ok_or("reader_asset_unavailable")?;
+    String::from_utf8(asset.bytes).map_err(|_|"reader_asset_encoding".into())
 }
 
 #[cfg(feature="native-smoke")]

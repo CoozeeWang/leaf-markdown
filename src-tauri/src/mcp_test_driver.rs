@@ -122,6 +122,28 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     ensure(tool(&client,"apply_edit_batch",batch.clone()).await?==result,"duplicate batch result")?;
     let status=tool(&client,"task_status",binding.clone()).await?;
     ensure(status["snapshot"]["content"]=="Synthetic draft","actual live CodeMirror buffer")?;
+    if mode=="reader-panel" {
+        let resources=serde_json::to_value(client.list_resources(None).await.map_err(|_|"reader resource discovery")?).unwrap();
+        ensure(resources["resources"][0]["uri"]=="ui://leaf/reader","actual UI resource URI")?;
+        let resource=client.read_resource(rmcp::model::ReadResourceRequestParams::new("ui://leaf/reader")).await.map_err(|_|"reader resource read")?;
+        let resource=serde_json::to_value(resource).unwrap();
+        ensure(resource["contents"][0]["mimeType"]=="text/html;profile=mcp-app","actual Apps MIME")?;
+        let html=resource["contents"][0]["text"].as_str().ok_or("reader HTML")?;
+        ensure(html.contains("Content-Security-Policy")&&html.contains("ui/initialize"),"bundled standards SDK and CSP delivered by native resource")?;
+        let first=tool(&client,"open_reader",binding.clone()).await?;
+        ensure(first["snapshot"]["content"]=="Synthetic draft"&&first["snapshot"]["saved"]==false,"reader sees authoritative unsaved buffer")?;
+        batch["request_id"]=json!("reader-second");batch["revision"]=result["applied_revision"].clone();batch["changes"]=json!([{"from":15,"to":15,"expected":"","insert":" two"}]);
+        let second=tool(&client,"apply_edit_batch",batch.clone()).await?;
+        let reader=tool(&client,"reader_snapshot",binding.clone()).await?;
+        ensure(reader["snapshot"]["content"]=="Synthetic draft two"&&reader["snapshot"]["revision"]==second["applied_revision"],"reader second revision shares current buffer")?;
+        let discovered=listing["tools"].as_array().unwrap().iter().find(|t|t["name"]=="open_reader").ok_or("reader tool missing")?;
+        ensure(discovered["_meta"]["ui"]["resourceUri"]=="ui://leaf/reader","actual thread tool metadata")?;
+        let mut stop=binding.clone();stop["task_id"]=task["task_id"].clone();tool(&client,"stop_edit",stop).await?;
+        ensure(tool(&client,"reader_snapshot",binding.clone()).await?["task"].is_null(),"reader observes ended task")?;
+        broker.identity_boundary(app,label).await?;
+        ensure(tool(&client,"reader_snapshot",binding).await.is_err(),"reader old epoch revoked")?;
+        let _=client.cancel().await;return Ok(());
+    }
     batch["request_id"]=json!("outside");batch["revision"]=result["applied_revision"].clone();batch["changes"]=json!([{"from":16,"to":16,"expected":"","insert":"bad"}]);
     ensure(tool(&client,"apply_edit_batch",batch).await.is_err(),"out of scope must fail")?;
     let mut end=binding.clone();end["task_id"]=task["task_id"].clone();tool(&client,"finish_edit",end).await?;

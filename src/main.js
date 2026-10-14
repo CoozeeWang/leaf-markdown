@@ -1,4 +1,4 @@
-import { t, h, aliases, languagePreference, setLanguagePreference, onLanguageChange, refreshTranslations, setText, setAttr, message as translatedMessage } from './i18n.js';
+import { t, h, aliases, currentLanguage, languagePreference, setLanguagePreference, onLanguageChange, refreshTranslations, setText, setAttr, message as translatedMessage } from './i18n.js';
 import { calloutBadge } from './callout-icons.js';
 import { inlineRename } from './inline-rename.js';
 import { setupStatusNotices } from './status-notices.js';
@@ -2520,6 +2520,7 @@ if (desktop) {
         let result;
         if(['binding','begin','finish'].includes(operation)&&mcpBinding?.session_id===args.session_id&&args.authorization_epoch<mcpBinding.authorization_epoch)throw new Error('stale_projection');
         if(operation==='snapshot')result=editor.mcpSnapshot();
+        else if(operation==='reader_snapshot')result={...editor.mcpSnapshot(),name:state.fileName,saved:state.savedContent===editor.getValue(),language:currentLanguage()};
         else if(operation==='comment_query')result=await handleMcpCommentQuery(args);
         else if(operation==='binding'){mcpBinding=args;mutationGeneration++;result=editor.mcpSnapshot();}
         else if(operation==='begin'){if(desktopFileState()?.paused)throw new Error('document_conflict_pending');result=editor.beginAiTask(args);mcpBinding=args;}
