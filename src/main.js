@@ -953,7 +953,7 @@ function updateHeadingControl(level) {
 }
 
 let commentPanel=null;
-let mutationGeneration=0,mcpBinding=null,mcpAuthorizationActive=false,nativeTestMode=null,nativeTestDelay=null,nativeTestPending=null,nativeTestRecovery=null,aiPresentationTask=null;
+let mutationGeneration=0,mcpBinding=null,mcpAuthorizationActive=false,nativeTestMode=null,nativeTestDelay=null,nativeTestPending=null,nativeTestRecovery=null,nativeTestRetirement=null,aiPresentationTask=null;
 const editor = createLeafEditor({
   parent: document.querySelector('#editor'),
   doc: welcome,
@@ -2560,11 +2560,17 @@ if (desktop) {
       try {
         const {operation,args}=payload;
         let result;
+        // Feature-gated native fixture: deliver a human mutation in the second
+        // callback, after authorization ACK, while the broker still owns its queue.
+        if(testMode&&operation==='snapshot'&&nativeTestRetirement?.checked) {
+          const mutation=nativeTestRetirement;nativeTestRetirement=null;
+          if(mutation.action==='undo')editor.undo();else editor.restoreValue(mutation.content);
+        }
         if(['authorization','begin'].includes(operation)||['snapshot','reader_snapshot'].includes(operation)&&args.session_id) {
           if(!mcpAuthorizationActive||mcpBinding?.document_id!==args.document_id||mcpBinding?.session_id!==args.session_id||mcpBinding?.authorization_epoch!==args.authorization_epoch)throw new Error('not_authorized');
         }
         if(['binding','begin','finish'].includes(operation)&&mcpBinding?.session_id===args.session_id&&args.authorization_epoch<mcpBinding.authorization_epoch)throw new Error('stale_projection');
-        if(operation==='authorization')result={authorized:true};
+        if(operation==='authorization'){result={authorized:true};if(testMode&&nativeTestRetirement)nativeTestRetirement.checked=true;}
         else if(operation==='snapshot')result=editor.mcpSnapshot();
         else if(operation==='reader_snapshot')result={...editor.mcpSnapshot(),name:state.fileName,saved:state.savedContent===editor.getValue(),language:currentLanguage(),theme:currentTheme()};
         else if(operation==='comment_query')result=await handleMcpCommentQuery(args);
@@ -2597,6 +2603,10 @@ if (desktop) {
           else if(args.action==='pause-auto-timer') {clearTimeout(state.saveTimer);result={paused_timer:true};}
           else if(args.action==='undo') editor.undo();
           else if(args.action==='redo') editor.redo();
+          else if(args.action==='retire-between-read-callbacks') {
+            if(!['undo','human'].includes(args.mutation))throw new Error('invalid_test_retirement');
+            nativeTestRetirement={action:args.mutation,content:args.content,checked:false};result={armed:true};
+          }
           else if(args.action==='human') editor.restoreValue(args.content);
           else if(args.action==='ai-settings-configure') {
             openSettings('ai'); await refreshAiConnections();

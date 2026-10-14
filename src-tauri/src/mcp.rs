@@ -500,7 +500,7 @@ impl LeafMcpBroker {
                 }
             },
             "task_status"=>{
-                let mut snapshot=self.bridge(app,&d.label,"snapshot",json!({})).await?;
+                let mut snapshot=self.bridge(app,&d.label,"snapshot",args.clone()).await?;
                 let scope=d.scope.as_ref().ok_or("not_authorized")?;let units:Vec<_>=snapshot["content"].as_str().ok_or("renderer_snapshot")?.encode_utf16().collect();
                 let from=scope["from"].as_u64().unwrap() as usize;let to=scope["to"].as_u64().unwrap() as usize;
                 if to>units.len(){return Err("stale_scope".into());}

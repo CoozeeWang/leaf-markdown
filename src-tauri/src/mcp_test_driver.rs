@@ -221,13 +221,20 @@ async fn authorization_retirement(app:&tauri::AppHandle,label:&str,broker:&super
     let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!("selection-expansion-batch");batch["revision"]=reset["revision"].clone();batch["changes"]=json!([{"from":0,"to":6,"expected":"PUBLIC","insert":"PUBLIC EXPANDED TEXT"}]);
     tool(client,"apply_edit_batch",batch).await?;
     let mut end=binding.clone();end["task_id"]=task["task_id"].clone();tool(client,"finish_edit",end).await?;
-    let undone=broker.bridge(app,label,"test",json!({"action":"undo"})).await?;
+    broker.bridge(app,label,"test",json!({"action":"retire-between-read-callbacks","mutation":"undo"})).await?;
+    ensure(tool(client,"task_status",binding.clone()).await.is_err(),"task_status must deny undo after authorization ACK before snapshot callback")?;
+    let undone=broker.bridge(app,label,"snapshot",json!({})).await?;
     ensure(undone["content"]==source,"retiring capability does not discard the task draft/history")?;
-    for name in ["read_document","open_reader","reader_snapshot","open_browser_reader"] {ensure(tool(client,name,binding.clone()).await.is_err(),"undo retires every reader capability")?;}
+    for name in ["task_status","read_document","open_reader","reader_snapshot","open_browser_reader"] {ensure(tool(client,name,binding.clone()).await.is_err(),"undo retires every reader capability")?;}
     ensure(tool(client,"read_document",cached).await.is_err(),"undo cannot return a cached authorized reply")?;
     let mut begin=binding.clone();begin["request_id"]=json!("begin-after-undo");begin["revision"]=undone["revision"].clone();
     ensure(tool(client,"begin_edit",begin).await.is_err(),"fresh revision cannot reuse expanded selection")?;
     ensure(tool(client,"list_documents",json!({})).await?["documents"].as_array().unwrap().is_empty(),"retired grant disappears from discovery")?;
+    let d=broker.authorize(app,label,&session,"synthetic-client",json!({"from":0,"to":6})).await?;
+    let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+    broker.bridge(app,label,"test",json!({"action":"retire-between-read-callbacks","mutation":"human","content":"SECRET HUMAN REPLACEMENT"})).await?;
+    ensure(tool(client,"task_status",binding).await.is_err(),"task_status must not disclose a replacement after authorization ACK")?;
+    ensure(broker.bridge(app,label,"snapshot",json!({})).await?["content"]=="SECRET HUMAN REPLACEMENT","fixture executed human replacement inside the read callback interval")?;
     for (index,action) in ["human","undo","redo","reset"].into_iter().enumerate(){
         // Each mutation must retire a fresh whole-document or selection grant.
         if action=="redo" {broker.bridge(app,label,"test",json!({"action":"undo"})).await?;}
