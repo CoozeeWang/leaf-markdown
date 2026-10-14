@@ -145,3 +145,5 @@ NSIS 配置启用 English、SimpChinese、TradChinese 和语言选择器，直�
 普通正文 Enter 与脚注完成由 `paragraph-enter.test.js`、`footnote-completion.test.js` 及双引擎 `paragraph-input-browser.mjs` 检查，覆盖空格不延续、结构缩进、先成对括号后填标识、组合输入结束后补空定义和一次撤销。macOS 使用 `native-table-keys` 运行 `../tests/native-paragraph-input.html` 与 `http://127.0.0.1:41732/tests/native-paragraph-input.html`；Enter 来自 AppKit，组合输入为合成事件，仍需实际中文输入法与英文标点人工验收。
 
 正文缩放由 `body-zoom-browser.mjs` 检查八档比例、编辑坐标与真实鼠标输入、高亮快捷键区分、撤销、视图切换、长文位置、三语、菜单和独立导出预览。默认 Chromium，`LEAF_ZOOM_ENGINE=webkit` 可检查 WebKit；平台模拟不等于 Windows 实机。macOS 使用已有 `native-table-keys` 入口运行 `../tests/native-body-zoom.html` 与 `http://127.0.0.1:41732/tests/native-body-zoom.html`，加 `--foreground` 检查实际 WKWebView 的比例、坐标及 AppKit Shift 快捷键；后台窗口的帧测量可能暂停。正式安装版的真实输入法、保存重开、图片拖放、实际 PDF 和两平台验收仍分开记录。
+
+脚注编辑区由 `footnote-region-browser.mjs` 覆盖：中间定义的文末显示、打开不改原文、85% 字号、多段脚注、剪贴板粘贴、组合输入、正文续写、一次撤销／重做、搜索映射、CRLF、删除边界和全文删除；Chromium 使用 Mac/Windows 快捷键模拟，WebKit 使用 Mac 路径。`native-footnote-region.html` 配合 `native-table-keys` 检查实际 macOS WKWebView 的 AppKit Enter、文末区域、正文续写与历史。原生夹具仍为合成文档，不能代替实际中文输入法、安装版保存和 Windows 实机验收。

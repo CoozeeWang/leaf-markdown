@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {artifactPath} from './browser-runtime.mjs';
 
 for (const engine of [chromium, webkit]) {
- const browser=await engine.launch({headless:true});
+ const browser=await engine.launch({headless:true,...(engine===chromium&&process.env.LEAF_BROWSER_CHANNEL?{channel:process.env.LEAF_BROWSER_CHANNEL}:{})});
  try {
   const page=await browser.newPage({locale:'zh-CN',viewport:{width:1280,height:900}}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));

@@ -1835,8 +1835,8 @@ document.querySelector('#welcomeNewButton').addEventListener('click', () => {
 
 document.querySelectorAll('[data-format]').forEach((button) => {
   button.addEventListener('click', () => {
-    const note=document.activeElement.closest?.('.note-card')?._noteEditor;
-    if(note)note.format(button.dataset.format);else editor.format(button.dataset.format);
+    const note=document.activeElement.closest?.('.note-card, .leaf-endnote')?._noteEditor;
+    if(note && !(button.dataset.format==='footnote' && document.activeElement.closest('.leaf-endnote')))note.format(button.dataset.format);else editor.format(button.dataset.format);
     closePopovers();
     headingPopover.hidden = true;
     document.querySelector('#headingButton').setAttribute('aria-expanded', 'false');

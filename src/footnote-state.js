@@ -51,7 +51,7 @@ export const finishFootnoteComposition = StateEffect.define();
 const pendingCitations = StateField.define({
   create: () => ({starts: [], composing: false}),
   update(value, tr) {
-    if (tr.state.field(sourceMode, false) || (tr.docChanged && !tr.isUserEvent('input.type'))) return {starts: [], composing: false};
+    if (tr.isUserEvent('input.type.note') || tr.state.field(sourceMode, false) || (tr.docChanged && !tr.isUserEvent('input.type'))) return {starts: [], composing: false};
     const finishing = tr.effects.some(e => e.is(finishFootnoteComposition));
     const typing = tr.docChanged && tr.isUserEvent('input.type');
     const starts = new Set(value.starts.map(pos => tr.changes.mapPos(pos, -1)));
@@ -71,7 +71,7 @@ const completeCitations = EditorState.transactionFilter.of(tr => {
   const pending = tr.startState.field(pendingCitations, false) ?? {starts: [], composing: false};
   const typing = tr.docChanged && tr.isUserEvent('input.type');
   const leaving = !tr.docChanged && tr.selection && pending.starts.length;
-  if (tr.startState.field(sourceMode, false) || (!typing && !leaving && !finishing) ||
+  if (tr.isUserEvent('input.type.note') || tr.startState.field(sourceMode, false) || (!typing && !leaving && !finishing) ||
     (!finishing && (tr.isUserEvent('input.type.compose') || (pending.composing && !typing)))) return tr;
   const starts = new Set(pending.starts.map(pos => tr.changes.mapPos(pos, -1)));
   if (typing && !finishing) for (const ref of newInlineCitations(tr)) starts.add(ref.from);

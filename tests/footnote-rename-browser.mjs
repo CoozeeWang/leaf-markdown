@@ -40,6 +40,7 @@ try {
   const spread='甲[^2] 乙[^2]\n\n[^2]: 注释\n';
   await setDoc(spread);
   await page.waitForTimeout(150);
+  await page.click('#readingToggle');await page.click('[data-mode=source]');
   const defAt=spread.lastIndexOf('[^2]')+2;
   await page.evaluate(f=>{v.dispatch({selection:{anchor:f,head:f+1}});v.focus();},defAt);
   await page.keyboard.type('READ');

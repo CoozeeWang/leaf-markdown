@@ -58,6 +58,7 @@ import {outlineFolding} from './outline-folding.js';
 import { classifyInlineTag, pairInlineTags } from './inline-html.js';
 import { imageDrag } from './image-drag.js';
 import { shortcutText } from './platform-shortcuts.js';
+import { footnoteRegion, footnoteRegionEnabled, footnoteBoundaryGuard, prepareBodyBeforeNotes } from './footnote-region.js';
 import { footnoteInlineNodes } from './footnote-inline.js';
 
 const toggleBlankMarkers = StateEffect.define();
@@ -331,7 +332,7 @@ function livePreviewDecorations(view) {
   const definitionLines = new Set();
   const definitionSource = doc.toString();
   for (const note of index.notes) {
-    if (!note.def) continue;
+    if (!note.def || view.state.field(footnoteRegionEnabled, false)) continue;
     // A definition's own label is not a citation. The grammar turns "[^1]" into a
     // link whenever the definition does not open a block -- inside a list item, or
     // under a paragraph with no blank line between them -- and the citation pass
@@ -875,14 +876,25 @@ function placeFootnotePopup() {
 
 // The definition in the document is the only copy. An empty box still leaves a
 // definition behind, so the marker and the note stay paired.
-function applyFootnoteBody(view, label, body) {
+function applyFootnoteBody(view, label, body, composing = false, ordinal = 0, continuous = false) {
   const text = view.state.doc.toString();
   const note = view.state.field(footnoteIndex).notes.find(candidate => candidate.id === label);
   if (!note) return;
-  const changes = note.def
-    ? [{ from: note.def.markerTo, to: note.def.bodyTo, insert: body.trim() ? ` ${footnoteBodyText(body)}` : '' }]
+  const definition = view.state.field(footnoteIndex).definitions.filter(def=>def.id===label)[ordinal] ?? note.def;
+  const changes = definition
+    ? [{ from: definition.markerTo, to: definition.bodyTo, insert: body.trim() ? ` ${footnoteBodyText(body)}` : '' }]
     : appendDefinition(text, label, body);
-  view.dispatch({ changes, userEvent: 'input' });
+  // Patch only the changed text so history groups continuous typing naturally.
+  for (const change of changes) {
+    if(change.to===undefined)continue;
+    const old=text.slice(change.from,change.to),next=change.insert;
+    let prefix=0,suffix=0;
+    while(prefix<Math.min(old.length,next.length)&&old[prefix]===next[prefix])prefix++;
+    while(suffix<Math.min(old.length,next.length)-prefix&&old.at(-1-suffix)===next.at(-1-suffix))suffix++;
+    change.from+=prefix;change.to-=suffix;change.insert=next.slice(prefix,next.length-suffix);
+  }
+  if(changes.every(c=>c.from===c.to&&!c.insert))return;
+  view.dispatch({ changes, userEvent: composing ? 'input.type.compose' : continuous ? 'input.type.note' : 'input' });
 }
 
 function openFootnotePopup(view, label, pos, anchor = null) {
@@ -1102,6 +1114,7 @@ export function createLeafEditor(options) {
   });
 
   const prepareBodyLine = view => {
+    if (prepareBodyBeforeNotes(view)) return true;
     if (view.state.field(sourceMode) || view.state.field(structuredPreview).yamlSource) return false;
     const source = view.state.doc.toString(), yaml = frontmatter(source);
     if (!yaml || yaml.to !== source.length || !view.state.selection.main.empty) return false;
@@ -1171,6 +1184,7 @@ export function createLeafEditor(options) {
       footnoteIndex,
       // Registered before the reading-mode filter below, which runs first: a
       // document that is only being read has no edit for this one to follow.
+      footnoteRegion(createLeafNoteEditor, applyFootnoteBody),
       footnoteRenumber,
       footnoteReferenceCompletion,
       footnoteReferenceDeletion,
@@ -1209,6 +1223,7 @@ export function createLeafEditor(options) {
         return true;
       } }),
       appKeymap,
+      footnoteBoundaryGuard,
       // In the edit view, the property widget is outside the selectable body.
       // Property controls and source mode still edit the YAML directly.
       EditorState.transactionFilter.of(tr => {
@@ -1436,33 +1451,48 @@ export function createLeafEditor(options) {
   };
 }
 
+const noteSearchRange = StateEffect.define();
+const noteSearchDecoration = StateField.define({
+  create:()=>Decoration.none,
+  update(value,tr){
+    value=value.map(tr.changes);
+    for(const effect of tr.effects)if(effect.is(noteSearchRange))value=effect.value
+      ?Decoration.set([Decoration.mark({class:'cm-searchMatch cm-searchMatch-selected'}).range(effect.value.from,effect.value.to)])
+      :Decoration.none;
+    return value;
+  },
+  provide:field=>EditorView.decorations.from(field),
+});
+
 // A note uses the same Markdown grammar and live-preview decorations as the
 // document, but sends every edit through the document's history/save pipeline.
-export function createLeafNoteEditor({parent, doc, source = false, label, onChange, onUndo, onRedo, onLeave}) {
+export function createLeafNoteEditor({parent, doc, source = false, label, onChange, onUndo, onRedo, onLeave, multiline = false, onCompositionEnd, onFocus}) {
   let syncing = false;
   const view = new EditorView({parent, doc, extensions: [
     markdown({extensions: leafMarkdownExtensions, addKeymap: false}),
     sourceMode.init(() => source), blankMarkers, headingNumbers,
     fileNameTitle.init(() => false), propertiesFolded, structuredPreview,
-    footnoteIndex, noteFocus,
+    footnoteIndex, noteFocus, noteSearchDecoration,
     syntaxHighlighting(leafHighlightStyle), livePreview,
     EditorView.lineWrapping,
     EditorView.contentAttributes.of({'aria-label': label, spellcheck: 'false'}),
     EditorView.theme({'&': {backgroundColor:'transparent'}, '.cm-content': {padding:'0', minHeight:'1.7em'}, '.cm-line': {padding:'0'}, '.cm-scroller': {overflow:'visible', fontFamily:'inherit'}}),
     EditorView.updateListener.of(update => {
-      if (update.docChanged && !syncing) onChange(update.state.doc.toString());
+      if (update.docChanged && !syncing) onChange(update.state.doc.toString(), update.view.compositionStarted);
     }),
     EditorView.domEventHandlers({
-      focus(_event, view) { view.dispatch({effects:setNoteFocus.of(true)}); return false; },
+      focus(_event, view) { onFocus?.(); view.dispatch({effects:setNoteFocus.of(true)}); return false; },
       blur(_event, view) { view.dispatch({effects:setNoteFocus.of(false)}); return false; },
+      compositionend() { onCompositionEnd?.(); return false; },
     }),
     keymap.of([
       {key:'Mod-z',run:()=>{onUndo();return true;}},
       {key:'Mod-Shift-z',run:()=>{onRedo();return true;}},
-      ...[['Mod-b','bold'],['Mod-i','italic'],['Mod-=','highlight'],['Mod-Alt-c','code']].map(([key,type])=>({key,run:view=>{formatEditor(view,type);return true;}})),
+      {key:'Ctrl-y',run:()=>{onRedo();return true;}},
+      ...[['Mod-b','bold'],['Mod-i','italic'],['Mod-=','highlight'],['Mod-Alt-c','code'],['Mod-Shift-x','strike'],['Mod-.','sup'],['Mod-,','sub']].map(([key,type])=>({key,run:view=>{formatEditor(view,type);return true;}})),
       {key:'Mod-k',run:view=>{const r=view.state.selection.main;const selected=view.state.doc.sliceString(r.from,r.to);const address=t('writing_tools.link_address');const insert=`[${selected||t('writing_tools.link_text')}](${address})`;const from=r.from+insert.lastIndexOf(address);view.dispatch({changes:{from:r.from,to:r.to,insert},selection:{anchor:from,head:from+address.length},userEvent:'input'});return true;}},
       {key:'Shift-Enter',run:view=>{view.dispatch(view.state.replaceSelection('\n'));return true;}},
-      {key:'Enter',run:()=>{onLeave();return true;}},
+      {key:'Enter',run:view=>{if(multiline)return insertNewlineContinueMarkup(view);onLeave();return true;}},
       {key:'Escape',run:()=>{onLeave();return true;}},
       ...defaultKeymap,
     ]),
@@ -1478,7 +1508,7 @@ export function createLeafNoteEditor({parent, doc, source = false, label, onChan
     view.dispatch({changes:{from,to:length-suffix,insert:text.slice(from,text.length-suffix)}});
     syncing = false;
   };
-  return {view, sync, focus(){view.focus();view.dispatch({selection:{anchor:view.state.doc.length}});},
+  return {view, sync, highlightMatch(from,to){view.dispatch({effects:noteSearchRange.of(from==null?null:{from,to}),...(from==null?{}:{selection:{anchor:from,head:to}})});}, focus(){view.focus();view.dispatch({selection:{anchor:view.state.doc.length}});},
     value:()=>view.state.doc.toString(), format:type=>formatEditor(view,type),
     destroy:()=>view.destroy()};
 }
