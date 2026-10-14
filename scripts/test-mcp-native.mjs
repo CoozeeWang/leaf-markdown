@@ -19,13 +19,17 @@ try {
   build.stdout.pipe(process.stdout);build.stderr.pipe(process.stderr);await completed(build);
   server=start('node',['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','41731','--strictPort']);
   for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:41731')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
-  app=start(join(root,'src-tauri/target/debug/leaf'));
-  // Only fixed diagnostics leave the native driver. Never print document/token data.
-  app.stderr.on('data',chunk=>process.stderr.write(chunk));
-  let report;
-  for(let i=0;i<900;i++){try{report=JSON.parse(await readFile(result,'utf8'));break;}catch{}if(app.exitCode!==null)break;await new Promise(r=>setTimeout(r,100));}
-  assert(report,'actual Tauri driver must return evidence');
-  await test(`native ${mode} controlled task contract`,()=>assert.equal(report.pass,true,`${mode}: ${report.failure || 'native assertions failed'}`));
+  for(const runMode of mode==='renderer-ack-loss'?[mode,'renderer-ack-loss-restart']:[mode]) {
+    await rm(result,{force:true});
+    app=start(join(root,'src-tauri/target/debug/leaf'),[],{env:{...env,LEAF_MCP_TEST_MODE:runMode}});
+    app.stderr.on('data',chunk=>process.stderr.write(chunk));
+    let report;
+    for(let i=0;i<900;i++){try{report=JSON.parse(await readFile(result,'utf8'));break;}catch{}if(app.exitCode!==null)break;await new Promise(r=>setTimeout(r,100));}
+    assert(report,'actual Tauri driver must return evidence');
+    await test(`native ${runMode} controlled task contract`,()=>assert.equal(report.pass,true,`${runMode}: ${report.failure || 'native assertions failed'}`));
+    if(app.exitCode===null)await new Promise(resolve=>{app.once('exit',resolve);setTimeout(()=>{app.kill('SIGTERM');resolve();},2000).unref();});
+    if(!report.pass)break;
+  }
 } finally {
   app?.kill('SIGTERM');server?.kill('SIGTERM');await rm(directory,{recursive:true,force:true});
 }

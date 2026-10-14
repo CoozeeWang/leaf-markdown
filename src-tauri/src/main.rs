@@ -1048,7 +1048,7 @@ fn configure_development(config: &mut tauri::utils::config::Config) {
 
 fn development_window<'a>(app: &tauri::AppHandle, builder: tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle>) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle> {
     #[cfg(all(feature="native-smoke",target_os="macos"))]
-    if mcp_test_driver::enabled(app) {return builder.title("Leaf MCP Test").data_store_identifier(app.config().app.windows[0].data_store_identifier.unwrap());}
+    if mcp_test_driver::enabled(app) {return builder.title("Leaf MCP Test").incognito(true).data_store_identifier(app.config().app.windows[0].data_store_identifier.unwrap());}
     if app.config().identifier != "studio.leaf.editor.dev" { return builder; }
     let builder = builder.title("Leaf Dev");
     // Dynamic document and PDF windows must use the same isolated store as
@@ -1093,6 +1093,7 @@ fn main() {
             }
         })
         .setup(|app| {
+            app.state::<mcp::LeafMcpBroker>().initialize(app.handle()).map_err(std::io::Error::other)?;
             app.manage(i18n::Language::load(application_data(app.handle())?.join("language-v1.json")));
             let recent_path = application_data(app.handle())?.join("recent-files-v1.json");
             app.manage(recent::Recent::load(recent_path));
@@ -1143,7 +1144,7 @@ fn main() {
             if !app.config().identifier.starts_with("studio.leaf.editor.dev") { native_services::install(app.handle().clone()); }
             app.state::<recent::Recent>().set_menu(handle, recent_menu).map_err(std::io::Error::other)?;
             #[cfg(target_os = "macos")]
-            if app.config().identifier == "studio.leaf.editor.dev" {
+            if app.config().identifier.starts_with("studio.leaf.editor.dev") {
                 for config in &app.config().app.windows {
                     let builder = tauri::WebviewWindowBuilder::from_config(app.handle(), config)?;
                     development_window(app.handle(), builder).build()?;

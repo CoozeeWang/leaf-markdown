@@ -2178,6 +2178,7 @@ if (desktop) {
     editor.setReading(state.reading);
     if (welcomeScreen.hidden && !state.reading) editor.focus();
     const testMode=await invoke('mcp_test_mode').catch(()=>null);
+    const hiddenTestMutations=new Set();
     await listenNative('leaf-mcp-editor',async ({payload})=>{
       let reply;
       try {
@@ -2186,12 +2187,18 @@ if (desktop) {
         if(operation==='snapshot')result=editor.mcpSnapshot();
         else if(operation==='begin')result=editor.beginAiTask(args);
         else if(operation==='apply') {
+          if(testMode && args.test_fault==='before-dispatch')throw new Error('test_before_dispatch');
           const realClock=Date.now;
           if(testMode && args.test_clock!==undefined) Date.now=()=>Number(args.test_clock);
           try {result=await editor.applyMcpBatch(args);}finally{Date.now=realClock;}
+          if(testMode && ['drop-ack','unknown-receipt'].includes(args.test_fault)) {
+            if(args.test_fault==='unknown-receipt')hiddenTestMutations.add(args.mutation_id);
+            // Receipt is already committed. Drop only this production IPC ack.
+            return;
+          }
         }
         else if(operation==='finish')result=editor.finishAiTask(args);
-        else if(operation==='query_renderer_mutation')result=editor.queryRendererMutation(args.mutation_id);
+        else if(operation==='query_renderer_mutation')result=hiddenTestMutations.has(args.mutation_id)?null:editor.queryRendererMutation(args.mutation_id);
         else if(operation==='test' && testMode) {
           if(args.clock!==undefined) {
             const nativeClock=Date.now;
@@ -2207,7 +2214,10 @@ if (desktop) {
           result={...editor.mcpSnapshot(),history:editor.historyDepth(),task_api:typeof editor.beginAiTask==='function'};
         } else throw new Error('unknown_bridge_operation');
         reply={result};
-      } catch(error) {reply={error:String(error.message||'renderer_error')};}
+      } catch(error) {
+        reply={error:String(error.message||'renderer_error')};
+        if(payload.operation==='apply' && editor.mcpSnapshot().revision===payload.args.revision)reply.mutation_state='UNAPPLIED';
+      }
       await invoke('mcp_renderer_reply',{callId:payload.call_id,reply}).catch(()=>{});
     });
     if(welcomeScreen.hidden) await invoke('mcp_register');

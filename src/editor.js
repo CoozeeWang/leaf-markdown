@@ -1086,12 +1086,30 @@ class AiTaskHistory {
   }
 }
 
+export class RendererMutationReceipts {
+  constructor() {this.entries=new Map();}
+  async apply(id,digest,mutate) {
+    if(!id||!digest)throw new Error('missing_mutation_identity');
+    const existing=this.entries.get(id);
+    if(existing) {
+      if(existing.digest!==digest)throw new Error('mutation_id_conflict');
+      if(existing.receipt)return existing.receipt;
+      if(existing.pending)return existing.pending;
+      throw new Error('mutation_outcome_unknown');
+    }
+    const entry={digest,receipt:null,pending:null};this.entries.set(id,entry);
+    entry.pending=Promise.resolve().then(mutate).then(receipt=>{entry.receipt=Object.freeze(receipt);return entry.receipt;}).finally(()=>{entry.pending=null;});
+    return entry.pending;
+  }
+  query(id) {return this.entries.get(id)?.receipt ?? null;}
+}
+
 export function createLeafEditor(options) {
   const historyCompartment = new Compartment();
   const aiTaskAnnotation = Annotation.define();
   let aiTask = null;
   let bufferRevision = 0;
-  const mutationReceipts = new Map();
+  const mutationReceipts = new RendererMutationReceipts();
   const languageCompartment = new Compartment();
   const phrases = () => EditorState.phrases.of({
         Find: t("editor.find"),
@@ -1391,10 +1409,14 @@ export function createLeafEditor(options) {
       return {task_id:aiTask.id,...this.mcpSnapshot()};
     },
     async applyMcpBatch(batch) {
+      return mutationReceipts.apply(batch.mutation_id,batch.request_digest || await mcpDigest(JSON.stringify(batch)),async()=>{
       if(!aiTask || batch.task_id!==aiTask.id || batch.session_id!==aiTask.session || batch.authorization_epoch!==aiTask.epoch) throw new Error('stale_task');
       if(batch.revision!==bufferRevision) throw new Error('stale_revision');
       const changes=planMcpChanges(view.state.doc.toString(),batch.changes,aiTask.scope);
       const before=view.state.doc.toString();
+      const after=view.state.changes(changes).apply(view.state.doc).toString();
+      const sourceDigest=await mcpDigest(before),resultDigest=await mcpDigest(after),changesDigest=await mcpDigest(JSON.stringify(batch.changes));
+      if(!aiTask || batch.task_id!==aiTask.id || batch.revision!==bufferRevision)throw new Error('stale_task');
       if(changes.length) {
         aiTask.historyTime ??= Date.now();
         const annotations=[aiTaskAnnotation.of(aiTask.id),Transaction.time.of(aiTask.historyTime)];
@@ -1403,7 +1425,8 @@ export function createLeafEditor(options) {
         aiTask.batches++;
       }
       aiTask.scope={from:aiTask.scope.from,to:aiTask.scope.to+changes.reduce((sum,c)=>sum+c.insert.length-(c.to-c.from),0)};
-      return {mutation_id:batch.mutation_id,task_id:batch.task_id,session_id:batch.session_id,request_id:batch.request_id,applied_revision:bufferRevision,source_digest:await mcpDigest(before),result_digest:await mcpDigest(view.state.doc.toString()),changed:changes.length>0,scope:aiTask.scope,disk_status:'unsaved'};
+      return {mutation_id:batch.mutation_id,task_id:batch.task_id,session_id:batch.session_id,request_id:batch.request_id,authorization_epoch:batch.authorization_epoch,request_digest:batch.request_digest,changes_digest:changesDigest,source_revision:batch.revision,applied_revision:bufferRevision,source_digest:sourceDigest,result_digest:resultDigest,changed:changes.length>0,scope:aiTask.scope,disk_status:'unsaved'};
+      });
     },
     finishAiTask(task) {
       if(aiTask && task.task_id!==aiTask.id) throw new Error('stale_task');
@@ -1411,7 +1434,7 @@ export function createLeafEditor(options) {
       aiTask=null;
       return this.mcpSnapshot();
     },
-    queryRendererMutation(id) { return mutationReceipts.get(id) ?? null; },
+    queryRendererMutation(id) { return mutationReceipts.query(id); },
     setDropPoint,
     setReading(value) { reading = value; },
     visiblePosition() {
