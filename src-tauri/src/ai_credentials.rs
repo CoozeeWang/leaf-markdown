@@ -269,6 +269,13 @@ pub mod tests {
     }
     fn store()->AiClientProfileStore {AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),None).unwrap()}
     #[test]
+    fn runtime_key_is_not_helper_payload() {
+        let mut s=store();let k=MemoryKeyring::default();
+        let p=s.configure("chatgpt","synthetic-runtime-sentinel","runtime-red",0,&k).unwrap();
+        let bound:BoundCredential=serde_json::from_str(&k.get(p.credential_ref.as_ref().unwrap()).unwrap()).unwrap();
+        assert!(bound.external_secret.is_none(),"helper-readable payload must not contain the runtime key");
+    }
+    #[test]
     fn identity_order_and_empty_input_are_explicit() {
         let mut s=store();let k=MemoryKeyring::default();
         assert_eq!(s.list().iter().map(|p|p.client.as_str()).collect::<Vec<_>>(),CLIENTS);

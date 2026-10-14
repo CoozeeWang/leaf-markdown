@@ -1,4 +1,4 @@
-import {spawn} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir, homedir} from 'node:os';
 import {join, resolve} from 'node:path';
@@ -11,6 +11,11 @@ if (mode==='chatgpt-tunnel-contract') {
   await test('Tunnel tracer owns a native process manager before expansion', async()=>{
     const source=await readFile(new URL('../src-tauri/src/main.rs',import.meta.url),'utf8');
     assert(source.includes('mod chatgpt_tunnel;'),'native Tunnel manager must be registered');
+  });
+} else if(mode==='chatgpt-tunnel-runtime-contract') {
+  await test('runtime key is absent from helper-readable payload',()=>{
+    const run=spawnSync('cargo',['test','--locked','--manifest-path','src-tauri/Cargo.toml','--bin','leaf','runtime_key_is_not_helper_payload','--','--test-threads=1'],{env:{...process.env,PATH:`${homedir()}/.cargo/bin:${process.env.PATH}`},encoding:'utf8'});
+    assert.equal(run.status,0,run.stdout+run.stderr);
   });
 } else {
 assert(['chatgpt-tunnel-tracer','tracer','task-history-gate','renderer-ack-loss','all-write-entrances','stop-late-second-window','properties-markdown','footnotes-tables','file-identity-conflict'].includes(mode));
