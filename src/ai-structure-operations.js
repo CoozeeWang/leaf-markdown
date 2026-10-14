@@ -45,6 +45,10 @@ function syntaxFootprint(source) {
   offsets.push(source.length);
   parseMarkdown(normalized).iterate({enter(node){
     const from=offsets[node.from],to=offsets[node.to];
+    // Lezer reads adjacent footnote citations as a reference Link. Leaf's
+    // authoritative note graph renders each citation separately; removing one
+    // must not make an untouched neighbour fail a fictitious Link footprint.
+    if(node.name==='Link'&&/^(?:\[\^[^\[\]\r\n]+\])+$/.test(source.slice(from,to)))return;
     if(from>=start&&(node.node.parent?.name==='Document'||protectedNodes.has(node.name)))ranges.push({name:node.name,from,to});
   }});
   for(const note of indexComments(source).hidden)ranges.push({name:'HiddenComment',from:note.from,to:note.to});
@@ -119,12 +123,21 @@ export function planPropertyOperations(source,operations,scope={from:0,to:source
 // until the union of ordinary patches and structural operations is validated.
 export function planStructureOperations(source,operations,scope,options={}) {
   if(!Array.isArray(operations)||!operations.length||operations.length>256)throw new Error('invalid_operations');
+  if(options.signal?.aborted)throw new Error('planning_cancelled');
+  // Bound parse/expansion work before touching any structure; expanded patches
+  // are separately capped at 256 by the shared source planner.
+  if(source.length>4*1024*1024||JSON.stringify(operations).length>4*1024*1024)throw new Error('structure_resource_limit');
   if(operations.some(operation=>!['property','markdown','footnote','table'].includes(operation?.kind)))throw new Error('unknown_operation');
   const properties=operations.filter(operation=>operation.kind==='property'),markdown=operations.filter(operation=>operation.kind==='markdown'),footnotes=operations.filter(operation=>operation.kind==='footnote');
   const tables=operations.filter(operation=>operation.kind==='table');
-  const planned=planSourceChanges(source,[...(properties.length?planPropertyOperations(source,properties,scope,{keepUnchanged:true}):[]),...(markdown.length?planMarkdownRangeOperations(source,markdown,scope,{keepUnchanged:true}):[]),...(footnotes.length?planFootnoteOperations(source,footnotes,scope,{keepUnchanged:true}):[]),...(tables.length?planTableOperations(source,tables,scope,{keepUnchanged:true}):[])].map(change=>({...change,expected:source.slice(change.from,change.to)})),scope,options);
+  const planned=planSourceChanges(source,[...(properties.length?planPropertyOperations(source,properties,scope,{keepUnchanged:true}):[]),...(markdown.length?planMarkdownRangeOperations(source,markdown,scope,{keepUnchanged:true}):[]),...(footnotes.length?planFootnoteOperations(source,footnotes,scope,{keepUnchanged:true,deferIntegrity:true}):[]),...(tables.length?planTableOperations(source,tables,scope,{keepUnchanged:true}):[])].map(change=>({...change,expected:source.slice(change.from,change.to)})),scope,options);
+  if(!options.deferIntegrity)verifyStructureResult(source,planned,operations);
+  if(options.signal?.aborted)throw new Error('planning_cancelled');
+  return planned;
+}
+
+export function verifyStructureResult(source,planned,operations=[]) {
   verifyMarkdownPreservation(source,planned);
   verifyFootnoteIntegrity(source,resultingSource(source,planned));
   verifyTableOperationsResult(source,planned,operations);
-  return planned;
 }

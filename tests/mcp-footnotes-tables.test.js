@@ -62,6 +62,10 @@ test('table CRLF and scope boundaries preserve outside source and reject stale o
 });
 
 test('footnote add reference rename delete and empty definition maintain one graph',()=>{
+  for(const source of ['','Body']) {
+    const after=apply(source,plan(source,[{kind:'footnote',action:'add',id:'new',from:source.length,to:source.length,expected:'',body:'note'}]));
+    assert.equal(indexFootnotes(after).notes.find(n=>n.id==='new').state,'complete');
+  }
   let source='Body\n\n[^orphan]: keep';
   source=apply(source,plan(source,[{kind:'footnote',action:'add',id:'a',from:4,to:4,expected:'',body:''}]));
   assert.equal(indexFootnotes(source).notes.find(n=>n.id==='a').state,'complete');
@@ -73,6 +77,17 @@ test('footnote add reference rename delete and empty definition maintain one gra
   assert.equal(indexFootnotes(source).notes.find(n=>n.id==='named😀').refs.length,1);
   source=apply(source,plan(source,[{kind:'footnote',action:'delete',id:'named😀',expected:definition(source,'named😀')}]));
   assert.ok(!source.includes('[^named😀]'));assert.ok(source.includes('[^orphan]: keep'));
+});
+
+test('adjacent cells stay independent while mixed note and table integrity uses the final union',()=>{
+  const adjacent='Body[^a][^c][^c] again[^a]\n\n[^a]: old\n\n[^c]: new',ref=indexFootnotes(adjacent).notes.find(n=>n.id==='c').refs[0];
+  assert.equal(apply(adjacent,plan(adjacent,[{kind:'footnote',action:'delete-reference',id:'c',from:ref.from,to:ref.to,expected:adjacent.slice(ref.from,ref.to)}])),adjacent.slice(0,ref.from)+adjacent.slice(ref.to));
+  const source='Body[^a]\n\n| A | B |\n| --- | --- |\n| one | two |\n\n[^a]: old';
+  const operations=[tableOp(source,'set-cell',{row:1,column:0,value:'first'}),tableOp(source,'set-cell',{row:1,column:1,value:'second'}),{kind:'footnote',action:'set-definition',id:'a',expected:definition(source,'a'),body:'new'}];
+  assert.equal(apply(source,plan(source,operations)),source.replace('| one | two |','| first | second |').replace('[^a]: old','[^a]: new'));
+  const controller=new AbortController();controller.abort();assert.throws(()=>planStructureOperations(source,operations,{from:0,to:source.length},{signal:controller.signal}),/planning_cancelled/);
+  assert.throws(()=>planStructureOperations('x'.repeat(4*1024*1024+1),operations,{from:0,to:source.length}),/structure_resource_limit/);
+  assert.throws(()=>plan(source,[tableOp(source,'set-cell',{row:1,column:0,value:'[^missing]'})]),/footnote_integrity/);
 });
 
 test('footnote renumber expands every real position and leaves code and named orphans unchanged',()=>{

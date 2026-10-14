@@ -41,8 +41,14 @@ export function planFootnoteOperations(source,operations,scope={from:0,to:source
       if(!Number.isInteger(op.from)||!Number.isInteger(op.to)||source.slice(op.from,op.to)!==op.expected)throw new Error('invalid_patch');
       if(op.action==='add'&&note)throw new Error('footnote_exists');
       if(op.action==='add-reference'&&(!def||defs.length!==1))throw new Error('footnote_definition_missing_or_duplicate');
-      change(op.from,op.to,`[^${op.id}]`);
-      if(op.action==='add')for(const c of appendDefinition(source,op.id,body()))change(c.from,c.to,c.insert.replace(/\r?\n/g,eol));
+      const appended=op.action==='add'?appendDefinition(source,op.id,body()):[];
+      if(appended.length===1&&op.from===op.to&&appended[0].from===op.from&&appended[0].to===op.to) {
+        const insert=appended[0].insert.replace(/\r?\n/g,eol);
+        change(op.from,op.to,`[^${op.id}]`+(insert.startsWith(eol)?'':eol+eol)+insert);
+      }else {
+        change(op.from,op.to,`[^${op.id}]`);
+        for(const c of appended)change(c.from,c.to,c.insert.replace(/\r?\n/g,eol));
+      }
     }else if(op.action==='set-definition') {
       expectDef();change(def.lineFrom,def.to,footnoteDefinitionText(op.id,body()).replace(/\n/g,eol)+(source.slice(def.lineFrom,def.to).endsWith('\r')?'\r':''));
     }else if(op.action==='add-definition') {
@@ -62,6 +68,6 @@ export function planFootnoteOperations(source,operations,scope={from:0,to:source
     }else throw new Error('invalid_footnote_operation');
   }
   const planned=planSourceChanges(source,changes,scope,options);
-  verifyFootnoteIntegrity(source,apply(source,planned));
+  if(!options.deferIntegrity)verifyFootnoteIntegrity(source,apply(source,planned));
   return planned;
 }

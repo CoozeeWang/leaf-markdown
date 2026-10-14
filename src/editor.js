@@ -51,7 +51,8 @@ import { renderInline, citationSignature, citationLabel } from './inline-preview
 import { paragraphBlankLineChanges } from './blank-lines.js';
 import { insertPlainParagraphNewline } from './paragraph-enter.js';
 import { frontmatter, bodyStart } from './markdown-model.js';
-import {planSourceChanges,planStructureOperations,verifyMarkdownPreservation} from './ai-structure-operations.js';
+import {planSourceChanges,planStructureOperations,verifyStructureResult} from './ai-structure-operations.js';
+import {verifyFootnoteIntegrity} from './ai-footnote-operations.js';
 import { protectPropertyInsertions } from './properties-insert-guard.js';
 import { fileDropTarget, fileDropFeedback, setFileDropTarget, setFileDragging } from './file-drop.js';
 import { paragraphDeletion, selectedParagraphDeletion } from './paragraph-delete.js';
@@ -1451,11 +1452,12 @@ export function createLeafEditor(options) {
       if(!aiTask || batch.task_id!==aiTask.id || batch.session_id!==aiTask.session || batch.authorization_epoch!==aiTask.epoch) throw new Error('stale_task');
       if(batch.revision!==bufferRevision) throw new Error('stale_revision');
       const before=view.state.doc.toString();
-      const structural=batch.operations===undefined?[]:planStructureOperations(before,batch.operations,aiTask.scope,{keepUnchanged:true});
+      const structural=batch.operations===undefined?[]:planStructureOperations(before,batch.operations,aiTask.scope,{keepUnchanged:true,deferIntegrity:true});
       const patches=batch.changes===undefined&&batch.operations!==undefined?[]:batch.changes;
       const changes=planMcpChanges(before,[...planMcpChanges(before,patches,aiTask.scope,{keepUnchanged:true}),...structural].map(change=>({...change,expected:before.slice(change.from,change.to)})),aiTask.scope);
-      if(batch.operations!==undefined)verifyMarkdownPreservation(before,changes);
+      if(batch.operations!==undefined)verifyStructureResult(before,changes,batch.operations);
       const after=view.state.changes(changes).apply(view.state.doc).toString();
+      if(batch.operations===undefined)verifyFootnoteIntegrity(before,after);
       const sourceDigest=await mcpDigest(before),resultDigest=await mcpDigest(after),changesDigest=await mcpDigest(JSON.stringify(batch.operations===undefined?batch.changes:{changes:batch.changes??null,operations:batch.operations}));
       if(!aiTask || batch.task_id!==aiTask.id || batch.revision!==bufferRevision)throw new Error('stale_task');
       if(changes.length) {

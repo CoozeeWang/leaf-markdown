@@ -132,9 +132,74 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
         ensure(apply["inputSchema"]["properties"]["operations"].is_object(),"structured operations are discoverable through actual MCP tools/list")?;
         properties_gate(app,label,broker,&client).await?;
     }
+    if mode=="footnotes-tables" {
+        let schema=apply["inputSchema"]["properties"]["operations"]["items"]["oneOf"].as_array().ok_or("operation discovery")?;
+        ensure(schema.iter().any(|s|s["properties"]["kind"]["const"]=="footnote")&&schema.iter().any(|s|s["properties"]["kind"]["const"]=="table"),"footnote/table operations discoverable through actual MCP")?;
+        footnotes_tables_gate(app,label,broker,&client).await?;
+    }
     broker.unregister(label);
     ensure(tool(&client,"read_document",binding).await.is_err(),"closed session must fail")?;
     let _=client.cancel().await;Ok(())
+}
+
+async fn footnotes_tables_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{
+    let source="---\ntitle: \"Old\"\n---\n\n# Old\n\nBody😀é[^a] again[^a]\n\n| A | B |\n| --- | ---: |\n| old | `code\\|pipe` |\n\n[^a]: old note\n\n[^orphan]: keep\n";
+    let reset=broker.bridge(app,label,"test",json!({"action":"reset","content":source})).await?;
+    let session=broker.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).unwrap().session_id.clone();
+    let d=broker.authorize(app,label,&session,"synthetic-client",json!({"from":0,"to":source.encode_utf16().count()})).await?;
+    let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+    let mut begin=binding.clone();begin["request_id"]=json!("footnotes-tables-begin");begin["revision"]=reset["revision"].clone();
+    let task=tool(client,"begin_edit",begin).await?;
+    let table_range=|text:&str|{let from=text.find("\n\n|").unwrap()+2;let to=from+text[from..].find("\n\n").unwrap();(text[..from].encode_utf16().count(),text[..to].encode_utf16().count(),text[from..to].to_string())};
+    let (from,to,raw)=table_range(source);let heading=source[..source.find("# Old").unwrap()+2].encode_utf16().count();
+    let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!("footnotes-tables-mixed");batch["revision"]=reset["revision"].clone();
+    batch["operations"]=json!([
+        {"kind":"property","action":"set","key":"title","expected":"\"Old\"","value":"New"},
+        {"kind":"footnote","action":"set-definition","id":"a","expected":"[^a]: old note","body":"**Updated😀é**\n\nSecond *paragraph*"},
+        {"kind":"table","action":"set-cell","from":from,"to":to,"expected":raw,"row":1,"column":0,"value":"**Cell😀é**"}
+    ]);
+    batch["changes"]=json!([{"from":heading,"to":heading+3,"expected":"Old","insert":"New heading"}]);
+    let receipt=tool(client,"apply_edit_batch",batch.clone()).await?;
+    ensure(receipt["changed"]==true,"actual mixed MCP dispatch changed current editor")?;
+    ensure(tool(client,"apply_edit_batch",batch.clone()).await?==receipt,"mixed receipt idempotent")?;
+    batch["operations"][1]["body"]=json!("different");ensure(tool(client,"apply_edit_batch",batch).await.is_err(),"mixed digest binds operations and changes")?;
+    for (index,action) in ["add","add-reference","delete-reference","rename","renumber","delete","add-definition","delete-definition","set-header","set-alignment","insert-row","delete-row","insert-column","delete-column"].into_iter().enumerate(){
+        let before=broker.bridge(app,label,"snapshot",json!({})).await?;let text=before["content"].as_str().unwrap();
+        let def=|id:&str|{let start=text.find(&format!("[^{id}]:")).unwrap();let tail=&text[start..];tail[..tail.find("\n\n").unwrap_or_else(||tail.trim_end_matches('\n').len())].to_string()};
+        let operation=match action {
+            "add"|"add-reference"=>{let at=text[..text.find(" again").unwrap()].encode_utf16().count();json!({"kind":"footnote","action":action,"id":"c","from":at,"to":at,"expected":"","body":"new note"})},
+            "delete-reference"=>{let start=text.find("[^c]").unwrap();let at=text[..start].encode_utf16().count();json!({"kind":"footnote","action":action,"id":"c","from":at,"to":at+4,"expected":"[^c]"})},
+            "rename"=>json!({"kind":"footnote","action":action,"id":"c","new_id":"renamed","expected":def("c")}),
+            "renumber"=>json!({"kind":"footnote","action":action,"include_named":true}),
+            "delete"=>json!({"kind":"footnote","action":action,"id":"2","expected":def("2")}),
+            "add-definition"=>json!({"kind":"footnote","action":action,"id":"temp","expected":"","body":"temporary"}),
+            "delete-definition"=>json!({"kind":"footnote","action":action,"id":"temp","expected":def("temp")}),
+            _=>{let (from,to,raw)=table_range(text);let mut op=json!({"kind":"table","action":action,"from":from,"to":to,"expected":raw});match action{
+                "set-header"=>{op["values"]=json!(["Updated","B"]);},
+                "set-alignment"=>{op["column"]=json!(0);op["alignment"]=json!("center");},
+                "insert-row"=>{op["index"]=json!(2);op["values"]=json!(["last","final"]);},
+                "delete-row"=>{op["index"]=json!(2);},
+                "insert-column"=>{op["index"]=json!(2);op["values"]=json!(["C","column"]);op["alignment"]=json!("right");},
+                "delete-column"=>{op["index"]=json!(2);},_=>{}
+            }op}
+        };
+        let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!(format!("structure-action-{index}"));batch["revision"]=before["revision"].clone();batch["operations"]=json!([operation]);
+        tool(client,"apply_edit_batch",batch).await.map_err(|e|format!("{action}: {e}"))?;
+    }
+    let after=broker.bridge(app,label,"snapshot",json!({})).await?;let text=after["content"].as_str().unwrap();
+    ensure(text.contains("title: \"New\"")&&text.contains("# New heading")&&text.contains("**Updated😀é**")&&text.contains("Second *paragraph*")&&text.contains("**Cell😀é**")&&text.contains("`code\\|pipe`")&&text.contains("[^orphan]: keep"),"mixed native source preserves structures and Unicode")?;
+    for (index,insert) in ["Body[^missing]","Body","Body[^missing]"].into_iter().enumerate(){
+        let at=text[..text.find("Body").unwrap()].encode_utf16().count();let (from,to,raw)=table_range(text);
+        let mut invalid=binding.clone();invalid["task_id"]=task["task_id"].clone();invalid["request_id"]=json!(format!("structure-invalid-{index}"));invalid["revision"]=after["revision"].clone();
+        if index<2 {invalid["operations"]=json!([{"kind":"table","action":"set-cell","from":from,"to":to,"expected":raw,"row":1,"column":0,"value":if index==0{"safe"}else{"bad|extra"}}]);}
+        invalid["changes"]=json!([{"from":at,"to":at+4,"expected":"Body","insert":insert}]);
+        ensure(tool(client,"apply_edit_batch",invalid).await.is_err(),"invalid mixed batch rejected")?;
+        ensure(broker.bridge(app,label,"snapshot",json!({})).await?==after,"invalid mixed batch has zero content/revision mutation")?;
+    }
+    let mut end=binding.clone();end["task_id"]=task["task_id"].clone();tool(client,"finish_edit",end).await?;
+    ensure(broker.bridge(app,label,"test",json!({"action":"undo"})).await?["content"]==source,"one actual undo restores all mixed MCP structure batches")?;
+    ensure(broker.bridge(app,label,"test",json!({"action":"redo"})).await?["content"]==after["content"],"one actual redo restores complete mixed structure task")?;
+    Ok(())
 }
 
 async fn properties_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{

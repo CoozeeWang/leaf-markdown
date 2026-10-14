@@ -104,7 +104,7 @@ export function renderPrintDocument(target, source, {
         const tr = add('tr', i ? tbody : head);
         for (let c = 0; c < block.columns; c++) {
           const cell = add(i ? 'td' : 'th', tr); cell.style.textAlign = block.align[c];
-          inline(cell, row.cells[c]?.raw ?? '', row.cells[c]?.from ?? 0);
+          inline(cell, row.cells[c]?.value ?? '', row.cells[c]?.from ?? 0);
         }
       }); return;
     }
