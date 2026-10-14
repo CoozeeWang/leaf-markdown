@@ -16,6 +16,7 @@ mod document_location;
 mod recent;
 mod new_markdown;
 mod i18n;
+mod mcp;
 #[cfg(feature = "native-smoke")]
 mod mcp_test_driver;
 #[cfg(target_os = "macos")]
@@ -1046,6 +1047,8 @@ fn configure_development(config: &mut tauri::utils::config::Config) {
 }
 
 fn development_window<'a>(app: &tauri::AppHandle, builder: tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle>) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle> {
+    #[cfg(all(feature="native-smoke",target_os="macos"))]
+    if mcp_test_driver::enabled(app) {return builder.title("Leaf MCP Test").data_store_identifier(app.config().app.windows[0].data_store_identifier.unwrap());}
     if app.config().identifier != "studio.leaf.editor.dev" { return builder; }
     let builder = builder.title("Leaf Dev");
     // Dynamic document and PDF windows must use the same isolated store as
@@ -1072,14 +1075,18 @@ fn main() {
     }));
     #[cfg(target_os = "macos")]
     let builder = builder.manage(OpenRequests::default());
-    builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
+    builder.manage(mcp::LeafMcpBroker::default()).manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler({
             let production: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, show_comment_context, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open]);
             move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+                if invoke.message.command().starts_with("mcp_") && !invoke.message.command().starts_with("mcp_test_") {
+                    let mcp: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp::mcp_register, mcp::mcp_authorize, mcp::mcp_renderer_reply]);
+                    return mcp(invoke);
+                }
                 #[cfg(feature = "native-smoke")]
                 if invoke.message.command().starts_with("mcp_test_") {
-                    let test: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp_test_driver::mcp_test_mode, mcp_test_driver::mcp_test_report]);
+                    let test: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp_test_driver::mcp_test_mode, mcp_test_driver::mcp_test_report, mcp_test_driver::mcp_test_run]);
                     return test(invoke);
                 }
                 production(invoke)
@@ -1163,6 +1170,7 @@ fn main() {
                 }
             }
             if matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().state::<mcp::LeafMcpBroker>().unregister(window.label());
                 window.app_handle().state::<OpenBuffers>().0.lock().unwrap().remove(window.label());
                 window.app_handle().state::<Exports>().0.lock().unwrap().remove(window.label());
                 window.app_handle().state::<Documents>().0.lock().unwrap().remove(window.label());

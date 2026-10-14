@@ -2,7 +2,7 @@ import { t, h, onLanguageChange, setAttr } from './i18n.js';
 import { leafSelection } from './selection.js';
 import { sourceMode, setSourceMode } from './view-mode.js';
 import { unfoldAll } from '@codemirror/language';
-import { Compartment, EditorSelection, EditorState, StateEffect, StateField } from '@codemirror/state';
+import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction } from '@codemirror/state';
 import { renderBlock, sourceBlock, propertiesFolded, toggleProperties } from './structured-preview.js';
 import { labels as calloutLabels, titleSlotInSource, bodyToSource } from './callout.js';
 import { footnoteIndex, footnoteLabelFollow, footnoteRenumber, footnoteReferenceDeletion, footnoteReferenceCompletion, footnoteLabelMap } from './footnote-state.js';
@@ -1061,8 +1061,30 @@ function selectionHeadingLevel(state) {
   return selected ?? 0;
 }
 
+export async function mcpDigest(value) {
+  const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(bytes),n=>n.toString(16).padStart(2,'0')).join('');
+}
+
+export function planMcpChanges(source, changes, scope) {
+  if(!Array.isArray(changes) || changes.length>256 || !scope || !Number.isInteger(scope.from) || !Number.isInteger(scope.to)) throw new Error('invalid_batch');
+  const boundaries=new Set([0,source.length]);
+  for(const item of new Intl.Segmenter('und',{granularity:'grapheme'}).segment(source)) boundaries.add(item.index);
+  const planned=changes.map(change=>{
+    const {from,to,insert,expected}=change;
+    if(!Number.isInteger(from)||!Number.isInteger(to)||from<scope.from||to>scope.to||from>to||to>source.length||typeof insert!=='string'||typeof expected!=='string'||!boundaries.has(from)||!boundaries.has(to)||source.slice(from,to)!==expected||insert.includes('\r')) throw new Error('invalid_patch');
+    return {from,to,insert};
+  }).sort((a,b)=>a.from-b.from||a.to-b.to);
+  for(let i=1;i<planned.length;i++) if(planned[i].from<planned[i-1].to || planned[i].from===planned[i-1].from) throw new Error('overlapping_patches');
+  return planned.filter(change=>source.slice(change.from,change.to)!==change.insert);
+}
+
 export function createLeafEditor(options) {
   const historyCompartment = new Compartment();
+  const aiTaskAnnotation = Annotation.define();
+  let aiTask = null;
+  let bufferRevision = 0;
+  const mutationReceipts = new Map();
   const languageCompartment = new Compartment();
   const phrases = () => EditorState.phrases.of({
         Find: t("editor.find"),
@@ -1320,7 +1342,13 @@ export function createLeafEditor(options) {
     ],
   });
 
-  const view = new EditorView({ state, parent: options.parent });
+  const view = new EditorView({ state, parent: options.parent,
+    dispatchTransactions(transactions, target) {
+      if (aiTask && transactions.some(tr=>tr.docChanged && tr.annotation(aiTaskAnnotation)!==aiTask.id)) throw new Error('document_locked');
+      target.update(transactions);
+      bufferRevision += transactions.filter(tr=>tr.docChanged).length;
+    },
+  });
   view.dom.addEventListener('leaf-comment-activate',event=>options.onCommentActivate?.(event.detail.id));
   view.dom.addEventListener("leaf-image-ready", () => view.requestMeasure());
   // Dragging a file over the property block must not offer a position there: the
@@ -1346,6 +1374,29 @@ export function createLeafEditor(options) {
 
   return {
     view,
+    mcpSnapshot() {
+      return {content:view.state.doc.toString(),revision:bufferRevision,coordinate_encoding:'utf-16',line_ending:view.state.field(lineEnding),selection:{from:view.state.selection.main.from,to:view.state.selection.main.to}};
+    },
+    beginAiTask(task) {
+      if (!task?.task_id || aiTask && aiTask.id!==task.task_id) throw new Error('document_locked');
+      if (!aiTask) aiTask={id:task.task_id,session:task.session_id,epoch:task.authorization_epoch,scope:task.scope};
+      return {task_id:aiTask.id,...this.mcpSnapshot()};
+    },
+    async applyMcpBatch(batch) {
+      if(!aiTask || batch.task_id!==aiTask.id || batch.session_id!==aiTask.session || batch.authorization_epoch!==aiTask.epoch) throw new Error('stale_task');
+      if(batch.revision!==bufferRevision) throw new Error('stale_revision');
+      const changes=planMcpChanges(view.state.doc.toString(),batch.changes,aiTask.scope);
+      const before=view.state.doc.toString();
+      if(changes.length) view.dispatch({changes,filter:false,userEvent:'input.ai',annotations:[aiTaskAnnotation.of(aiTask.id),isolateHistory.of('full')]});
+      aiTask.scope={from:aiTask.scope.from,to:aiTask.scope.to+changes.reduce((sum,c)=>sum+c.insert.length-(c.to-c.from),0)};
+      return {mutation_id:batch.mutation_id,task_id:batch.task_id,session_id:batch.session_id,request_id:batch.request_id,applied_revision:bufferRevision,source_digest:await mcpDigest(before),result_digest:await mcpDigest(view.state.doc.toString()),changed:changes.length>0,scope:aiTask.scope,disk_status:'unsaved'};
+    },
+    finishAiTask(task) {
+      if(aiTask && task.task_id!==aiTask.id) throw new Error('stale_task');
+      aiTask=null;
+      return this.mcpSnapshot();
+    },
+    queryRendererMutation(id) { return mutationReceipts.get(id) ?? null; },
     setDropPoint,
     setReading(value) { reading = value; },
     visiblePosition() {
@@ -1397,6 +1448,7 @@ export function createLeafEditor(options) {
       if (view.state.field(structuredPreview).name !== name) view.dispatch({ effects: documentName.of(name) });
     },
     setValue(value) {
+      if(aiTask) throw new Error('document_locked');
       suppressChanges = true;
       // A newly opened/reloaded document must never undo into the previous file.
       // The replacement has to be dispatched before the history is dropped and

@@ -16,6 +16,7 @@ import { frontmatter } from './markdown-model.js';
 import './reading.css';
 import { desktop, desktopRevealDocument, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
 import { invoke } from '@tauri-apps/api/core';
+import { listen as listenNative } from '@tauri-apps/api/event';
 import { shortcutText, renderShortcutText, renderTooltipText } from './platform-shortcuts.js';
 import { labels as calloutLabels } from './callout.js';
 import { indexFootnotes, notePanelRows } from './footnotes.js';
@@ -2177,8 +2178,37 @@ if (desktop) {
     editor.setReading(state.reading);
     if (welcomeScreen.hidden && !state.reading) editor.focus();
     const testMode=await invoke('mcp_test_mode').catch(()=>null);
+    await listenNative('leaf-mcp-editor',async ({payload})=>{
+      let reply;
+      try {
+        const {operation,args}=payload;
+        let result;
+        if(operation==='snapshot')result=editor.mcpSnapshot();
+        else if(operation==='begin')result=editor.beginAiTask(args);
+        else if(operation==='apply')result=await editor.applyMcpBatch(args);
+        else if(operation==='finish')result=editor.finishAiTask(args);
+        else if(operation==='query_renderer_mutation')result=editor.queryRendererMutation(args.mutation_id);
+        else if(operation==='test' && testMode) {
+          if(args.clock!==undefined) {
+            const nativeClock=Date.now;
+            // Only the feature-gated driver can advance the renderer clock.
+            Date.now=()=>Number(args.clock);
+            queueMicrotask(()=>{Date.now=nativeClock;});
+          }
+          if(args.action==='reset') await setDocument(args.content,'Synthetic MCP.md');
+          else if(args.action==='undo') editor.undo();
+          else if(args.action==='redo') editor.redo();
+          else if(args.action==='human') editor.restoreValue(args.content);
+          else if(args.action==='selection') editor.view.dispatch({selection:{anchor:args.anchor}});
+          result={...editor.mcpSnapshot(),history:editor.historyDepth(),task_api:typeof editor.beginAiTask==='function'};
+        } else throw new Error('unknown_bridge_operation');
+        reply={result};
+      } catch(error) {reply={error:String(error.message||'renderer_error')};}
+      await invoke('mcp_renderer_reply',{callId:payload.call_id,reply}).catch(()=>{});
+    });
+    if(welcomeScreen.hidden) await invoke('mcp_register');
     if(testMode) {
-      const report={pass:typeof editor.beginAiTask==='function',failure:'MCP tracer requires the controlled task transaction API'};
+      const report=await invoke('mcp_test_run',{mode:testMode}).catch(()=>({pass:false,failure:'native driver failure'}));
       await invoke('mcp_test_report',{report});
     }
   });
