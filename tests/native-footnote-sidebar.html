@@ -9,6 +9,13 @@ window.startTest=async()=>{
   document.querySelector('#welcomeNewButton').click();
   const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');
   const view=EditorView.findFromDOM(document.querySelector('#editor .cm-content'));
+  const compact='正文[^a]。\n\n[^a]: **粗体**、*斜体*、`code`、==高亮==。';
+  view.dispatch({changes:{from:0,to:view.state.doc.length,insert:compact},selection:{anchor:0}});await pause();
+  check(document.querySelector('#editor .leaf-footnote-body .tok-strong')?.textContent==='粗体','definition bold missing');
+  check(document.querySelector('#editor .leaf-footnote-body .tok-emphasis')?.textContent==='斜体','definition italic missing');
+  check(document.querySelector('#editor .leaf-footnote-body .cm-leaf-inline-code')?.textContent==='code','definition inline code missing');
+  check(document.querySelector('#editor .leaf-footnote-body .leaf-highlight')?.textContent==='高亮','definition highlight missing');
+  check(view.state.doc.toString()===compact,'definition preview changed source');
   const source='正文[^a]。\n\n[^a]: **粗体**、*斜体*、`code`、==高亮== 和 [链接](https://example.com)。';
   view.dispatch({changes:{from:0,to:view.state.doc.length,insert:source},selection:{anchor:0}});
   document.querySelector('#notesButton').click();await pause();
@@ -36,7 +43,7 @@ window.startTest=async()=>{
   document.querySelector('.note-body .cm-content').focus();await pause();
   check(view.state.doc.toString()==='正文[^1]\n\n[^1]:','editing missing note did not complete definition');
   document.querySelector('#undoButton').click();check(view.state.doc.toString()===old,'missing note completion undo wrong');
-  document.title='LeafTest PASS native footnote sidebar modes, shared undo, toolbar icon and manual citation completion';
+  document.title='LeafTest PASS native footnote definition format, sidebar modes, shared undo, toolbar icon and manual citation completion';
  }catch(error){document.title='LeafTest FAIL '+error.message;}
 };
 document.title='LeafSource';

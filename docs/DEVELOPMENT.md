@@ -136,4 +136,4 @@ NSIS 配置启用 English、SimpChinese、TradChinese 和语言选择器，直�
 
 已安装 NSIS 的开发机可运行 `node tests/windows-i18n-nsis.mjs` 编译无操作的合成夹具，检查钩子和三语资源语法。生成 EXE 位于忽略提交的 `test-results`，不执行钩子、不安装 Leaf；不算正式 Windows 包。macOS 编译子进程使用 `en_US.UTF-8`，避免不支持的 locale 造成中文编码错误。
 
-脚注侧栏三模式由 `footnote-sidebar-modes-browser.mjs` 检查；长文浮框输入由 `footnote-input-performance-browser.mjs` 使用约十九万字符合成样本检查即时写回、侧栏同步和组合输入。macOS 原生夹具为 `native-footnote-sidebar.html`，使用现有 `native-table-keys` 入口验证实际 WKWebView 的渲染与共享撤销。性能数字来自本机合成样本，不代替用户原文、真实输入法或安装版验收。
+脚注侧栏三模式由 `footnote-sidebar-modes-browser.mjs` 检查；文末定义格式由 `footnote-definition-format-browser.mjs` 在 Chromium/WebKit 检查实际格式、解析器边界、多行内容、源码/光标标记与撤销，位置映射另由 `footnote-inline.test.js` 覆盖 CRLF 和缩进。长文浮框输入由 `footnote-input-performance-browser.mjs` 使用约十九万字符合成样本检查即时写回、侧栏同步和组合输入。macOS 原生夹具为 `native-footnote-sidebar.html`，使用现有 `native-table-keys` 入口验证实际 WKWebView 的文末/侧栏渲染与共享撤销。性能数字来自本机合成样本，不代替用户原文、真实输入法或安装版验收。

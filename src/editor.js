@@ -56,6 +56,7 @@ import {outlineFolding} from './outline-folding.js';
 import { classifyInlineTag, pairInlineTags } from './inline-html.js';
 import { imageDrag } from './image-drag.js';
 import { shortcutText } from './platform-shortcuts.js';
+import { footnoteInlineNodes } from './footnote-inline.js';
 
 const toggleBlankMarkers = StateEffect.define();
 const typedProperties = StateEffect.define();
@@ -326,6 +327,7 @@ function livePreviewDecorations(view) {
   // drawn as the note's number instead, and goes back to its source while the
   // caret is on the definition, the way every other construct behaves.
   const definitionLines = new Set();
+  const definitionSource = doc.toString();
   for (const note of index.notes) {
     if (!note.def) continue;
     // A definition's own label is not a citation. The grammar turns "[^1]" into a
@@ -351,6 +353,27 @@ function livePreviewDecorations(view) {
     if (!editing) {
       for (const indent of note.def.continuations) {
         ranges.push(Decoration.replace({}).range(indent.from, indent.to));
+      }
+      // Unlike the document's LinkReference node, this tree describes the note's
+      // real inline Markdown. Decorations refer to the original source offsets.
+      let suppressed = -1;
+      for (const part of footnoteInlineNodes(definitionSource, note.def)) {
+        if (part.from < suppressed) continue;
+        if (['Link', 'Image'].includes(part.name) && part.ranges.length === 1) {
+          const span = part.ranges[0], signature = citationSignature(part.text, noteNumbers);
+          ranges.push(Decoration.replace({ widget: new InlinePreview(span.from, part.text, {
+            footnotes, signature: signature ?? '', note: citationLabel(part.text, noteNumbers),
+          }) }).range(span.from, span.to));
+          suppressed = part.to;
+          continue;
+        }
+        const classes = { StrongEmphasis: 'tok-strong', Emphasis: 'tok-emphasis',
+          Strikethrough: 'tok-strike', InlineCode: 'cm-leaf-inline-code', LeafHighlight: 'leaf-highlight' };
+        const hide = ['EmphasisMark', 'StrikethroughMark', 'CodeMark', 'LeafHighlightMark'].includes(part.name);
+        for (const span of part.ranges) {
+          if (hide) ranges.push(Decoration.replace({}).range(span.from, span.to));
+          else if (classes[part.name]) ranges.push(Decoration.mark({ class: classes[part.name] }).range(span.from, span.to));
+        }
       }
     }
   }
@@ -379,6 +402,10 @@ function livePreviewDecorations(view) {
       const heading = node.name.match(/^(?:ATX|Setext)Heading([1-6])$/);
       const yaml = view.state.field(structuredPreview).model.yaml;
       if (yaml && node.from < yaml.to && node.name !== 'Document') return false;
+      // The body pass above owns these spans, including when their source is
+      // exposed for editing. Do not overlay the grammar's mistaken link/code UI.
+      if (node.name !== 'Document' && index.notes.some(note => note.def
+        && node.from >= note.def.markerFrom && node.to <= note.def.to)) return false;
 
       const inline = inlineSpans.get(node.from);
       if (inline && !caretInRange(view.state, inline.openFrom, inline.closeTo)) {
