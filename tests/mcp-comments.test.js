@@ -46,3 +46,29 @@ test('comment query route uses the authorized live renderer bridge and fixed rev
   runtime.mcpDigest=async text=>{runtime.mcpBinding={...ctx,authorization_epoch:3};return fingerprint(text);};
   await assert.rejects(serve(args),/stale_revision/);
 });
+
+const apply=(source,changes)=>changes.reduceRight((text,c)=>text.slice(0,c.from)+c.insert+text.slice(c.to),source);
+test('comment mutation union preserves CRLF Unicode body and hidden format, rejects ambiguity before edits',()=>{
+  assert.equal(typeof api.planMcpCommentBatch,'function','comment operations must share original-snapshot atomic preflight');
+  const source='---\r\ntitle: "Old"\r\n---\r\n\r\n{==**重复😀é**==}{>>one<<}{==重复😀é==}{>>two<<} end{>>point<<}.\r\n\r\n%%hidden\r\n\r\nliteral%%\r\n\r\nPlain😀é end.';
+  const ctx=context(source),notes=api.listAiComments(source,ctx).comments;
+  const op=(note,action,text)=>({kind:'comment',action,id:note.id,source_fingerprint:note.source_fingerprint,expected:note.source,...(text===undefined?{}:{text})});
+  const from=source.indexOf('Plain'),to=from+'Plain😀é'.length;
+  const operations=[op(notes[0],'delete'),op(notes[1],'set',''),op(notes[3],'set','new\r\n\r\nliteral'),{kind:'comment',action:'add',from,to,expected:source.slice(from,to),text:'中文😀é'}, {kind:'property',action:'set',key:'title',expected:'"Old"',value:'New'}];
+  const changes=api.planMcpCommentBatch(source,{operations},ctx);
+  assert.deepEqual(api.planMcpCommentBatch(source,{operations:[...operations].reverse()},ctx),changes);
+  const after=apply(source,changes);assert.ok(after.includes('**重复😀é**{==重复😀é==}{>><<} end{>>point<<}'));
+  assert.ok(after.includes('%%new\r\n\r\nliteral%%'));assert.ok(after.includes('{==Plain😀é==}{>>中文😀é<<}'));
+  assert.equal(after.replace(/[^\n]/g,'').length,source.replace(/[^\n]/g,'').length);
+  const point={kind:'comment',action:'add',from:source.length,to:source.length,expected:'',text:''};
+  assert.ok(apply(source,api.planMcpCommentBatch(source,{operations:[point]},ctx)).endsWith('{>><<}'));
+  for(const invalid of [
+    {...point,comment_kind:'hidden'}, {...point,text:'bad<<}'}, {...point,from:from+6,to:from+6}, {...point,from:from+8,to:from+8},
+    {...op(notes[0],'set','bad'),source_fingerprint:'stale'}, {...op(notes[0],'delete'),expected:'stale'}, {...op(notes[0],'delete'),id:'unknown'},
+    {...op(notes[3],'set','bad%%')}, {...point,from:0,to:0}, {...point,from:notes[0].anchor.from,to:notes[0].anchor.from}
+  ])assert.throws(()=>api.planMcpCommentBatch(source,{operations:[invalid]},ctx));
+  assert.throws(()=>api.planMcpCommentBatch(source,{operations:[point,point]},ctx),/overlapping/);
+  assert.throws(()=>api.planMcpCommentBatch(source,{operations:[op(notes[0],'delete')],changes:[{from:notes[0].from,to:notes[0].to,expected:notes[0].source,insert:'bad'}]},ctx),/overlapping/);
+  assert.throws(()=>api.planMcpCommentBatch(source,{operations:[op(notes[0],'delete')]},{...ctx,revision:8}),/comment_missing/);
+  assert.throws(()=>api.planMcpCommentBatch(source,{operations:[op(notes[0],'delete')]},{...ctx,scope:{from:notes[0].anchor.from,to:source.length}}),/comment_missing/);
+});
