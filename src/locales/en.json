@@ -513,7 +513,7 @@
   "platform_shortcuts.command": "Command",
   "desktop.markdown": "Markdown",
   "index.leaf": "Leaf",
-  "pdf_export.in_leaf_click_save_as_pdf_then": "In Leaf, click “Save as PDF…”, then select “Microsoft Print to PDF” in the system print dialog. Click “Print” and choose where to save the PDF. You can adjust paper size and orientation. The preview does not show actual page breaks.",
+  "pdf_export.in_leaf_click_save_as_pdf_then": "In Leaf, click “Save as PDF…” and choose where to save the file. PDFs use A4 portrait pages with 18 mm margins. The preview does not show actual page breaks.",
   "main.could_not_open_the_document": "Could not open the document: {{error}}",
   "main.the_document_was_created_but_could_not": "The document was created but could not be opened: {{path}}\n{{error}}",
   "main.leaf_new_document": "Leaf · New Document",

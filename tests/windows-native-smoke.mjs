@@ -16,7 +16,7 @@ await new Promise(r => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 await new Promise(r => server.close(r));
 const child = spawn(resolve('src-tauri/target/release/leaf.exe'), [], {
-  env: { ...process.env, LEAF_NATIVE_SMOKE_PORT: String(port), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: join(scratch, 'webview') },
+  env: { ...process.env, LEAF_NATIVE_SMOKE_PORT: String(port), LEAF_NATIVE_SMOKE_PDF_DIR: scratch, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: join(scratch, 'webview') },
   stdio: 'inherit',
 });
 let browser;
@@ -103,7 +103,7 @@ try {
   before = pages();
   await invoke(existing, 'open_link', { target: 'linked.md' });
   assert.match(await (await nextDocument(before)).locator('.cm-content').innerText(), /Linked document/);
-  await invoke(existing, 'open_export', { snapshot: { source: '# Windows export smoke', name: 'Smoke', numbered: false } });
+  await invoke(existing, 'open_export', { snapshot: { source: '# Windows export smoke\n\n中文正文。\n\n' + 'Pagination text.\n\n'.repeat(120) + 'FINAL-CONTENT-END', name: '中文標題-é-😀.md', numbered: false } });
   const preview = await until(async () => pages().find(p => p.url().includes('export=1')), 'export window');
   await preview.locator('.print-document').waitFor();
   assert.match(await preview.locator('.print-document').innerText(), /Windows export smoke/);
@@ -113,6 +113,14 @@ try {
     label: await preview.evaluate(() => window.__TAURI_INTERNALS__.metadata.currentWindow.label),
   }), true, 'PDF export preview must be visible to the user');
   await preview.screenshot({ path: 'test-results/windows-export.png' });
+  assert.equal(await preview.title(), '中文標題-é-😀');
+  await invoke(preview, 'print_export');
+  const exported = join(scratch, '中文標題-é-😀.pdf');
+  execFileSync('python', ['tests/pdf-title-check.py', exported, '中文標題-é-😀'], { stdio: 'inherit' });
+  // Save twice: the second render must safely replace the existing PDF.
+  await invoke(preview, 'print_export');
+  execFileSync('python', ['tests/pdf-title-check.py', exported, '中文標題-é-😀'], { stdio: 'inherit' });
+
   // Unsaved content must prompt, cancellation must keep the window usable.
   before = pages();
   await invoke(existing, 'open_document', { path: null });

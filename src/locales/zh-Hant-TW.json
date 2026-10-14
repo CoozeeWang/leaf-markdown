@@ -513,7 +513,7 @@
   "platform_shortcuts.command": "Command",
   "desktop.markdown": "Markdown",
   "index.leaf": "Leaf",
-  "pdf_export.in_leaf_click_save_as_pdf_then": "在 Leaf 中點按「儲存為 PDF…」，然後在系統列印視窗中選擇「Microsoft Print to PDF」，按「列印」並指定儲存位置。可調整紙張大小和方向。預覽不顯示實際分頁。",
+  "pdf_export.in_leaf_click_save_as_pdf_then": "在 Leaf 中點按「儲存為 PDF…」，選擇儲存位置即可。PDF 使用 A4 直向紙張及 18 mm 頁邊距；預覽不顯示實際分頁。",
   "main.could_not_open_the_document": "無法開啟文件：{{error}}",
   "main.the_document_was_created_but_could_not": "文件已建立，但無法開啟：{{path}}\n{{error}}",
   "main.leaf_new_document": "Leaf · 新增文件",

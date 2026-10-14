@@ -24,7 +24,7 @@ async function init() {
   const native = isTauri();
   if (native) setResourceReader(relative => invoke("read_resource", { relative }));
   document.documentElement.classList.toggle('native-print', native);
-  if (native) {
+  if (native && !/win/i.test(navigator.platform)) {
     const pageStyle = document.createElement('style');
     pageStyle.textContent = '@page { margin: 0; }';
     document.head.append(pageStyle);
@@ -52,7 +52,7 @@ async function init() {
       await document.fonts.ready;
       await waitForImages(document.querySelector("article"), { allowPlaceholders: true });
       if (native) await invoke('print_export'); else window.print();
-    } catch (error) { setText(document.querySelector('#export-error'), () => t("pdf_export.could_not_open_the_print_dialog", {"error": error})); }
+    } catch (error) { setText(document.querySelector('#export-error'), () => t(native && /win/i.test(navigator.platform) ? "pdf_export.export_failed" : "pdf_export.could_not_open_the_print_dialog", {"error": error})); }
     finally { printing = false; }
   };
   document.querySelector('#print').addEventListener('click', print);
