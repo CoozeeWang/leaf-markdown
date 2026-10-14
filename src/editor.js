@@ -121,7 +121,6 @@ class InlinePreview extends WidgetType {
     span.addEventListener('mousedown', event => {
       if (event.button !== 0) return;
       event.preventDefault();
-      if(span._preview.commentId)return;
       view.dispatch({ selection: { anchor: span._preview.from } }); view.focus();
       // A marker stands for a note: clicking it takes the reader to that note in
       // the notes panel, the way a printed footnote sends you to the foot of the
@@ -1322,7 +1321,6 @@ export function createLeafEditor(options) {
 
   const view = new EditorView({ state, parent: options.parent });
   view.dom.addEventListener('leaf-comment-activate',event=>options.onCommentActivate?.(event.detail.id));
-  view.dom.addEventListener('click',event=>{const id=event.target.closest?.('.leaf-comment-range')?.dataset.commentId;if(id)options.onCommentActivate?.(id);});
   view.dom.addEventListener("leaf-image-ready", () => view.requestMeasure());
   // Dragging a file over the property block must not offer a position there: the
   // drop lands in the body instead, so a cursor drawn over the block would point

@@ -13,7 +13,7 @@
 .comment-actions{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px}
 .comment-actions span{margin-inline-end:auto}.comment-actions button{font:inherit;font-size:12px;background:none;border:0;color:var(--muted);min-height:28px;padding:3px}
 .comment-delete:hover{color:var(--danger)}
-.leaf-comment-range{background:color-mix(in srgb,var(--accent) 22%,var(--canvas));border-radius:2px;cursor:pointer;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.leaf-comment-range{background:color-mix(in srgb,var(--accent) 22%,var(--canvas));border-radius:2px;cursor:inherit;box-decoration-break:clone;-webkit-box-decoration-break:clone}
 .leaf-comment-range.active{background:color-mix(in srgb,var(--accent) 32%,var(--canvas))}
 .leaf-comment-located{background:color-mix(in srgb,var(--accent-soft) 45%,var(--canvas))}
 .leaf-critic-highlight{background:var(--highlight-bg);color:var(--highlight-text)}
