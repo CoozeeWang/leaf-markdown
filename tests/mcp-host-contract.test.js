@@ -33,3 +33,22 @@ test('real App SDK negotiates host capabilities and reads two revisions through 
  assert.ok(messages.some(m=>m.method==='tools/call'));
  assert.deepEqual(errors,[]);reader.close();await host.close();
 });
+
+test('reader refuses late lower revisions and cannot revive after revocation',async()=>{
+ const views=[],errors=[],pending=[];
+ const a={start:async()=>{},send:async m=>queueMicrotask(()=>b.onmessage?.(m)),close:async()=>a.onclose?.()};
+ const b={start:async()=>{},send:async m=>queueMicrotask(()=>a.onmessage?.(m)),close:async()=>b.onclose?.()};
+ const binding={document_id:'synthetic-document',session_id:'synthetic-session',authorization_epoch:4};
+ const value=revision=>({content:[],structuredContent:{binding,snapshot:{revision,content:`Draft ${revision}`},comments:[]}});
+ const host=new AppBridge(null,{name:'Synthetic host',version:'1'},{serverTools:{}});
+ host.oncalltool=()=>new Promise(resolve=>pending.push(resolve));
+ const reader=createReaderBridge({transport:a,render:v=>views.push(v),invalidate:r=>errors.push(r)});
+ await host.connect(b);await reader.connect();await host.sendToolInput({arguments:binding});
+ while(!pending.length)await new Promise(r=>setTimeout(r,1));pending.shift()(value(10));
+ await new Promise(r=>setTimeout(r,5));
+ const older=reader.refresh(),newer=reader.refresh();
+ while(pending.length<2)await new Promise(r=>setTimeout(r,1));
+ pending[1](value(12));await newer;pending[0](value(11));await older;
+ assert.equal(views.at(-1).snapshot.revision,12,'late responses must not replace the highest authorized revision');
+ reader.close();const length=views.length;await reader.refresh();assert.equal(views.length,length);assert.ok(errors.length);await host.close();
+});
