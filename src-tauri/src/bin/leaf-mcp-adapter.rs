@@ -65,7 +65,11 @@ fn trace(stage:&str) {
     #[cfg(not(feature="native-smoke"))]
     let _=stage;
 }
-#[tokio::main]
-async fn main() {
-    if let Err(category)=run().await {eprintln!("Leaf MCP: {category}");std::process::exit(1);}
+fn main() {
+    // First, while still single-threaded and before runtime/logging startup.
+    std::env::remove_var("CONTROL_PLANE_API_KEY");
+    #[cfg(feature="native-smoke")]
+    if let Some(path)=std::env::var_os("LEAF_MCP_TEST_ADAPTER_ENV_TRACE"){let _=std::fs::write(path,serde_json::to_vec(&serde_json::json!({"has_runtime_key":std::env::var_os("CONTROL_PLANE_API_KEY").is_some()})).unwrap());}
+    let runtime=tokio::runtime::Runtime::new().expect("MCP runtime unavailable");
+    if let Err(category)=runtime.block_on(run()) {eprintln!("Leaf MCP: {category}");std::process::exit(1);}
 }

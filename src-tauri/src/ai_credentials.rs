@@ -10,7 +10,7 @@ pub struct CredentialRef { pub service: String, pub account: String }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BrokerDescriptor {pub uri:String,pub client:String,pub generation:u64,pub instance:String,pub credential_ref:CredentialRef}
-#[derive(Serialize,Deserialize)]
+#[derive(Clone,Serialize,Deserialize)]
 pub struct BoundCredential {pub token:String,pub uri:String,pub instance:String,pub generation:u64,#[serde(default)]pub external_secret:Option<String>}
 impl BrokerDescriptor {
     pub fn validate(&self)->Result<(),String> {
@@ -28,6 +28,7 @@ impl BrokerDescriptor {
 }
 impl CredentialRef {
     fn entry(&self) -> Result<keyring::Entry, String> {
+        if !self.service.starts_with("studio.leaf.")||!self.service.ends_with(".mcp")||!CLIENTS.iter().any(|c|self.account.starts_with(&format!("{c}-"))){return Err("invalid_shared_credential".into());}
         keyring::Entry::new(&self.service, &self.account).map_err(|_| "credential_unavailable".into())
     }
     pub fn load(&self) -> Result<String, String> {
@@ -68,6 +69,14 @@ impl SecretStore for OsKeyring {
 // Existing entries keep their ACL; no login keychain or other item is changed.
 #[cfg(target_os="macos")]
 fn create_mac_shared_entry(reference:&CredentialRef,secret:&str)->Result<(),String> {
+    create_mac_entry(reference,secret,true)
+}
+#[cfg(target_os="macos")]
+fn create_mac_gui_only_entry(reference:&RuntimeCredentialRef,secret:&str)->Result<(),String> {
+    create_mac_entry(&CredentialRef{service:reference.service.clone(),account:reference.account.clone()},secret,false)
+}
+#[cfg(target_os="macos")]
+fn create_mac_entry(reference:&CredentialRef,secret:&str,share_helper:bool)->Result<(),String> {
     use std::{ffi::{c_void,c_char,CString},ptr};
     type Ref=*const c_void;
     #[repr(C)]struct Attribute {tag:u32,length:u32,data:*mut c_void}
@@ -94,16 +103,16 @@ fn create_mac_shared_entry(reference:&CredentialRef,secret:&str)->Result<(),Stri
     // The broker alone creates credentials. The helper never configures them.
     if executable.file_stem().is_none_or(|s|s!="leaf") {return Err("credential_unavailable".into());}
     let helper=executable.parent().ok_or("credential_unavailable")?.join("leaf-mcp-adapter");
-    if !helper.is_file() {return Err("helper_not_installed".into());}
+    if share_helper&&!helper.is_file() {return Err("helper_not_installed".into());}
     let helper=CString::new(helper.as_os_str().as_encoded_bytes()).map_err(|_|"credential_unavailable")?;
     let description=CString::new("Leaf MCP connection").unwrap();
     unsafe {
         let mut gui=ptr::null();let mut adapter=ptr::null();
         if SecTrustedApplicationCreateFromPath(ptr::null(),&mut gui)!=0 {return Err("credential_unavailable".into());}
         let gui=Owned(gui);
-        if SecTrustedApplicationCreateFromPath(helper.as_ptr(),&mut adapter)!=0 {return Err("credential_unavailable".into());}
+        if share_helper&&SecTrustedApplicationCreateFromPath(helper.as_ptr(),&mut adapter)!=0 {return Err("credential_unavailable".into());}
         let adapter=Owned(adapter);let values=[gui.0,adapter.0];
-        let trusted=Owned(CFArrayCreate(ptr::null(),values.as_ptr(),2,ptr::null()));
+        let trusted=Owned(CFArrayCreate(ptr::null(),values.as_ptr(),if share_helper{2}else{1},ptr::null()));
         let description=Owned(CFStringCreateWithCString(ptr::null(),description.as_ptr(),0x08000100));
         if trusted.0.is_null()||description.0.is_null(){return Err("credential_unavailable".into());}
         let mut access=ptr::null();if SecAccessCreate(description.0,trusted.0,&mut access)!=0{return Err("credential_unavailable".into());}
@@ -127,7 +136,7 @@ fn create_mac_shared_entry(reference:&CredentialRef,secret:&str)->Result<(),Stri
                             evidence.push(serde_json::json!({"trusted_apps":if apps.0.is_null(){-1}else{CFArrayGetCount(apps.0)},"prompt_flags":flags}));
                         }
                     }
-                    if let Some(root)=std::env::var_os("LEAF_MCP_TEST_DIR") {let _=std::fs::write(PathBuf::from(root).join("acl-effective.json"),serde_json::to_vec(&evidence).unwrap());}
+                    if let Some(root)=std::env::var_os("LEAF_MCP_TEST_DIR") {let _=std::fs::write(PathBuf::from(root).join(if share_helper{"acl-effective.json"}else{"acl-runtime-effective.json"}),serde_json::to_vec(&evidence).unwrap());}
                 }
             }
         }
@@ -140,6 +149,43 @@ pub struct AiClientProfile {
     pub enabled: bool,
     pub generation: u64,
     pub credential_ref: Option<CredentialRef>,
+    #[serde(default)] pub tunnel:Option<TunnelProfile>,
+    #[serde(default)] pub has_runtime_key:bool,
+    #[serde(default)] pub(crate) runtime_ref:Option<RuntimeCredentialRef>,
+    #[serde(default)] pub(crate) runtime_pending:bool,
+}
+#[derive(Clone,Debug,Serialize,Deserialize,PartialEq)]
+pub struct TunnelProfile {pub tunnel_id:String,pub executable:PathBuf,pub profile:PathBuf,pub health_file:PathBuf,pub generation:u64,#[serde(default)]pub digest:String}
+#[derive(Clone,Debug,Serialize,Deserialize,PartialEq)]
+pub(crate) struct RuntimeCredentialRef {service:String,account:String}
+impl RuntimeCredentialRef {
+    fn validate(&self)->Result<(),String>{if self.service.starts_with("studio.leaf.")&&self.service.ends_with(".chatgpt-runtime")&&self.account.starts_with("runtime-"){Ok(())}else{Err("invalid_runtime_reference".into())}}
+}
+// This capability is deliberately distinct from the helper's SecretStore.
+pub(crate) trait RuntimeVault:Send+Sync {
+    fn set(&self,r:&RuntimeCredentialRef,key:&str)->Result<(),String>;
+    fn get(&self,r:&RuntimeCredentialRef)->Result<String,String>;
+    fn delete(&self,r:&RuntimeCredentialRef)->Result<(),String>;
+}
+pub(crate) struct GuiRuntimeSecretStore;
+impl GuiRuntimeSecretStore {
+    fn entry(r:&RuntimeCredentialRef)->Result<keyring::Entry,String>{
+        r.validate()?;
+        if std::env::current_exe().map_err(|_|"runtime_key_unavailable")?.file_stem().is_none_or(|n|n!="leaf"){return Err("runtime_gui_only".into());}
+        keyring::Entry::new(&r.service,&r.account).map_err(|_|"runtime_key_unavailable".into())
+    }
+}
+impl RuntimeVault for GuiRuntimeSecretStore {
+    fn set(&self,r:&RuntimeCredentialRef,key:&str)->Result<(),String>{
+        let entry=Self::entry(r)?;
+        #[cfg(target_os="macos")] create_mac_gui_only_entry(r,key)?;
+        entry.set_password(key).map_err(|_|"runtime_key_unavailable".into())
+    }
+    fn get(&self,r:&RuntimeCredentialRef)->Result<String,String>{Self::entry(r)?.get_password().map_err(|_|"runtime_key_unavailable".into())}
+    fn delete(&self,r:&RuntimeCredentialRef)->Result<(),String>{match Self::entry(r)?.delete_credential(){Ok(())|Err(keyring::Error::NoEntry)=>Ok(()),Err(_)=>Err("runtime_key_unavailable".into())}}
+}
+impl AiClientProfile {
+    pub fn masked(&self)->serde_json::Value {let mut value=serde_json::to_value(self).unwrap();value.as_object_mut().unwrap().remove("runtime_ref");value.as_object_mut().unwrap().remove("runtime_pending");value}
 }
 #[derive(Default)]
 pub struct AiClientProfileStore {
@@ -157,14 +203,20 @@ impl AiClientProfileStore {
     pub fn new(namespace: String, path: Option<PathBuf>) -> Result<Self, String> {
         if !namespace.starts_with("studio.leaf.") { return Err("invalid_namespace".into()); }
         let mut store = Self { namespace, path, ..Default::default() };
-        store.profiles = CLIENTS.iter().map(|client| AiClientProfile { client: (*client).into(), configured: false, enabled: false, generation: 0, credential_ref: None }).collect();
+        store.profiles = CLIENTS.iter().map(|client| AiClientProfile { client: (*client).into(), configured: false, enabled: false, generation: 0, credential_ref: None,tunnel:None,has_runtime_key:false,runtime_ref:None,runtime_pending:false }).collect();
         if let Some(path) = &store.path {
             if path.exists() {
                 let saved: Vec<AiClientProfile> = serde_json::from_slice(&std::fs::read(path).map_err(|_| "profile_read")?).map_err(|_| "profile_invalid")?;
                 if saved.len() != 3 { return Err("profile_invalid".into()); }
                 for (profile, old) in store.profiles.iter_mut().zip(saved) {
                     if profile.client != old.client || old.credential_ref.as_ref().is_some_and(|r| r.service != store.namespace || !r.account.starts_with(&format!("{}-", profile.client))) { return Err("profile_invalid".into()); }
+                    if old.runtime_ref.as_ref().is_some_and(|r|r.validate().is_err()||r.service!=format!("{}.chatgpt-runtime",store.namespace.trim_end_matches(".mcp"))){return Err("profile_invalid".into());}
+                    if let Some(t)=&old.tunnel {
+                        let owned=path.parent().ok_or("profile_invalid")?.join("mcp/tunnel");
+                        if old.client!="chatgpt"||t.profile.parent()!=Some(owned.as_path())||t.health_file.parent()!=Some(owned.as_path()){return Err("profile_invalid".into());}
+                    }
                     *profile = old; profile.enabled = false; profile.generation += 1;
+                    if let Some(t)=profile.tunnel.as_mut(){t.generation=profile.generation;}
                 }
             }
         }
@@ -213,7 +265,7 @@ impl AiClientProfileStore {
         let old = self.status(client)?;
         if old.generation != expected { return Err("stale_configuration".into()); }
         let reference = CredentialRef { service: self.namespace.clone(), account: format!("{client}-{}", random_token()?) };
-        let payload=BoundCredential{token:random_token()?,uri:String::new(),instance:String::new(),generation:old.generation+1,external_secret:(client=="chatgpt").then(||secret.into())};
+        let payload=BoundCredential{token:random_token()?,uri:String::new(),instance:String::new(),generation:old.generation+1,external_secret:None};
         secrets.set(&reference,&serde_json::to_string(&payload).map_err(|_|"credential_encoding")?)?;
         let index = self.profiles.iter().position(|p| p.client == client).unwrap();
         self.profiles[index] = AiClientProfile { configured: true, enabled: false, generation: old.generation + 1, credential_ref: Some(reference.clone()), ..old.clone() };
@@ -232,10 +284,12 @@ impl AiClientProfileStore {
         // A disabled bearer can never become valid again after re-enabling.
         let reference=CredentialRef {service:self.namespace.clone(),account:format!("{client}-{}",random_token()?)};
         let previous:BoundCredential=serde_json::from_str(&previous).map_err(|_|"credential_invalid")?;
-        let payload=BoundCredential{token:random_token()?,uri:String::new(),instance:String::new(),generation:old.generation+1,external_secret:previous.external_secret};
+        if previous.external_secret.is_some(){return Err("runtime_key_migration_required".into());}
+        let payload=BoundCredential{token:random_token()?,uri:String::new(),instance:String::new(),generation:old.generation+1,external_secret:None};
         secrets.set(&reference,&serde_json::to_string(&payload).map_err(|_|"credential_encoding")?)?;
         let p = self.profiles.iter_mut().find(|p| p.client == client).unwrap();
         p.enabled = true; p.generation += 1; p.credential_ref=Some(reference.clone());
+        if let Some(t)=p.tunnel.as_mut(){t.generation=p.generation;}
         if let Err(error) = self.persist() { *self.profiles.iter_mut().find(|p| p.client == client).unwrap() = old;let _=secrets.delete(&reference);return Err(error); }
         secrets.delete(old.credential_ref.as_ref().unwrap())?;
         self.operations.insert(key, hash); self.status(client)
@@ -246,6 +300,7 @@ impl AiClientProfileStore {
         if repeated { return self.status(client); }
         let p = self.profiles.iter_mut().find(|p| p.client == client).unwrap();
         if p.enabled || (clear && p.configured) { p.generation += 1; }
+        if let Some(t)=p.tunnel.as_mut(){t.generation=p.generation;}
         p.enabled = false;
         if clear {
             if let Some(reference) = &p.credential_ref { secrets.delete(reference)?; }
@@ -253,6 +308,63 @@ impl AiClientProfileStore {
         }
         self.persist()?;
         self.operations.insert(key, hash); self.status(client)
+    }
+    pub(crate) fn configure_tunnel(&mut self,mut config:TunnelProfile,key:&str,operation:&str,expected:u64,shared:&dyn SecretStore,runtime:&dyn RuntimeVault)->Result<AiClientProfile,String>{
+        let old=self.status("chatgpt")?;
+        let payload=format!("tunnel:{}:{}:{}",config.tunnel_id,config.executable.display(),key);
+        let (op,hash,repeated)=self.operation("chatgpt",operation,&payload)?;
+        if repeated{return Ok(old);}if old.generation!=expected{return Err("stale_configuration".into());}
+        let key=key.trim();if key.len()>16384||key.chars().any(char::is_whitespace){return Err("invalid_runtime_key".into());}
+        let fresh=!key.is_empty();
+        let r=if fresh {RuntimeCredentialRef{service:format!("{}.chatgpt-runtime",self.namespace.trim_end_matches(".mcp")),account:format!("runtime-{}",random_token()?)}}else{old.runtime_ref.clone().filter(|_|!old.runtime_pending).ok_or("runtime_key_required")?};
+        if fresh {runtime.set(&r,key)?;if runtime.get(&r).as_deref()!=Ok(key){let _=runtime.delete(&r);return Err("runtime_key_unavailable".into());}}else{runtime.get(&r)?;}
+        let bearer=CredentialRef{service:self.namespace.clone(),account:format!("chatgpt-{}",random_token()?)};
+        let generation=old.generation+1;config.generation=generation;
+        let bound=BoundCredential{token:random_token()?,uri:String::new(),instance:String::new(),generation,external_secret:None};
+        if let Err(e)=shared.set(&bearer,&serde_json::to_string(&bound).unwrap()){if fresh{let _=runtime.delete(&r);}return Err(e);}
+        let index=self.profiles.iter().position(|p|p.client=="chatgpt").unwrap();
+        self.profiles[index]=AiClientProfile{configured:true,enabled:false,generation,credential_ref:Some(bearer.clone()),tunnel:Some(config),has_runtime_key:true,runtime_ref:Some(r.clone()),runtime_pending:false,..old.clone()};
+        if let Err(e)=self.persist(){self.profiles[index]=old;let _=shared.delete(&bearer);if fresh{let _=runtime.delete(&r);}return Err(e);}
+        if let Some(previous)=old.credential_ref{shared.delete(&previous)?;}
+        if fresh {if let Some(previous)=old.runtime_ref{runtime.delete(&previous)?;}}
+        if let Some(previous)=old.tunnel {for path in [previous.profile,previous.health_file]{match std::fs::remove_file(path){Ok(())=>{},Err(e)if e.kind()==std::io::ErrorKind::NotFound=>{},Err(_)=>return Err("tunnel_profile_cleanup_failed".into())}}}
+        self.operations.insert(op,hash);self.status("chatgpt")
+    }
+    pub(crate) fn validate_tunnel_operation(&self,id:&str,executable:&std::path::Path,key:&str,operation:&str,expected:u64)->Result<bool,String>{
+        let (_,_,repeated)=self.operation("chatgpt",operation,&format!("tunnel:{id}:{}:{key}",executable.display()))?;
+        if !repeated&&self.status("chatgpt")?.generation!=expected{return Err("stale_configuration".into());}Ok(repeated)
+    }
+    pub(crate) fn migrate_runtime(&mut self,shared:&dyn SecretStore,runtime:&dyn RuntimeVault)->Result<(),String>{
+        let old=self.status("chatgpt")?;
+        let Some(shared_ref)=old.credential_ref.clone() else{return Ok(());};
+        let mut bound:BoundCredential=serde_json::from_str(&shared.get(&shared_ref)?).map_err(|_|"runtime_key_migration_required")?;
+        let index=self.profiles.iter().position(|p|p.client=="chatgpt").unwrap();
+        if bound.external_secret.is_none()&&!old.runtime_pending{return Ok(());}
+        if old.runtime_ref.is_none(){
+            let key=bound.external_secret.as_deref().ok_or("runtime_key_migration_required")?;
+            let r=RuntimeCredentialRef{service:format!("{}.chatgpt-runtime",self.namespace.trim_end_matches(".mcp")),account:format!("runtime-{}",random_token()?)};
+            runtime.set(&r,key).map_err(|_|"runtime_key_migration_required")?;
+            if runtime.get(&r).as_deref()!=Ok(key){let _=runtime.delete(&r);return Err("runtime_key_migration_required".into());}
+            self.profiles[index].runtime_ref=Some(r.clone());self.profiles[index].has_runtime_key=true;self.profiles[index].runtime_pending=true;
+            if self.persist().is_err(){self.profiles[index]=old;let _=runtime.delete(&r);return Err("runtime_key_migration_required".into());}
+        }
+        runtime.get(self.profiles[index].runtime_ref.as_ref().unwrap()).map_err(|_|"runtime_key_migration_required")?;
+        bound.external_secret=None;
+        shared.set(&shared_ref,&serde_json::to_string(&bound).unwrap()).map_err(|_|"runtime_key_migration_required")?;
+        self.profiles[index].runtime_pending=false;
+        if self.persist().is_err(){self.profiles[index].runtime_pending=true;return Err("runtime_key_migration_required".into());}Ok(())
+    }
+    pub(crate) fn runtime_key(&mut self,shared:&dyn SecretStore,runtime:&dyn RuntimeVault)->Result<String,String>{
+        self.migrate_runtime(shared,runtime)?;let p=self.status("chatgpt")?;
+        if p.runtime_pending{return Err("runtime_key_migration_required".into());}
+        runtime.get(p.runtime_ref.as_ref().ok_or("runtime_key_required")?)
+    }
+    pub(crate) fn clear_runtime(&mut self,runtime:&dyn RuntimeVault)->Result<(),String>{
+        let index=self.profiles.iter().position(|p|p.client=="chatgpt").unwrap();let old=self.profiles[index].clone();
+        self.profiles[index].tunnel=None;self.profiles[index].has_runtime_key=false;self.profiles[index].runtime_ref=None;self.profiles[index].runtime_pending=false;
+        if let Err(e)=self.persist(){self.profiles[index]=old;return Err(e);}
+        if let Some(r)=old.runtime_ref{runtime.delete(&r)?;}
+        if let Some(previous)=old.tunnel {for path in [previous.profile,previous.health_file]{match std::fs::remove_file(path){Ok(())=>{},Err(e)if e.kind()==std::io::ErrorKind::NotFound=>{},Err(_)=>return Err("tunnel_profile_cleanup_failed".into())}}}Ok(())
     }
 }
 
@@ -274,6 +386,64 @@ pub mod tests {
         let p=s.configure("chatgpt","synthetic-runtime-sentinel","runtime-red",0,&k).unwrap();
         let bound:BoundCredential=serde_json::from_str(&k.get(p.credential_ref.as_ref().unwrap()).unwrap()).unwrap();
         assert!(bound.external_secret.is_none(),"helper-readable payload must not contain the runtime key");
+    }
+    #[derive(Default)]
+    struct MemoryRuntime(Mutex<HashMap<String,String>>);
+    impl RuntimeVault for MemoryRuntime {
+        fn set(&self,r:&RuntimeCredentialRef,key:&str)->Result<(),String>{r.validate()?;self.0.lock().unwrap().insert(r.account.clone(),key.into());Ok(())}
+        fn get(&self,r:&RuntimeCredentialRef)->Result<String,String>{r.validate()?;self.0.lock().unwrap().get(&r.account).cloned().ok_or("runtime_key_unavailable".into())}
+        fn delete(&self,r:&RuntimeCredentialRef)->Result<(),String>{self.0.lock().unwrap().remove(&r.account);Ok(())}
+    }
+    fn config()->TunnelProfile {TunnelProfile{tunnel_id:format!("tunnel_{}","a".repeat(32)),executable:"/synthetic/tunnel-client".into(),profile:"/synthetic/leaf.yaml".into(),health_file:"/synthetic/leaf.health".into(),generation:0,digest:"synthetic-digest".into()}}
+    #[test]
+    fn tunnel_blank_replacement_retains_gui_key_and_masks_reference(){
+        let mut s=store();let shared=MemoryKeyring::default();let runtime=MemoryRuntime::default();
+        s.configure("workbuddy","local","buddy",0,&shared).unwrap();let buddy=s.status("workbuddy").unwrap();
+        assert!(s.configure_tunnel(config(),"","empty",0,&shared,&runtime).is_err());
+        let p=s.configure_tunnel(config(),"synthetic-runtime-sentinel","save",0,&shared,&runtime).unwrap();
+        assert_eq!(s.configure_tunnel(config(),"synthetic-runtime-sentinel","save",0,&shared,&runtime).unwrap(),p);
+        assert!(s.validate_tunnel_operation(&p.tunnel.as_ref().unwrap().tunnel_id,&p.tunnel.as_ref().unwrap().executable,"synthetic-runtime-sentinel","save",0).unwrap());
+        assert!(s.validate_tunnel_operation(&p.tunnel.as_ref().unwrap().tunnel_id,&p.tunnel.as_ref().unwrap().executable,"different-key","save",p.generation).is_err());
+        let original=p.runtime_ref.clone().unwrap();let next=s.configure_tunnel(config(),"   ","replace",p.generation,&shared,&runtime).unwrap();
+        assert_eq!(next.runtime_ref,Some(original.clone()));assert_eq!(runtime.get(&original).unwrap(),"synthetic-runtime-sentinel");
+        assert_eq!(s.status("workbuddy").unwrap(),buddy);
+        let exported=next.masked().to_string();assert!(!exported.contains("runtime-sentinel")&&!exported.contains("runtime_ref")&&!exported.contains("chatgpt-runtime"));assert!(next.has_runtime_key);
+        let forged=CredentialRef{service:original.service.clone(),account:original.account.clone()};assert!(forged.load().is_err());
+        let descriptor=BrokerDescriptor{uri:"http://127.0.0.1:1234/mcp".into(),client:"chatgpt".into(),generation:next.generation,instance:"a".repeat(64),credential_ref:forged};assert!(descriptor.load_token().is_err());
+        assert!(shared.0.lock().unwrap().values().all(|v|!v.contains("runtime-sentinel")));
+        s.clear_runtime(&runtime).unwrap();assert!(runtime.0.lock().unwrap().is_empty());assert_eq!(s.status("workbuddy").unwrap(),buddy);
+    }
+    #[test]
+    fn tunnel_persistence_failure_rolls_back_both_new_entries(){
+        let mut s=store();let shared=MemoryKeyring::default();let runtime=MemoryRuntime::default();let before=s.list();
+        let dir=tempfile::tempdir().unwrap();s.path=Some(dir.path().into());
+        assert!(s.configure_tunnel(config(),"synthetic-runtime-sentinel","save",0,&shared,&runtime).is_err());
+        assert_eq!(s.list(),before);assert!(shared.0.lock().unwrap().is_empty());assert!(runtime.0.lock().unwrap().is_empty());
+    }
+    #[test]
+    fn legacy_migration_preserves_bearer_and_retries_pending_removal(){
+        use std::sync::atomic::{AtomicBool,Ordering};
+        struct RemovalGate<'a>{shared:&'a MemoryKeyring,denied:AtomicBool}
+        impl SecretStore for RemovalGate<'_>{
+            fn set(&self,r:&CredentialRef,s:&str)->Result<(),String>{if self.denied.load(Ordering::SeqCst){Err("credential_unavailable".into())}else{self.shared.set(r,s)}}
+            fn get(&self,r:&CredentialRef)->Result<String,String>{self.shared.get(r)}
+            fn delete(&self,r:&CredentialRef)->Result<(),String>{self.shared.delete(r)}
+        }
+        let mut s=store();let shared=MemoryKeyring::default();let runtime=MemoryRuntime::default();
+        let p=s.configure("chatgpt","broker-only","old",0,&shared).unwrap();let r=p.credential_ref.unwrap();
+        let mut old:BoundCredential=serde_json::from_str(&shared.get(&r).unwrap()).unwrap();old.uri="http://127.0.0.1:1234/mcp".into();old.instance="a".repeat(64);old.external_secret=Some("synthetic-legacy-sentinel".into());shared.set(&r,&serde_json::to_string(&old).unwrap()).unwrap();
+        let gate=RemovalGate{shared:&shared,denied:AtomicBool::new(true)};
+        assert_eq!(s.migrate_runtime(&gate,&runtime),Err("runtime_key_migration_required".into()));assert!(s.status("chatgpt").unwrap().runtime_pending);
+        assert!(s.runtime_key(&gate,&runtime).is_err());assert_eq!(runtime.0.lock().unwrap().len(),1);
+        gate.denied.store(false,Ordering::SeqCst);assert_eq!(s.runtime_key(&gate,&runtime).unwrap(),"synthetic-legacy-sentinel");
+        let migrated:BoundCredential=serde_json::from_str(&shared.get(&r).unwrap()).unwrap();assert!(migrated.external_secret.is_none());assert_eq!((migrated.token,migrated.uri,migrated.instance,migrated.generation),(old.token,old.uri,old.instance,old.generation));assert!(!s.status("chatgpt").unwrap().runtime_pending);
+    }
+    #[test]
+    fn legacy_gui_write_failure_keeps_shared_payload_unchanged(){
+        struct Denied;impl RuntimeVault for Denied{fn set(&self,_:&RuntimeCredentialRef,_:&str)->Result<(),String>{Err("denied".into())}fn get(&self,_:&RuntimeCredentialRef)->Result<String,String>{Err("denied".into())}fn delete(&self,_:&RuntimeCredentialRef)->Result<(),String>{Ok(())}}
+        let mut s=store();let shared=MemoryKeyring::default();let p=s.configure("chatgpt","broker-only","old",0,&shared).unwrap();let r=p.credential_ref.clone().unwrap();
+        let mut old:BoundCredential=serde_json::from_str(&shared.get(&r).unwrap()).unwrap();old.external_secret=Some("synthetic-legacy-sentinel".into());let payload=serde_json::to_string(&old).unwrap();shared.set(&r,&payload).unwrap();
+        assert_eq!(s.migrate_runtime(&shared,&Denied),Err("runtime_key_migration_required".into()));assert_eq!(s.status("chatgpt").unwrap(),p);assert_eq!(shared.get(&r).unwrap(),payload);
     }
     #[test]
     fn identity_order_and_empty_input_are_explicit() {

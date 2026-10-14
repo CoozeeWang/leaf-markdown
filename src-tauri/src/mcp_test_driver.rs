@@ -167,7 +167,7 @@ async fn tunnel_tracer(app:&tauri::AppHandle,label:&str,broker:&super::mcp::Leaf
         let descriptor_path=directory.join("chatgpt.json");
         std::fs::write(&descriptor_path,serde_json::to_vec(&descriptor).unwrap()).map_err(|_|"test descriptor")?;
         std::fs::write(&profile_path,serde_json::to_vec(&json!({"descriptor":descriptor_path,"binding":{"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch},"evidence":evidence})).unwrap()).map_err(|_|"test profile")?;
-        let spec=TunnelLaunchSpec{executable:std::env::current_exe().map_err(|_|"test executable")?,profile:profile_path,generation:1,synthetic:true};
+        let spec=TunnelLaunchSpec{executable:std::env::current_exe().map_err(|_|"test executable")?,profile:profile_path,generation:1,health_file:None,synthetic:true};
         let status=broker.inner.tunnel.lock().unwrap().start(&spec,"synthetic-tunnel-key-sentinel")?;
         for _ in 0..600 {
             if evidence.exists(){break;}
