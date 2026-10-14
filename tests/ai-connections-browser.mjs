@@ -44,6 +44,12 @@ async function nativePage() {
         }
         if (command === 'mcp_tunnel_status') return copy({profile:clients[0],runtime});
         if (command === 'mcp_set_enabled') {aiMock.enabled=args.enabled; if(!args.enabled){clients.forEach(p=>{p.enabled=false;p.generation++;});runtime.process=runtime.local_ready=false;runtime.epoch++;}return copy({enabled:aiMock.enabled,clients});}
+        if (command === 'mcp_authorize') {
+          const binding={document_id:'doc-ui',session_id:args.sessionId,authorization_epoch:2,mutation_generation:0,revision:args.revision};
+          await window.emitNative('leaf-mcp-editor',{call_id:'grant-ui',operation:'binding',args:binding});
+          if(aiMock.grantStale)await window.emitNative('leaf-mcp-editor',{call_id:'retired-grant-ui',operation:'binding',args:{...binding,authorization_epoch:3}});
+          return {...binding,client:args.client,scope:args.scope};
+        }
         const profile = clients.find(p=>p.client===args.client) || clients[0];
         if (command === 'mcp_configure_tunnel') {clients[0].configured=true;clients[0].has_runtime_key=true;clients[0].generation++;clients[0].tunnel={tunnel_id:args.tunnelId,executable:args.executable};runtime.saved_config=runtime.runtime_present=true;runtime.generation=clients[0].generation;runtime.epoch++;return copy({profile:clients[0],runtime});}
         if (command === 'mcp_configure_client') {profile.configured=true;profile.generation++;return copy(profile);}
@@ -70,11 +76,12 @@ try {
     await page.locator('#mcpEnabled').check();
     await page.locator('#aiClient').selectOption('workbuddy');
     await page.locator('#aiLocalConfigure').click();
-    await page.waitForFunction(()=>!document.querySelector('#aiAuthorizeDocument').disabled);
+    await page.waitForFunction(()=>aiMock.clients.find(p=>p.client==='workbuddy').enabled);
     assert.equal(await page.evaluate(()=>aiMock.calls.filter(c=>c.command==='mcp_authorize').length),0);
     assert.equal(await page.locator('#aiDocumentScope').inputValue(),'selection');
     assert.ok(await page.locator('#aiAuthorizeDocument').isDisabled(), 'empty selection must not silently grant the document');
     await page.locator('#aiDocumentScope').selectOption('document');
+    await page.waitForFunction(()=>!document.querySelector('#aiAuthorizeDocument').disabled);
     await page.locator('#aiAuthorizeDocument').click();
     await page.waitForFunction(()=>aiMock.calls.some(c=>c.command==='mcp_authorize'));
     const call=await page.evaluate(()=>aiMock.calls.find(c=>c.command==='mcp_authorize'));
@@ -82,6 +89,11 @@ try {
     assert.equal(call.args.sessionId,'session-ui');
     assert.deepEqual(call.args.scope,{from:0,to:'# Synthetic\n\nUnchanged body.'.length});
     assert.ok(Number.isSafeInteger(call.args.revision));
+    await page.waitForFunction(()=>document.querySelector('#aiDocumentGrantStatus').textContent.includes('WorkBuddy'));
+    await page.evaluate(()=>{aiMock.grantStale=true;});
+    await page.locator('#aiAuthorizeDocument').click();
+    await page.waitForFunction(()=>document.querySelector('#aiConnectionError').textContent.length>0);
+    assert.equal(await page.locator('#aiDocumentGrantStatus').textContent(),'','retired result cannot claim a current grant');
     await page.locator('#mcpEnabled').uncheck();
     assert.ok(await page.locator('#aiAuthorizeDocument').isDisabled());
     await page.close();

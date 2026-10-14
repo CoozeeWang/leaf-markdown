@@ -332,16 +332,21 @@ impl LeafMcpBroker {
         if let Some(error)=value["error"].as_str() {return Err(if value["mutation_state"]=="UNAPPLIED"{format!("unapplied:{error}")}else{error.into()});}Ok(value["result"].clone())
     }
     pub async fn authorize(&self,app:&tauri::AppHandle,label:&str,session:&str,client:&str,scope:Value)->Result<OpenedDocument,String> {
+        self.authorize_snapshot(app,label,session,client,scope,None).await
+    }
+    pub async fn authorize_snapshot(&self,app:&tauri::AppHandle,label:&str,session:&str,client:&str,scope:Value,revision:Option<u64>)->Result<OpenedDocument,String> {
         let _serial=self.inner.queue.lock().await;
+        if !*self.inner.enabled.lock().unwrap(){return Err("connection_disabled".into());}
         if !self.inner.credentials.lock().unwrap().contains_key(client) {return Err("client_unconfigured".into());}
         let mut d=self.inner.registry.lock().unwrap().documents.get(session).cloned().ok_or("stale_session")?;
         if d.label!=label || d.task.is_some() {return Err("document_locked".into());}
         let snapshot=self.bridge(app,label,"snapshot",json!({})).await?;
+        if revision.is_some_and(|r|snapshot["revision"].as_u64()!=Some(r)){return Err("stale_revision".into());}
         let length=snapshot["content"].as_str().ok_or("renderer_snapshot")?.encode_utf16().count() as u64;
         let from=scope["from"].as_u64().ok_or("invalid_scope")?;let to=scope["to"].as_u64().ok_or("invalid_scope")?;
         if from>to||to>length {return Err("invalid_scope".into());}
         d.authorization_epoch+=1;d.client=Some(client.into());d.scope=Some(scope);
-        self.bridge(app,label,"binding",json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch,"mutation_generation":d.mutation_generation})).await?;
+        self.bridge(app,label,"binding",json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch,"mutation_generation":d.mutation_generation,"revision":snapshot["revision"]})).await?;
         self.inner.registry.lock().unwrap().documents.insert(session.into(),d.clone());Ok(d)
     }
     fn document(&self,app:&tauri::AppHandle,client:&str,args:&Value)->Result<OpenedDocument,String> {
@@ -770,7 +775,7 @@ pub fn mcp_renderer_reply(window:tauri::WebviewWindow,broker:tauri::State<LeafMc
     let (_,tx)=pending.remove(&call_id).unwrap();let _=tx.send(reply);Ok(())
 }
 #[tauri::command]
-pub async fn mcp_authorize(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,session_id:String,client:String,scope:Value)->Result<OpenedDocument,String> {broker.authorize(&app,window.label(),&session_id,&client,scope).await}
+pub async fn mcp_authorize(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,session_id:String,client:String,scope:Value,revision:u64)->Result<OpenedDocument,String> {broker.authorize_snapshot(&app,window.label(),&session_id,&client,scope,Some(revision)).await}
 
 #[tauri::command]
 pub async fn mcp_stop_edit(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,task_id:String)->Result<Value,String>{broker.stop_from_leaf(&app,window.label(),&task_id).await}

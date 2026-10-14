@@ -274,6 +274,13 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <label class="setting-check ai-master"><input id="mcpEnabled" type="checkbox" disabled>${h('ai.master')}</label>
         <p class="setting-hint">${h('ai.access_boundary')}</p>
         <label class="setting-row ai-client-row"><span>${h('ai.client')}</span><span class="ui-select"><select id="aiClient"><option value="chatgpt">ChatGPT</option><option value="claude-desktop">Claude Desktop</option><option value="workbuddy">WorkBuddy</option></select>${icon('chevron',16)}</span></label>
+        <div class="ai-document-access">
+          <p id="aiDocumentTarget" class="setting-hint"></p>
+          <label class="setting-row"><span>${h('ai.document_scope')}</span><span class="ui-select"><select id="aiDocumentScope"><option value="selection">${h('ai.scope_selection')}</option><option value="document">${h('ai.scope_document')}</option></select>${icon('chevron',16)}</span></label>
+          <p class="setting-hint">${h('ai.document_access_help')}</p>
+          <button id="aiAuthorizeDocument" class="ai-button" disabled></button>
+          <p id="aiDocumentGrantStatus" class="setting-hint" role="status"></p>
+        </div>
         <div class="ai-actions"><span id="aiConfigured" class="ai-badge" role="status"></span><button id="aiClear" class="ai-button ai-danger" disabled></button></div>
         <p id="aiConnectionError" class="setting-hint ai-error" role="alert"></p>
         <div id="aiLocalSetup" hidden><p id="aiLocalInstructions" class="setting-hint"></p><div class="ai-actions"><button id="aiLocalConfigure" class="ai-button">${h('ai.prepare')}</button><button id="aiCopyConfig" class="ai-button" disabled>${h('ai.copy_config')}</button></div><pre id="aiExported" hidden></pre></div>
@@ -989,6 +996,7 @@ const editor = createLeafEditor({
       notice.querySelector('button').disabled=false;
     }
     updateHistoryControls();
+    queueMicrotask(renderAiDocumentGrant);
   },
   onChange(content, labels) {
     for (const card of notesList.querySelectorAll('.note-card')) {
@@ -1880,8 +1888,32 @@ function renderAiConnections() {
   aiNode('aiAddChatGPT').disabled = value.busy || !runtime?.local_ready || value.editing;
   aiNode('aiCopyTunnel').disabled = value.busy || !chatgpt?.tunnel?.tunnel_id || value.editing;
   aiNode('aiMacHelp').hidden = value.platform && value.platform.os !== 'macos';
+  renderAiDocumentGrant();
   requestAnimationFrame(updateAppearanceScrollHint);
 }
+function renderAiDocumentGrant() {
+  const opened = desktop && welcomeScreen.hidden && !!mcpBinding;
+  const snapshot = opened ? editor.mcpSnapshot() : null;
+  const profile = aiConnection.profiles?.clients.find(p=>p.client===aiConnection.selected);
+  const client = aiClientNames[aiConnection.selected];
+  aiNode('aiDocumentTarget').textContent = opened ? t('ai.document_target',{client,file:state.fileName}) : t('ai.document_none');
+  aiNode('aiDocumentScope').disabled = !opened || aiConnection.busy || !!editor.aiTask();
+  aiNode('aiAuthorizeDocument').textContent = t('ai.authorize_document',{client});
+  aiNode('aiAuthorizeDocument').disabled = !opened || aiConnection.busy || !aiConnection.profiles?.enabled || !profile?.enabled || !!editor.aiTask() || (aiNode('aiDocumentScope').value==='selection' && snapshot.selection.from===snapshot.selection.to);
+  const grant=aiConnection.authorization;
+  aiNode('aiDocumentGrantStatus').textContent = grant && opened && aiConnection.profiles?.enabled && profile?.enabled && grant.session_id===mcpBinding.session_id && grant.authorization_epoch===mcpBinding.authorization_epoch && grant.client===aiConnection.selected ? t('ai.document_authorized',{client,file:state.fileName,scope:t(grant.scopeKind==='selection'?'ai.scope_selection':'ai.scope_document')}) : '';
+}
+aiNode('aiDocumentScope').onchange = renderAiDocumentGrant;
+aiNode('aiAuthorizeDocument').onclick = () => {
+  if(aiNode('aiAuthorizeDocument').disabled)return;
+  const binding={...mcpBinding}, snapshot=editor.mcpSnapshot(), client=aiConnection.selected, scopeKind=aiNode('aiDocumentScope').value;
+  const scope=scopeKind==='selection'?{...snapshot.selection}:{from:0,to:snapshot.content.length};
+  void runAiAction(async()=>{
+    const result=await invoke('mcp_authorize',{sessionId:binding.session_id,client,scope,revision:snapshot.revision});
+    if(result.document_id!==binding.document_id || result.session_id!==binding.session_id || mcpBinding?.session_id!==binding.session_id || mcpBinding?.document_id!==binding.document_id || mcpBinding.authorization_epoch!==result.authorization_epoch || editor.mcpSnapshot().revision!==snapshot.revision)throw new Error('stale_authorization');
+    aiConnection.authorization={...result,scopeKind};
+  });
+};
 function restoreAiFields() {
   const config = aiConnection.tunnel?.profile.tunnel;
   aiNode('aiTunnelId').value = config?.tunnel_id || '';
@@ -2522,7 +2554,7 @@ if (desktop) {
         if(operation==='snapshot')result=editor.mcpSnapshot();
         else if(operation==='reader_snapshot')result={...editor.mcpSnapshot(),name:state.fileName,saved:state.savedContent===editor.getValue(),language:currentLanguage(),theme:currentTheme()};
         else if(operation==='comment_query')result=await handleMcpCommentQuery(args);
-        else if(operation==='binding'){mcpBinding=args;mutationGeneration++;result=editor.mcpSnapshot();}
+        else if(operation==='binding'){if(args.revision!==undefined&&args.revision!==editor.mcpSnapshot().revision)throw new Error('stale_revision');mcpBinding=args;mutationGeneration++;result=editor.mcpSnapshot();renderAiDocumentGrant();}
         else if(operation==='begin'){if(desktopFileState()?.paused)throw new Error('document_conflict_pending');result=editor.beginAiTask(args);mcpBinding=args;}
         else if(operation==='apply') {
           if(testMode && args.test_fault==='before-dispatch')throw new Error('test_before_dispatch');
@@ -2578,7 +2610,17 @@ if (desktop) {
             while(aiConnection.busy) await new Promise(resolve=>setTimeout(resolve,10));
             result={key_empty:aiNode('aiRuntimeKey').value==='',focus:document.activeElement.id};
           }
-          else if(args.action==='selection') editor.view.dispatch({selection:{anchor:args.anchor}});
+          else if(args.action==='selection') editor.view.dispatch({selection:{anchor:args.anchor,head:args.head??args.anchor}});
+          else if(args.action==='ai-settings-authorize') {
+            openSettings('ai');await refreshAiConnections();
+            aiNode('aiClient').value=args.client;aiNode('aiClient').dispatchEvent(new Event('change'));
+            aiNode('aiDocumentScope').value=args.scope_kind || 'document';aiNode('aiDocumentScope').dispatchEvent(new Event('change'));
+            if(aiNode('aiAuthorizeDocument').disabled)throw new Error('native_ui_authorize_disabled');
+            aiNode('aiAuthorizeDocument').click();
+            while(aiConnection.busy)await new Promise(resolve=>setTimeout(resolve,10));
+            if(aiNode('aiConnectionError').textContent)throw new Error('native_ui_authorize_failed');
+            result={...mcpBinding,status:aiNode('aiDocumentGrantStatus').textContent};
+          }
           else if(args.action==='delay-attachment') {
             let release;const promise=new Promise(resolve=>{release=resolve;});
             nativeTestDelay={promise,release,started:false};

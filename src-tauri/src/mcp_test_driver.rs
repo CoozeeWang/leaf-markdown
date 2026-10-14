@@ -261,9 +261,39 @@ async fn connections_ui(app:&tauri::AppHandle,label:&str,broker:&super::mcp::Lea
         ensure(state["key_empty"]==true&&state["master"]==true,"actual settings submit clears input and enables master after IPC")?;
         ensure(broker.client_profiles()?.iter().all(|p|p.configured&&p.has_runtime_key==(p.client=="chatgpt")),"actual UI configures three independent native profiles")?;
         ensure(state["state"]=="stopped"&&state["configured_badges"]==3,"saved native Tunnel config does not claim connected")?;
+        // This proof grants through the ordinary production settings control,
+        // then calls the actual standard MCP transport; the driver never grants.
+        use rmcp::{ServiceExt,transport::{StreamableHttpClientTransport,streamable_http_client::StreamableHttpClientTransportConfig}};
+        let token=broker.inner.credentials.lock().unwrap().get("workbuddy").cloned().ok_or("UI client credential")?;
+        let port=broker.serve_http(app.clone(),"workbuddy".into(),token.clone()).await?;
+        let client=().serve(StreamableHttpClientTransport::from_config(StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp")).auth_header(token).reinit_on_expired_session(false))).await.map_err(|_|"UI standard client initialize")?;
+        ensure(tool(&client,"list_documents",json!({})).await?["documents"].as_array().unwrap().is_empty(),"configured client has no document access before explicit UI grant")?;
+        let snapshot=broker.bridge(app,label,"test",json!({"action":"reset","content":"Synthetic grant"})).await?;
+        let own=broker.window_binding(label).ok_or("UI document binding")?;
+        ensure(broker.authorize_snapshot(app,label,&own.session_id,"workbuddy",json!({"from":0,"to":15}),Some(snapshot["revision"].as_u64().unwrap()+1)).await.is_err(),"stale user grant revision fails closed")?;
+        broker.bridge(app,label,"test",json!({"action":"selection","anchor":0,"head":9})).await?;
+        let selected=broker.bridge(app,label,"test",json!({"action":"ai-settings-authorize","client":"workbuddy","scope_kind":"selection"})).await?;
+        let selected_binding=json!({"document_id":selected["document_id"],"session_id":selected["session_id"],"authorization_epoch":selected["authorization_epoch"]});
+        ensure(tool(&client,"read_document",selected_binding.clone()).await?["content"]=="Synthetic","explicit UI selection exposes only its granted text")?;
+        let mut outside=selected_binding.clone();outside["from"]=json!(0);outside["to"]=json!(15);
+        ensure(tool(&client,"read_document",outside).await.is_err(),"UI selection cannot read outside scope")?;
+        let granted=broker.bridge(app,label,"test",json!({"action":"ai-settings-authorize","client":"workbuddy"})).await?;
+        ensure(tool(&client,"read_document",selected_binding).await.is_err(),"explicit replacement grant retires the prior scope epoch")?;
+        ensure(granted["status"].as_str().is_some_and(|s|s.contains("WorkBuddy")),"actual UI reports the explicit current-document client grant")?;
+        let binding=json!({"document_id":granted["document_id"],"session_id":granted["session_id"],"authorization_epoch":granted["authorization_epoch"]});
+        ensure(tool(&client,"list_documents",json!({})).await?["documents"].as_array().unwrap().len()==1,"actual UI grant discovers only this open document")?;
+        let read=tool(&client,"read_document",binding.clone()).await?;ensure(read["content"]=="Synthetic grant","actual UI grant reads the unsaved renderer buffer")?;
+        let mut begin=binding.clone();begin["request_id"]=json!("ui-grant-begin");begin["revision"]=read["revision"].clone();
+        let task=tool(&client,"begin_edit",begin).await?;
+        let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!("ui-grant-batch");batch["revision"]=read["revision"].clone();batch["changes"]=json!([{"from":0,"to":9,"expected":"Synthetic","insert":"Updated"}]);
+        tool(&client,"apply_edit_batch",batch).await?;
+        ensure(tool(&client,"read_document",binding.clone()).await?["content"]=="Updated grant","explicit UI permission reaches production edits")?;
+        let mut end=binding;end["task_id"]=task["task_id"].clone();tool(&client,"finish_edit",end).await?;
+        ensure(broker.bridge(app,label,"test",json!({"action":"undo"})).await?["content"]=="Synthetic grant","UI authorized task has one undo")?;
+        let _=client.cancel().await;
         let cleared=broker.bridge(app,label,"test",json!({"action":"ai-settings-clear"})).await?;
         let profiles=broker.client_profiles()?;
-        ensure(!profiles[0].configured&&profiles[1].configured&&profiles[2].configured,"actual UI clear keeps other native clients")?;
+        ensure(profiles[0].configured&&profiles[1].configured&&!profiles[2].configured,"actual UI clear keeps other native clients")?;
         ensure(cleared["focus"]=="aiClient"&&cleared["key_empty"]==true,"actual native confirmation restores usable focus and no secret")?;
         Ok(())
     }.await;

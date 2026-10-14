@@ -806,5 +806,13 @@
   "ai.task_stopping": "正在結束編輯，等待目前批次完成",
   "ai.task_ended": "輔助編輯已結束，保留已套用的修改；儲存狀態見底列",
   "ai.stop_failed": "無法結束編輯，請重試；文件仍暫時唯讀",
-  "ai.task_pending_save": "修改已套用至文件，但尚未儲存。請查看儲存提示。"
+  "ai.task_pending_save": "修改已套用至文件，但尚未儲存。請查看儲存提示。",
+  "ai.document_scope": "文件授權範圍",
+  "ai.scope_selection": "目前選取範圍",
+  "ai.scope_document": "整份目前文件",
+  "ai.document_target": "授權對象：{{client}} · {{file}}",
+  "ai.document_none": "先開啟或新增文件，再選擇授權範圍。",
+  "ai.document_access_help": "只授權目前文件的所選範圍，包含尚未儲存的內容。授權後，該 AI 可讀取並輔助編輯；文字會傳送至其服務。更換用戶端需要重新授權。",
+  "ai.authorize_document": "授權目前文件給 {{client}}",
+  "ai.document_authorized": "已授權 {{client}}：{{file}} · {{scope}}。"
 }

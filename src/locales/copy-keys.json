@@ -792,5 +792,13 @@
   "AI0070": "ai.task_stopping",
   "AI0071": "ai.task_ended",
   "AI0072": "ai.stop_failed",
-  "AI0073": "ai.task_pending_save"
+  "AI0073": "ai.task_pending_save",
+  "AI0074": "ai.document_scope",
+  "AI0075": "ai.scope_selection",
+  "AI0076": "ai.scope_document",
+  "AI0077": "ai.document_target",
+  "AI0078": "ai.document_none",
+  "AI0079": "ai.document_access_help",
+  "AI0080": "ai.authorize_document",
+  "AI0081": "ai.document_authorized"
 }

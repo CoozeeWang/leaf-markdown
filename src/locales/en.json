@@ -806,5 +806,13 @@
   "ai.task_stopping": "Ending editing after the current batch",
   "ai.task_ended": "Editing ended. Applied changes remain; see the bottom bar for save status",
   "ai.stop_failed": "Could not end editing. Try again; the document remains read-only",
-  "ai.task_pending_save": "Changes are applied to the document but are not saved yet. Check the save notice."
+  "ai.task_pending_save": "Changes are applied to the document but are not saved yet. Check the save notice.",
+  "ai.document_scope": "Document access scope",
+  "ai.scope_selection": "Current selection",
+  "ai.scope_document": "Entire current document",
+  "ai.document_target": "Access for: {{client}} · {{file}}",
+  "ai.document_none": "Open or create a document, then choose its access scope.",
+  "ai.document_access_help": "Grant access only to the selected scope of this document, including unsaved text. This AI can then read and assist with editing; text is sent to its service. Changing clients requires a new grant.",
+  "ai.authorize_document": "Authorize this document for {{client}}",
+  "ai.document_authorized": "Authorized {{client}}: {{file}} · {{scope}}."
 }

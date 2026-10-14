@@ -806,5 +806,13 @@
   "ai.task_stopping": "正在结束编辑，等待当前批次完成",
   "ai.task_ended": "辅助编辑已结束，保留已应用的修改；保存状态见底栏",
   "ai.stop_failed": "未能结束编辑，请重试；文档仍暂时只读",
-  "ai.task_pending_save": "修改已应用到文档，但尚未保存。请查看保存提示。"
+  "ai.task_pending_save": "修改已应用到文档，但尚未保存。请查看保存提示。",
+  "ai.document_scope": "文档授权范围",
+  "ai.scope_selection": "当前选区",
+  "ai.scope_document": "整个当前文档",
+  "ai.document_target": "授权对象：{{client}} · {{file}}",
+  "ai.document_none": "先打开或新建文档，再选择授权范围。",
+  "ai.document_access_help": "只授权当前文档的所选范围，包含未保存的内容。授权后，该 AI 可读取和辅助编辑；文本会发送到其服务。更换客户端需要重新授权。",
+  "ai.authorize_document": "授权当前文档给 {{client}}",
+  "ai.document_authorized": "已授权 {{client}}：{{file}} · {{scope}}。"
 }
