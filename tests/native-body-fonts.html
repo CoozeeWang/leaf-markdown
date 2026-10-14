@@ -1,0 +1,49 @@
+<!doctype html><html lang="zh-Hans"><meta charset="utf-8"><div id="app"></div><script type="module">
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+const check = (condition, message) => { if (!condition) throw Error(message); };
+window.startTest = async () => {
+ try {
+  localStorage.setItem('leaf-body-fonts-v1', JSON.stringify({ zh:'songti', en:'palatino' }));
+  await import('/src/main.js');
+  for (let i=0; i<150 && !document.querySelector('.shell[data-body-fonts]'); i++) await wait(20);
+  const shell=document.querySelector('.shell');
+  check(shell.dataset.bodyFonts==='ready','native font checks did not complete');
+  check(!document.querySelector('#chineseFontSelect option[value="songti"]').disabled,'native Songti face unavailable');
+  check(!document.querySelector('#englishFontSelect option[value="palatino"]').disabled,'native Palatino face unavailable');
+  document.querySelector('#welcomeNewButton').click();
+  const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');
+  const {undoDepth}=await import('/node_modules/@codemirror/commands/dist/index.js');
+  const view=EditorView.findFromDOM(document.querySelector('.editor-host .cm-content'));
+  const sample='# Native sample\n\n中文与 English 123。 **Bold** and *italic*.\n\n`code`';
+  view.dispatch({changes:{from:0,to:view.state.doc.length,insert:sample}});
+  await wait(120);
+  const depth=undoDepth(view.state);
+  const heading=getComputedStyle(document.querySelector('.cm-leaf-heading')).fontFamily;
+  const select=document.querySelector('#englishFontSelect');
+  const trigger=document.querySelector('#englishFontSelectButton');
+  document.querySelector('#appearanceButton').click(); trigger.click();
+  check(document.activeElement===trigger,'native font picker did not take keyboard focus');
+  trigger.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));
+  trigger.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+  check(!document.querySelector('#appearancePopover').hidden && trigger.getAttribute('aria-expanded')==='false','native font Escape closed settings');
+  trigger.click();document.querySelector('#englishFontSelectList [data-font-id="georgia"]').click();
+  check(!document.querySelector('.body-font-preview'),'native fixed font sample remained');
+  document.querySelector('#settingsClose').click();
+  await wait(120);
+  check(view.state.doc.toString()===sample && undoDepth(view.state)===depth,'font selection changed native document/history');
+  const stack=getComputedStyle(view.scrollDOM).fontFamily;
+  check(stack.includes('Leaf Body en georgia') && stack.includes('Leaf Body zh songti'),'native mixed font stack incorrect');
+  check(getComputedStyle(document.querySelector('.cm-leaf-heading')).fontFamily===heading,'native heading changed');
+  check(Array.from(document.fonts).some(face=>face.family==='Leaf Body en georgia' && face.style==='italic' && face.status==='loaded'),'native real italic face missing');
+  check(JSON.parse(localStorage.getItem('leaf-body-fonts-v1')).zh==='songti','native Chinese selection was overwritten');
+  document.querySelector('#readingToggle').click(); document.querySelector('[data-mode="reading"]').click();
+  await wait(120);
+  check(getComputedStyle(document.querySelector('.reading-document > p')).fontFamily===stack,'native reading/edit fonts differ');
+  document.querySelector('#readingToggle').click(); document.querySelector('[data-mode="source"]').click();
+  await wait(120);
+  check(getComputedStyle(view.contentDOM).fontFamily.includes('monospace'),'native source no longer monospace');
+  document.title='LeafTest PASS native local Chinese/English fonts, genuine styles, preferences, read/source and untouched history';
+ } catch(error) { document.title='LeafTest FAIL '+error.message; }
+};
+document.title='LeafSource';
+</script></html>

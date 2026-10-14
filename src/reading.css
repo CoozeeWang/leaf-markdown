@@ -14,6 +14,7 @@
 .reading-document { max-width:calc(var(--content-width) + 64px); margin:0 auto; padding:36px 32px 100px; color:var(--text); font:var(--editor-font-size)/1.85 var(--ui-font); overflow-wrap:anywhere; user-select:text; }
 .shell[data-font="serif"] .reading-document { font-family:Georgia,"Songti SC",serif; }
 .shell[data-font="mono"] .reading-document { font-family:var(--ui-mono); }
+.shell[data-body-fonts] .reading-document { font-family:var(--body-font); }
 .reading-document :is(h1,h2,h3,h4,h5,h6) { font-family:var(--ui-font); line-height:1.45; margin:calc(var(--editor-font-size) * .7) 0; font-weight:600; scroll-margin-top:32px; }
 .reading-document > :first-child { margin-top:0; }
 .reading-document h1 { color:var(--heading-primary); font-size:1.76em; }
