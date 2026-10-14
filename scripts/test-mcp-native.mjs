@@ -17,6 +17,14 @@ if (mode==='chatgpt-tunnel-contract') {
     const run=spawnSync('cargo',['test','--locked','--manifest-path','src-tauri/Cargo.toml','--bin','leaf','runtime_key_is_not_helper_payload','--','--test-threads=1'],{env:{...process.env,PATH:`${homedir()}/.cargo/bin:${process.env.PATH}`},encoding:'utf8'});
     assert.equal(run.status,0,run.stdout+run.stderr);
   });
+} else if(mode==='chatgpt-tunnel-stage-contract') {
+  await test('Dev staging reports matching native GUI and helper build identities',async()=>{
+    const source=resolve(import.meta.dirname,'../src-tauri/target/debug/leaf');
+    const helper=resolve(import.meta.dirname,'../src-tauri/target/debug/leaf-mcp-adapter');
+    const staged=await stageDevBundle({source,helper,test:true});
+    assert.equal(typeof staged.gui_build_identity,'string','actual staged GUI identity must be reported');
+    assert.equal(staged.gui_build_identity,staged.helper_build_identity,'actual helper must share the GUI build identity');
+  });
 } else {
 assert(['chatgpt-tunnel-tracer','tracer','task-history-gate','renderer-ack-loss','all-write-entrances','stop-late-second-window','properties-markdown','footnotes-tables','file-identity-conflict'].includes(mode));
 const root=resolve(import.meta.dirname,'..');
