@@ -39,3 +39,15 @@ test('zero-edit AI receipts do not write or checkpoint', async () => {
   assert.equal(session.aiEditResult.diskResult.state,'unchanged');
   assert.equal(writes,0);assert.equal(checkpoints,0);
 });
+
+test('external disk change stops AI and pauses autosave while retaining both drafts', async () => {
+  let content='original',active=true,stops=0,writes=0;const checkpoints=[];
+  const session=createDocumentSession({content:()=>content,load:async c=>{content=c;},status:()=>{},aiActive:()=>active,aiConflict:async()=>{active=false;stops++;},checkpoint:async c=>checkpoints.push(c),observe:async()=>({path:'/synthetic.md',content:'external draft'}),write:async()=>writes++,saved:()=>{}});
+  await session.initialize('/synthetic.md','original');content='AI draft';session.edited();
+  await session.poll();
+  assert.equal(active,false,'external observer must finalize AI before another automatic write');
+  assert.equal(session.paused,true);
+  assert.equal(content,'AI draft');assert(checkpoints.includes('AI draft'));
+  assert.equal(await session.save({manual:false}),false);assert.equal(writes,0);
+  await session.poll();assert.equal(stops,1,'duplicate conflict cannot checkpoint or stop twice');
+});
