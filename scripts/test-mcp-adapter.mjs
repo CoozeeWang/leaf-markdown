@@ -1,9 +1,111 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import { tmpdir, homedir } from 'node:os';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 
-await test('packaged Rust console helper provides standard MCP stdio', () => {
-  const binary = resolve('src-tauri/target/debug/leaf-mcp-adapter' + (process.platform === 'win32' ? '.exe' : ''));
-  assert.equal(existsSync(binary), true, 'independent console helper must be built');
+const root = resolve(import.meta.dirname, '..');
+const mode = process.argv[2] || 'stdio-and-origin';
+assert(['stdio-and-origin', 'packaged'].includes(mode));
+const directory = await mkdtemp(join(tmpdir(), 'leaf-adapter-native-'));
+const env = { ...process.env, PATH: `${homedir()}/.cargo/bin:${process.env.PATH}`, LEAF_MCP_TEST_DIR: directory, LEAF_MCP_TEST_MODE: 'tracer', LEAF_MCP_ADAPTER_TEST: '1' };
+const processes = [];
+function start(command, args, options = {}) {
+  const child = spawn(command, args, { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'], ...options });
+  processes.push(child); return child;
+}
+function completed(child) { return new Promise((res, rej) => { child.on('error', rej); child.on('exit', code => code === 0 ? res() : rej(new Error(`build exited ${code}`))); }); }
+async function build(args) { const child = start(process.execPath, ['node_modules/@tauri-apps/cli/tauri.js', 'build', ...args]); child.stdout.pipe(process.stdout); child.stderr.pipe(process.stderr); await completed(child); }
+async function waitJson(name, timeout = 65000) {
+  const until = Date.now() + timeout;
+  while (Date.now() < until) { try { return JSON.parse(await readFile(join(directory, name), 'utf8')); } catch {} await new Promise(r => setTimeout(r, 100)); }
+  throw new Error(`native evidence missing: ${name}`);
+}
+function helper(binary, descriptor) {
+  // Runtime proof: the executable receives no system Node/Python/Cargo PATH.
+  const child = start(binary, ['--descriptor', descriptor], { cwd: directory, env: { ...process.env, PATH: '/no-development-runtimes', LEAF_MCP_TEST_TRACE: join(directory, 'helper-stage') } });
+  const pending = new Map(); let next = 1; let stderr = '';
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  createInterface({ input: child.stdout }).on('line', line => {
+    let value; try { value = JSON.parse(line); } catch { for (const p of pending.values()) p.reject(new Error('non-protocol stdout')); return; }
+    if (value.id != null) pending.get(value.id)?.resolve(value);
+  });
+  child.on('exit', async () => { const stage=await readFile(join(directory,'helper-stage'),'utf8').catch(()=>'startup');for (const p of pending.values()) p.reject(new Error(`helper unavailable: ${stderr.trim()}; ${stage}`)); });
+  return { child, stderr: () => stderr, async request(method, params = {}) {
+    const id = next++;
+    return await new Promise((resolve, reject) => {
+      const timeout = setTimeout(async () => { pending.delete(id); const stage=await readFile(join(directory, 'helper-stage'), 'utf8').catch(()=>'startup');reject(new Error(`MCP request timed out: ${method}; ${stage}; ${stderr}`)); }, process.env.LEAF_MCP_ALLOW_INTERACTION ? 300000 : 12000);
+      pending.set(id, { resolve: value => { clearTimeout(timeout); pending.delete(id); resolve(value); }, reject: e => { clearTimeout(timeout); pending.delete(id); reject(e); } });
+      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+    });
+  }, notify(method) { child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method }) + '\n'); } };
+}
+async function initialize(h) {
+  const result = await h.request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'Synthetic adapter probe', version: '1.0.0' } });
+  assert(result.result?.capabilities?.tools, 'standard initialize must negotiate tools'); h.notify('notifications/initialized');
+}
+await test('standard MCP adapter with actual native keyring and broker', async () => {
+try {
+  let binaries;let appExecutable=resolve(root,'src-tauri/target/debug/leaf');
+  if(mode!=='packaged'&&!process.argv.includes('--reuse-build')) await build(['--debug','--no-bundle','--features','native-smoke','--config','src-tauri/tauri.mcp-test.conf.json']);
+  if (mode === 'packaged') {
+    assert.equal(existsSync(resolve(root, '.cache/mcp-adapter/artifacts.json')), true, 'actual Tauri bundle and MCPB artifacts must be produced');
+    let manifest = JSON.parse(await readFile(resolve(root, '.cache/mcp-adapter/artifacts.json'), 'utf8'));
+    if(!manifest.testBundle) {
+      const {producePackages}=await import('./build-mcp-adapter.mjs');await producePackages({testBundle:true});
+      manifest=JSON.parse(await readFile(resolve(root,'.cache/mcp-adapter/artifacts.json'),'utf8'));
+    }
+    assert.equal(existsSync(manifest.appHelper), true, 'actual Tauri app bundle must contain helper');
+    assert.equal(existsSync(manifest.mcpbHelper), true, 'unpacked MCPB must contain helper');
+    assert.equal(manifest.workbuddy.command, manifest.appHelper, 'WorkBuddy export must use installed bundle helper');
+    assert.equal(manifest.testBundle,true,'packaged native proof requires the isolated test bundle');
+    appExecutable=manifest.appExecutable;
+    binaries = [manifest.appHelper, manifest.mcpbHelper];
+  } else {
+    const binary = resolve(root, 'src-tauri/target/debug/leaf-mcp-adapter' + (process.platform === 'win32' ? '.exe' : ''));
+    assert(existsSync(binary)); binaries = [binary];
+  }
+  const server = start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '41731', '--strictPort']);
+  for (let i = 0; i < 100; i++) { try { if ((await fetch('http://127.0.0.1:41731')).ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
+  const app = start(appExecutable, []);
+  app.stderr.on('data', chunk => process.stderr.write(chunk));
+  const ready = await waitJson('adapter-ready.json');
+  const clients = [];
+  for (const binary of binaries) {
+    const h = helper(binary, ready.descriptor); clients.push(h); await initialize(h);
+    await test(`native stdio read and discovery from ${mode === 'packaged' ? (clients.length === 1 ? 'Tauri app bundle' : 'unpacked MCPB') : 'Rust helper'}`, async () => {
+      const tools = await h.request('tools/list'); assert(tools.result.tools.some(t => t.name === 'read_document'));
+      const read = await h.request('tools/call', { name: 'read_document', arguments: ready.binding }); assert.equal(read.result.structuredContent.content, 'synthetic alpha omega');
+      const resources = await h.request('resources/list'); assert.equal(resources.result.resources.length, 1);
+      const resource = await h.request('resources/read', { uri: resources.result.resources[0].uri }); assert.equal(resource.result.contents[0].text, 'synthetic alpha omega');
+      assert.equal(h.stderr(), '', 'no diagnostic or credential output');
+    });
+  }
+  const other = helper(binaries[0], ready.other_descriptor); await initialize(other);
+  const descriptor = JSON.parse(await readFile(ready.descriptor, 'utf8'));
+  await test('loopback rejects an unapproved Origin', async () => {
+    const response = await fetch(descriptor.uri, { method: 'POST', headers: { Origin: 'https://untrusted.invalid', 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'Untrusted', version: '1' } } }) });
+    assert([401, 403].includes(response.status));
+  });
+  await writeFile(join(directory, 'race'), ''); await waitJson('adapter-revoked.json');
+  await test('atomic revoke rejects old helper and keeps the other client enabled', async () => {
+    const read = await clients[0].request('tools/call', { name: 'read_document', arguments: ready.binding }); assert(read.error || read.result?.isError);
+    const unaffected = await other.request('tools/call', { name: 'list_documents', arguments: {} }); assert.equal(unaffected.result.isError, false);
+    const stale = helper(binaries[0], ready.descriptor); await assert.rejects(initialize(stale));
+  });
+  await writeFile(join(directory, 'disabled'), ''); await waitJson('adapter-disabled.json');
+  await test('global disable rejects remaining client calls', async () => { const reply = await other.request('tools/call', { name: 'list_documents', arguments: {} }); assert(reply.error || reply.result?.isError); });
+  for (const h of [...clients, other]) h.child.stdin.end();
+  await writeFile(join(directory, 'done'), ''); const report = await waitJson('adapter-result.json'); assert.equal(report.pass, true, report.failure);
+} finally {
+  const acl=await readFile(join(directory,'acl-effective.json'),'utf8').catch(()=>null);
+  if(acl) console.log(`Effective synthetic entry ACL: ${acl}`);
+  await writeFile(join(directory, 'abort'), '');
+  if (existsSync(join(directory, 'adapter-ready.json'))) {try {await waitJson('adapter-result.json', 5000);}catch{}}
+  for (const child of processes) if (child.exitCode === null) child.kill('SIGTERM');
+  await new Promise(r => setTimeout(r, 300)); await rm(directory, { recursive: true, force: true });
+}
 });
