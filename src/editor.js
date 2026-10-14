@@ -85,20 +85,21 @@ const headingNumbers = StateField.define({
 });
 
 class InlinePreview extends WidgetType {
-  constructor(from, text, { rule = false, title = '', footnotes = null, signature = '', note = null } = {}) {
+  constructor(from, text, { rule = false, title = '', footnotes = null, signature = '', note = null, commentId = '', commentActive = false } = {}) {
     super();
     this.from = from; this.text = text; this.rule = rule; this.title = title;
     this.footnotes = footnotes; this.signature = signature; this.note = note;
+    this.commentId = commentId; this.commentActive = commentActive;
   }
   // Rendered widgets are compared by value, and a citation's number is not part
   // of its source text: without the signature, adding or removing a definition
   // elsewhere would leave the marker printed with its old number.
   eq(other) {
-    return this.from === other.from && this.text === other.text && this.rule === other.rule && this.title === other.title && this.signature === other.signature && this.note === other.note;
+    return this.from === other.from && this.text === other.text && this.rule === other.rule && this.title === other.title && this.signature === other.signature && this.note === other.note && this.commentId === other.commentId && this.commentActive === other.commentActive;
   }
   updateDOM(span) {
     const old = span._preview;
-    if (!old || this.text !== old.text || this.rule !== old.rule || this.title !== old.title || this.signature !== old.signature || this.note !== old.note) return false;
+    if (!old || this.text !== old.text || this.rule !== old.rule || this.title !== old.title || this.signature !== old.signature || this.note !== old.note || this.commentId !== old.commentId || this.commentActive !== old.commentActive) return false;
     span._preview = this;
     return true;
   }
@@ -108,6 +109,7 @@ class InlinePreview extends WidgetType {
     if (this.rule) { span.className = 'leaf-rule'; span.setAttribute('role', 'separator'); }
     else {
       renderInline(span, this.text, this.footnotes && { ...this.footnotes, seen: new Map() });
+      if(this.commentId){span.className='leaf-comment-range'+(this.commentActive?' active':'');span.dataset.commentId=this.commentId;}
       if (this.title) {
         if (span.querySelector('.leaf-image')) {
           span.dataset.tooltip = this.title;
@@ -118,7 +120,9 @@ class InlinePreview extends WidgetType {
     }
     span.addEventListener('mousedown', event => {
       if (event.button !== 0) return;
-      event.preventDefault(); view.dispatch({ selection: { anchor: span._preview.from } }); view.focus();
+      event.preventDefault();
+      if(span._preview.commentId)return;
+      view.dispatch({ selection: { anchor: span._preview.from } }); view.focus();
       // A marker stands for a note: clicking it takes the reader to that note in
       // the notes panel, the way a printed footnote sends you to the foot of the
       // page, instead of leaving the caret on a label with nothing to edit.
@@ -404,6 +408,7 @@ function livePreviewDecorations(view) {
     enter(node) {
       if (node.from < suppressUntil) return false;
       const annotations=view.state.field(commentIndex,false);
+      const commentFor=(from,to)=>{const note=annotations?.notes.find(n=>n.range&&from>=n.range.bodyFrom&&to<=n.range.bodyTo);return note?{commentId:note.id,commentActive:note.id===annotations.active}:{};};
       if(node.name!=='Document' && annotations && annotations.notes.some(n=>node.from>=n.from&&node.to<=n.to))return false;
       if(node.name==='CriticMark'||node.name==='CriticRevision')return false;
       const line = doc.lineAt(node.from);
@@ -417,7 +422,7 @@ function livePreviewDecorations(view) {
 
       const inline = inlineSpans.get(node.from);
       if (inline && !caretInRange(view.state, inline.openFrom, inline.closeTo)) {
-        ranges.push(Decoration.replace({ widget: new InlinePreview(inline.openFrom, doc.sliceString(inline.openFrom, inline.closeTo)) }).range(inline.openFrom, inline.closeTo));
+        ranges.push(Decoration.replace({ widget: new InlinePreview(inline.openFrom, doc.sliceString(inline.openFrom, inline.closeTo),commentFor(inline.openFrom,inline.closeTo)) }).range(inline.openFrom, inline.closeTo));
         suppressUntil = inline.closeTo;
         return false;
       }
@@ -457,7 +462,7 @@ function livePreviewDecorations(view) {
         // "click to edit link" -- that promises an action the marker has not got.
         const title = node.name === 'Image' ? t("editor.hold_to_drag_the_image", {"shortcut": shortcutText('⌘').replace(/\+$/, '')}) : node.name === 'Link' && signature !== null ? '' : t("editor.click_to_edit_link");
         const note = node.name === 'Link' ? citationLabel(raw, noteNumbers) : null;
-        ranges.push(Decoration.replace({ widget: new InlinePreview(node.from, raw, { rule: node.name === 'HorizontalRule', title, footnotes, signature: signature ?? '', note }) }).range(node.from, node.to));
+        ranges.push(Decoration.replace({ widget: new InlinePreview(node.from, raw, { rule: node.name === 'HorizontalRule', title, footnotes, signature: signature ?? '', note, ...commentFor(node.from,node.to) }) }).range(node.from, node.to));
         return false;
       }
 
@@ -528,7 +533,7 @@ const livePreview = ViewPlugin.fromClass(
     }
 
     update(update) {
-      if (update.transactions.some(tr => tr.effects.some(effect => effect.is(languageChanged) || effect.is(setNoteFocus))) || update.docChanged || update.selectionSet || update.viewportChanged || update.startState.field(sourceMode) !== update.state.field(sourceMode) || update.startState.field(blankMarkers) !== update.state.field(blankMarkers) || update.startState.field(headingNumbers) !== update.state.field(headingNumbers)) {
+      if (update.transactions.some(tr => tr.effects.some(effect => effect.is(languageChanged) || effect.is(setNoteFocus) || effect.is(activeComment))) || update.docChanged || update.selectionSet || update.viewportChanged || update.startState.field(sourceMode) !== update.state.field(sourceMode) || update.startState.field(blankMarkers) !== update.state.field(blankMarkers) || update.startState.field(headingNumbers) !== update.state.field(headingNumbers)) {
         this.decorations = livePreviewDecorations(update.view);
       }
     }
