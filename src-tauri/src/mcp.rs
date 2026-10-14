@@ -254,14 +254,17 @@ impl LeafMcpBroker {
         file.as_file().sync_all().map_err(|_|"descriptor_write")?;file.persist(&path).map_err(|_|"descriptor_write")?;Ok(path)
     }
     pub fn tunnel_status(&self)->Result<Value,String>{
-        let profile=self.inner.profiles.lock().unwrap().as_ref().ok_or("profiles_unavailable")?.status("chatgpt")?;
+        let (profile,cleanup_errors)={let guard=self.inner.profiles.lock().unwrap();let store=guard.as_ref().ok_or("profiles_unavailable")?;(store.status("chatgpt")?,store.tunnel_cleanup_errors())};
         let mut manager=self.inner.tunnel.lock().unwrap();manager.configured(profile.tunnel.is_some()&&profile.has_runtime_key,profile.tunnel.as_ref().is_some_and(|p|p.executable.is_file()));
-        Ok(json!({"profile":profile.masked(),"runtime":manager.status()}))
+        Ok(json!({"profile":profile.masked(),"runtime":manager.status(),"cleanup_errors":cleanup_errors}))
     }
     pub async fn configure_tunnel(&self,app:&tauri::AppHandle,id:String,executable:PathBuf,key:String,operation:String,expected:u64)->Result<Value,String>{
         let _serial=self.inner.queue.lock().await;
         let repeated={self.inner.profiles.lock().unwrap().as_ref().ok_or("profiles_unavailable")?.validate_tunnel_operation(&id,&executable,&key,&operation,expected)?};
-        if repeated{return self.tunnel_status();}
+        if repeated {
+            let broker=self.clone();tauri::async_runtime::spawn_blocking(move||{if let Some(store)=broker.inner.profiles.lock().unwrap().as_mut(){store.retry_tunnel_cleanup(&OsKeyring,&ai_credentials::GuiRuntimeSecretStore);}}).await.map_err(|_|"runtime_key_unavailable")?;
+            return self.tunnel_status();
+        }
         super::chatgpt_tunnel::validate_input(&id,&executable)?;
         let epoch=self.inner.tunnel.lock().unwrap().status().epoch;
         let broker=self.clone();let supplied=key.clone();
@@ -286,6 +289,7 @@ impl LeafMcpBroker {
     pub async fn start_tunnel(&self,app:&tauri::AppHandle)->Result<Value,String>{
         let _serial=self.inner.queue.lock().await;
         self.start_watchdog(app.clone());
+        let broker=self.clone();tauri::async_runtime::spawn_blocking(move||{if let Some(store)=broker.inner.profiles.lock().unwrap().as_mut(){store.retry_tunnel_cleanup(&OsKeyring,&ai_credentials::GuiRuntimeSecretStore);}}).await.map_err(|_|"runtime_key_unavailable")?;
         if !*self.inner.enabled.lock().unwrap(){return Err("connection_disabled".into());}
         let profile=self.inner.profiles.lock().unwrap().as_ref().ok_or("profiles_unavailable")?.status("chatgpt")?;
         if !profile.enabled{return Err("client_disabled".into());}

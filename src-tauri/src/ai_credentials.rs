@@ -198,7 +198,12 @@ pub struct AiClientProfileStore {
     operations: HashMap<String, String>,
     path: Option<PathBuf>,
     namespace: String,
+    tunnel_cleanup:Vec<TunnelCleanup>,
+    tunnel_cleanup_errors:Vec<String>,
+    #[cfg(feature="native-smoke")] pub(crate) test_cleanup_failure:Option<String>,
 }
+#[derive(Default)]
+struct TunnelCleanup {credential:Option<CredentialRef>,runtime:Option<RuntimeCredentialRef>,profile:Option<PathBuf>,health:Option<PathBuf>}
 pub fn random_token() -> Result<String, String> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).map_err(|_| "entropy_unavailable")?;
@@ -228,6 +233,29 @@ impl AiClientProfileStore {
         Ok(store)
     }
     pub fn list(&self) -> Vec<AiClientProfile> { self.profiles.clone() }
+    pub fn tunnel_cleanup_errors(&self)->Vec<String>{self.tunnel_cleanup_errors.clone()}
+    pub(crate) fn retry_tunnel_cleanup(&mut self,shared:&dyn SecretStore,runtime:&dyn RuntimeVault){
+        let pending=std::mem::take(&mut self.tunnel_cleanup);self.tunnel_cleanup_errors.clear();
+        for mut item in pending {
+            if let Some(reference)=&item.credential {
+                if self.cleanup_allowed("credential_cleanup_failed")&&shared.delete(reference).is_ok(){item.credential=None;}else{self.tunnel_cleanup_errors.push("credential_cleanup_failed".into());}
+            }
+            if let Some(reference)=&item.runtime {
+                if self.cleanup_allowed("runtime_cleanup_failed")&&runtime.delete(reference).is_ok(){item.runtime=None;}else{self.tunnel_cleanup_errors.push("runtime_cleanup_failed".into());}
+            }
+            for (path,category) in [(&mut item.profile,"profile_cleanup_failed"),(&mut item.health,"health_cleanup_failed")] {
+                if let Some(old)=path.as_ref(){
+                    let removed=self.cleanup_allowed(category)&&match std::fs::remove_file(old){Ok(())=>true,Err(e)=>e.kind()==std::io::ErrorKind::NotFound};
+                    if removed{*path=None;}else{self.tunnel_cleanup_errors.push(category.into());}
+                }
+            }
+            if item.credential.is_some()||item.runtime.is_some()||item.profile.is_some()||item.health.is_some(){self.tunnel_cleanup.push(item);}
+        }
+    }
+    fn cleanup_allowed(&self,_category:&str)->bool {
+        #[cfg(feature="native-smoke")] if self.test_cleanup_failure.as_deref()==Some(_category){return false;}
+        true
+    }
     pub fn status(&self, client: &str) -> Result<AiClientProfile, String> {
         self.profiles.iter().find(|p| p.client == client).cloned().ok_or("unknown_client".into())
     }
@@ -330,10 +358,13 @@ impl AiClientProfileStore {
         let index=self.profiles.iter().position(|p|p.client=="chatgpt").unwrap();
         self.profiles[index]=AiClientProfile{configured:true,enabled:false,generation,credential_ref:Some(bearer.clone()),tunnel:Some(config),has_runtime_key:true,runtime_ref:Some(r.clone()),runtime_pending:false,..old.clone()};
         if let Err(e)=self.persist(){self.profiles[index]=old;let _=shared.delete(&bearer);if fresh{let _=runtime.delete(&r);}return Err(e);}
-        if let Some(previous)=old.credential_ref{shared.delete(&previous)?;}
-        if fresh {if let Some(previous)=old.runtime_ref{runtime.delete(&previous)?;}}
-        if let Some(previous)=old.tunnel {for path in [previous.profile,previous.health_file]{match std::fs::remove_file(path){Ok(())=>{},Err(e)if e.kind()==std::io::ErrorKind::NotFound=>{},Err(_)=>return Err("tunnel_profile_cleanup_failed".into())}}}
-        self.operations.insert(op,hash);self.status("chatgpt")
+        // Persistence is the commit point. Obsolete entries cannot turn a
+        // committed replacement into a failed transaction or disposable YAML.
+        self.operations.insert(op,hash);
+        let active=self.profiles[index].tunnel.as_ref().unwrap();
+        self.tunnel_cleanup.push(TunnelCleanup{credential:old.credential_ref,runtime:if fresh{old.runtime_ref}else{None},profile:old.tunnel.as_ref().filter(|p|p.profile!=active.profile).map(|p|p.profile.clone()),health:old.tunnel.as_ref().filter(|p|p.health_file!=active.health_file).map(|p|p.health_file.clone())});
+        self.retry_tunnel_cleanup(shared,runtime);
+        self.status("chatgpt")
     }
     pub(crate) fn validate_tunnel_operation(&self,id:&str,executable:&std::path::Path,key:&str,operation:&str,expected:u64)->Result<bool,String>{
         let (_,_,repeated)=self.operation("chatgpt",operation,&format!("tunnel:{id}:{}:{key}",executable.display()))?;
@@ -424,6 +455,46 @@ pub mod tests {
         let dir=tempfile::tempdir().unwrap();s.path=Some(dir.path().into());
         assert!(s.configure_tunnel(config(),"synthetic-runtime-sentinel","save",0,&shared,&runtime).is_err());
         assert_eq!(s.list(),before);assert!(shared.0.lock().unwrap().is_empty());assert!(runtime.0.lock().unwrap().is_empty());
+    }
+    #[test]
+    fn committed_tunnel_replacement_survives_each_obsolete_cleanup_failure(){
+        struct SharedGate<'a>{inner:&'a MemoryKeyring,denied:Mutex<Option<String>>}
+        impl SecretStore for SharedGate<'_>{
+            fn set(&self,r:&CredentialRef,s:&str)->Result<(),String>{self.inner.set(r,s)}
+            fn get(&self,r:&CredentialRef)->Result<String,String>{self.inner.get(r)}
+            fn delete(&self,r:&CredentialRef)->Result<(),String>{if self.denied.lock().unwrap().as_deref()==Some(&r.account){Err("denied".into())}else{self.inner.delete(r)}}
+        }
+        struct RuntimeGate<'a>{inner:&'a MemoryRuntime,denied:Mutex<Option<String>>}
+        impl RuntimeVault for RuntimeGate<'_>{
+            fn set(&self,r:&RuntimeCredentialRef,s:&str)->Result<(),String>{self.inner.set(r,s)}
+            fn get(&self,r:&RuntimeCredentialRef)->Result<String,String>{self.inner.get(r)}
+            fn delete(&self,r:&RuntimeCredentialRef)->Result<(),String>{if self.denied.lock().unwrap().as_deref()==Some(&r.account){Err("denied".into())}else{self.inner.delete(r)}}
+        }
+        for category in ["credential_cleanup_failed","runtime_cleanup_failed","profile_cleanup_failed","health_cleanup_failed"] {
+            let directory=tempfile::tempdir().unwrap();let path=directory.path().join("profiles.json");let folder=directory.path().join("mcp/tunnel");std::fs::create_dir_all(&folder).unwrap();
+            let mut s=AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(path.clone())).unwrap();
+            let shared=MemoryKeyring::default();let runtime=MemoryRuntime::default();
+            let shared=SharedGate{inner:&shared,denied:Mutex::new(None)};let runtime=RuntimeGate{inner:&runtime,denied:Mutex::new(None)};
+            let mut original=config();original.profile=folder.join("old.yaml");original.health_file=folder.join("old.health");
+            std::fs::write(&original.profile,"synthetic old").unwrap();std::fs::write(&original.health_file,"synthetic old health").unwrap();
+            let old=s.configure_tunnel(original.clone(),"synthetic-old-key","old",0,&shared,&runtime).unwrap();
+            match category {
+                "credential_cleanup_failed"=>*shared.denied.lock().unwrap()=Some(old.credential_ref.as_ref().unwrap().account.clone()),
+                "runtime_cleanup_failed"=>*runtime.denied.lock().unwrap()=Some(old.runtime_ref.as_ref().unwrap().account.clone()),
+                _=>{let file=if category=="profile_cleanup_failed"{&original.profile}else{&original.health_file};std::fs::remove_file(file).unwrap();std::fs::create_dir(file).unwrap();}
+            }
+            let mut replacement=config();replacement.profile=folder.join("new.yaml");replacement.health_file=folder.join("new.health");std::fs::write(&replacement.profile,"synthetic replacement").unwrap();
+            let active=s.configure_tunnel(replacement.clone(),"synthetic-new-key","replace",old.generation,&shared,&runtime).unwrap();
+            assert_eq!(s.tunnel_cleanup_errors(),vec![category]);assert_eq!(s.status("chatgpt").unwrap(),active);
+            let saved:Vec<AiClientProfile>=serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();assert_eq!(saved[0],active);
+            assert_eq!(active.tunnel.as_ref().unwrap().generation,active.generation);assert!(replacement.profile.is_file());
+            let bound:BoundCredential=serde_json::from_str(&shared.get(active.credential_ref.as_ref().unwrap()).unwrap()).unwrap();assert_eq!(bound.generation,active.generation);
+            assert_eq!(runtime.get(active.runtime_ref.as_ref().unwrap()).unwrap(),"synthetic-new-key");
+            assert_eq!(s.configure_tunnel(replacement.clone(),"synthetic-new-key","replace",old.generation,&shared,&runtime).unwrap(),active,"committed retry does not create another generation");
+            *shared.denied.lock().unwrap()=None;*runtime.denied.lock().unwrap()=None;
+            for file in [&original.profile,&original.health_file]{if file.is_dir(){std::fs::remove_dir(file).unwrap();}}
+            s.retry_tunnel_cleanup(&shared,&runtime);assert!(s.tunnel_cleanup_errors().is_empty());assert!(replacement.profile.is_file());assert_eq!(s.status("chatgpt").unwrap(),active);
+        }
     }
     #[test]
     fn legacy_migration_preserves_bearer_and_retries_pending_removal(){

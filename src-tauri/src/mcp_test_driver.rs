@@ -394,6 +394,24 @@ async fn tunnel_lifecycle(app:&tauri::AppHandle,label:&str,broker:&super::mcp::L
         let _=std::fs::remove_file(evidence_ref);broker.start_tunnel(app).await?;Ok::<(),String>(())
     };
     start_fixture("normal".into()).await?;let old=wait_tunnel_proof(broker,&evidence,true).await?;
+    for (index,category) in ["credential_cleanup_failed","runtime_cleanup_failed","profile_cleanup_failed","health_cleanup_failed"].into_iter().enumerate(){
+        let previous=broker.window_binding(label).ok_or("cleanup previous grant")?;
+        let old_binding=json!({"document_id":previous.document_id,"session_id":previous.session_id,"authorization_epoch":previous.authorization_epoch});
+        broker.inner.profiles.lock().unwrap().as_mut().unwrap().test_cleanup_failure=Some(category.into());
+        let saved=broker.configure_tunnel(app,format!("tunnel_{}","d".repeat(32)),fixture.clone(),"synthetic-tunnel-key-sentinel".into(),format!("cleanup-injection-{index}"),generation()?).await?;
+        ensure(saved["cleanup_errors"].as_array().is_some_and(|items|items.contains(&json!(category))),"obsolete cleanup failure is reported separately from committed setup")?;
+        let active=broker.inner.profiles.lock().unwrap().as_ref().unwrap().status("chatgpt")?;
+        let config=active.tunnel.as_ref().ok_or("committed tunnel profile")?;
+        ensure(config.profile.is_file()&&config.generation==active.generation,"postcommit cleanup failure preserves active YAML and generation")?;
+        let persisted:Vec<super::mcp::ai_credentials::AiClientProfile>=serde_json::from_slice(&std::fs::read(super::application_data(app).unwrap().join("mcp-profiles-v1.json")).map_err(|_|"persisted cleanup profile")?).map_err(|_|"persisted cleanup profile")?;
+        ensure(persisted[0]==active,"saved profile references exactly match committed active profile")?;
+        ensure(broker.call(app,"chatgpt","read_document",old_binding).await.is_err(),"cleanup failure still invalidates previous capabilities")?;
+        broker.inner.profiles.lock().unwrap().as_mut().unwrap().test_cleanup_failure=None;
+        start_fixture("normal".into()).await?;
+        ensure(broker.tunnel_status()?["cleanup_errors"].as_array().unwrap().is_empty(),"next start retries obsolete entries")?;
+        wait_tunnel_proof(broker,&evidence,true).await?;
+    }
+    let runtime_ref=broker.inner.profiles.lock().unwrap().as_ref().unwrap().status("chatgpt")?.runtime_ref;
     broker.configure_tunnel(app,format!("tunnel_{}","b".repeat(32)),fixture.clone(),String::new(),"replace-blank".into(),generation()?).await?;ensure_tree_stopped(&old).await?;
     ensure(broker.inner.profiles.lock().unwrap().as_ref().unwrap().status("chatgpt")?.runtime_ref==runtime_ref,"blank reconfiguration retains the GUI-only key entry")?;
     start_fixture("hang-start".into()).await?;
