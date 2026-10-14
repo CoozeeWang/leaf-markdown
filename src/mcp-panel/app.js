@@ -23,10 +23,11 @@ function render(value){
  if(last&&snapshot.revision>last.snapshot.revision)difference=`− ${last.snapshot.content}\n+ ${snapshot.content}`;
  last=value;
  if(snapshot.language)language=resolveLanguage(snapshot.language);
+ if(browserView&&snapshot.theme)document.documentElement.dataset.theme=snapshot.theme==='dark'?'dark':'light';
  setLanguage(language);labels();
  text('status',`${copy[language].current} · ${snapshot.saved?copy[language].saved:copy[language].unsaved} · ${value.task?copy[language].task:copy[language].idle}`);
  text('identity',`${snapshot.name??value.binding.document_id} · revision ${snapshot.revision} · ${snapshot.line_ending==='\r\n'?'CRLF':'LF'} · UTF-16`);
- renderPrintDocument(q('reader'),snapshot.content,{properties:true,fallbackTitle:false,sourcePositions:true,annotations:true,annotationNotes:value.comments??[]});
+ renderPrintDocument(q('reader'),snapshot.content,{properties:true,fallbackTitle:false,sourcePositions:true,annotations:true,annotationNotes:value.comments??[],resources:false});
  // Parser output remains inert. Never load attachments or navigate externally.
  for(const image of q('reader').querySelectorAll('img')){const span=document.createElement('span');span.textContent=image.alt;image.replaceWith(span);}
  for(const link of q('reader').querySelectorAll('a'))if(!link.getAttribute('href')?.startsWith('#'))link.removeAttribute('href');
@@ -39,7 +40,7 @@ let adapter;
 async function start(){
 labels();text('status',copy[language].waiting);
 if(browserView){const {createLiveBrowser}=await import('./live-browser.js');adapter=createLiveBrowser({render,invalidate});await adapter.connect();}
-else{adapter=createReaderBridge({render,invalidate,context});try{await adapter.connect();}catch{invalidate('disconnected');}}
+else{adapter=createReaderBridge({render,invalidate,context});try{await adapter.connect();if(!last&&!terminal)text('status',copy[language].empty);}catch{invalidate('disconnected');}}
 q('refresh').onclick=()=>adapter.refresh();q('stop').onclick=()=>adapter.stop();
 const timer=setInterval(()=>adapter.refresh(),1500);
 window.addEventListener('pagehide',()=>{clearInterval(timer);adapter.close();},{once:true});

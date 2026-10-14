@@ -125,6 +125,7 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     if mode=="reader-panel" {
         let resources=serde_json::to_value(client.list_resources(None).await.map_err(|_|"reader resource discovery")?).unwrap();
         ensure(resources["resources"][0]["uri"]=="ui://leaf/reader","actual UI resource URI")?;
+        ensure(client.read_resource(rmcp::model::ReadResourceRequestParams::new("leaf://document/obsolete")).await.is_err(),"internal Leaf URI is not an MCP resource")?;
         let resource=client.read_resource(rmcp::model::ReadResourceRequestParams::new("ui://leaf/reader")).await.map_err(|_|"reader resource read")?;
         let resource=serde_json::to_value(resource).unwrap();
         ensure(resource["contents"][0]["mimeType"]=="text/html;profile=mcp-app","actual Apps MIME")?;
@@ -132,16 +133,33 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
         ensure(html.contains("Content-Security-Policy")&&html.contains("ui/initialize"),"bundled standards SDK and CSP delivered by native resource")?;
         let first=tool(&client,"open_reader",binding.clone()).await?;
         ensure(first["snapshot"]["content"]=="Synthetic draft"&&first["snapshot"]["saved"]==false,"reader sees authoritative unsaved buffer")?;
+        let launch=tool(&client,"open_browser_reader",binding.clone()).await?;
+        ensure(launch["label"]=="浏览器实时视图","fallback always separately labeled")?;
+        let ticket=launch["url"].as_str().ok_or("browser URL")?.split('#').nth(1).ok_or("browser ticket")?;
+        let auth=json!({"ticket":ticket}).to_string();
+        ensure(reader_http(port,"/reader-api","","",None,"{\"action\":\"snapshot\"}").await?.0==401,"browser snapshot needs authentication")?;
+        ensure(reader_http(port,"/reader-auth","https://untrusted.invalid","",None,&auth).await?.0==403,"browser rejects untrusted Origin")?;
+        ensure(reader_http(port,"/reader-auth","","untrusted.invalid",None,&auth).await?.0==403,"browser rejects rebound Host")?;
+        let (code,headers,_)=reader_http(port,"/reader-auth","","",None,&auth).await?;ensure(code==200,"one-use browser login")?;
+        let cookie=headers.lines().find_map(|line|line.strip_prefix("set-cookie: ")).ok_or("browser cookie")?.split(';').next().unwrap().to_owned();
+        ensure(headers.contains("HttpOnly")&&headers.contains("SameSite=Strict"),"browser credential stays in HttpOnly strict cookie")?;
+        ensure(reader_http(port,"/reader-auth","","",None,&auth).await?.0==401,"browser ticket cannot replay")?;
+        let (code,_,body)=reader_http(port,"/reader-api","","",Some(&cookie),"{\"action\":\"snapshot\"}").await?;
+        ensure(code==200&&serde_json::from_str::<Value>(&body).map_err(|_|"browser JSON")?["snapshot"]["content"]=="Synthetic draft","authenticated browser reads same live buffer")?;
         batch["request_id"]=json!("reader-second");batch["revision"]=result["applied_revision"].clone();batch["changes"]=json!([{"from":15,"to":15,"expected":"","insert":" two"}]);
         let second=tool(&client,"apply_edit_batch",batch.clone()).await?;
         let reader=tool(&client,"reader_snapshot",binding.clone()).await?;
         ensure(reader["snapshot"]["content"]=="Synthetic draft two"&&reader["snapshot"]["revision"]==second["applied_revision"],"reader second revision shares current buffer")?;
+        let (_,_,body)=reader_http(port,"/reader-api","","",Some(&cookie),"{\"action\":\"snapshot\"}").await?;
+        ensure(serde_json::from_str::<Value>(&body).map_err(|_|"browser JSON")?["snapshot"]["revision"]==second["applied_revision"],"actual loopback view sees second revision")?;
+        ensure(reader_http(port,"/reader-api","","",Some(&cookie),"{\"action\":\"apply_edit_batch\"}").await?.0==400,"browser exposes no write route")?;
         let discovered=listing["tools"].as_array().unwrap().iter().find(|t|t["name"]=="open_reader").ok_or("reader tool missing")?;
         ensure(discovered["_meta"]["ui"]["resourceUri"]=="ui://leaf/reader","actual thread tool metadata")?;
-        let mut stop=binding.clone();stop["task_id"]=task["task_id"].clone();tool(&client,"stop_edit",stop).await?;
+        ensure(reader_http(port,"/reader-api","","",Some(&cookie),"{\"action\":\"stop\"}").await?.0==200,"actual browser stop ends task")?;
         ensure(tool(&client,"reader_snapshot",binding.clone()).await?["task"].is_null(),"reader observes ended task")?;
         broker.identity_boundary(app,label).await?;
         ensure(tool(&client,"reader_snapshot",binding).await.is_err(),"reader old epoch revoked")?;
+        ensure(reader_http(port,"/reader-api","","",Some(&cookie),"{\"action\":\"snapshot\"}").await?.0==401,"browser cookie cannot resurrect revoked epoch")?;
         let _=client.cancel().await;return Ok(());
     }
     batch["request_id"]=json!("outside");batch["revision"]=result["applied_revision"].clone();batch["changes"]=json!([{"from":16,"to":16,"expected":"","insert":"bad"}]);
@@ -171,6 +189,22 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     broker.unregister(label);
     ensure(tool(&client,"read_document",binding).await.is_err(),"closed session must fail")?;
     let _=client.cancel().await;Ok(())
+}
+
+// Actual native HTTP exchange against the authenticated loopback routes.
+// Synthetic credentials and content never leave the isolated test process.
+async fn reader_http(port:u16,path:&str,origin:&str,host:&str,cookie:Option<&str>,body:&str)->Result<(u16,String,String),String>{
+    use tokio::io::{AsyncReadExt,AsyncWriteExt};
+    let mut socket=tokio::net::TcpStream::connect(("127.0.0.1",port)).await.map_err(|_|"reader HTTP connect")?;
+    let local=format!("127.0.0.1:{port}");let local_origin=format!("http://{local}");
+    let cookie=cookie.map(|c|format!("Cookie: {c}\r\n")).unwrap_or_default();
+    let message=format!("POST {path} HTTP/1.1\r\nHost: {}\r\nOrigin: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{cookie}\r\n{body}",if host.is_empty(){&local}else{host},if origin.is_empty(){&local_origin}else{origin},body.len());
+    socket.write_all(message.as_bytes()).await.map_err(|_|"reader HTTP send")?;
+    let mut bytes=Vec::new();socket.read_to_end(&mut bytes).await.map_err(|_|"reader HTTP read")?;
+    let response=String::from_utf8(bytes).map_err(|_|"reader HTTP encoding")?;
+    let (headers,body)=response.split_once("\r\n\r\n").ok_or("reader HTTP response")?;
+    let code=headers.split_whitespace().nth(1).ok_or("reader HTTP status")?.parse().map_err(|_|"reader HTTP status")?;
+    Ok((code,headers.into(),body.into()))
 }
 
 async fn tunnel_tracer(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,_mode:&str)->Result<(),String>{

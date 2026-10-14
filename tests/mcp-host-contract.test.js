@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {AppBridge} from '@modelcontextprotocol/ext-apps/app-bridge';
 import {createReaderBridge} from '../src/mcp-panel/bridge.js';
+import {createReaderState} from '../src/mcp-panel/state.js';
 
 test('native reader discovery binds the standards UI resource to its thread tool',()=>{
   const source=readFileSync(new URL('../src-tauri/src/mcp.rs',import.meta.url),'utf8');
@@ -10,6 +11,17 @@ test('native reader discovery binds the standards UI resource to its thread tool
   assert.ok(source.includes('text/html;profile=mcp-app'),'resource has MCP Apps MIME');
   assert.ok(source.includes('resourceUri'),'thread tool points to the same resource');
   assert.ok(source.includes('reader_snapshot'),'live read-only broker tool is discoverable');
+});
+
+test('reader capability stays bound to one session and epoch with explicit terminal invalidation',()=>{
+ const state=createReaderState(),binding={document_id:'synthetic',session_id:'session',authorization_epoch:1};
+ const value={binding,snapshot:{content:'😀é\nCRLF metadata',line_ending:'\r\n',revision:1},comments:[]};
+ assert.equal(state.accept(value),true);assert.equal(state.accept({...value,task:null}),true);
+ assert.equal(state.current.snapshot.line_ending,'\r\n');assert.equal(state.current.snapshot.content,value.snapshot.content);
+ assert.throws(()=>state.accept({...value,binding:{...binding,session_id:'different'}}),/stale_binding/);
+ assert.equal(state.current,null);assert.equal(state.accept(value),false);
+ const revision=createReaderState();revision.accept(value);assert.throws(()=>revision.accept({...value,snapshot:{...value.snapshot,content:'forged'}}),/revision_content_mismatch/);
+ const empty=createReaderState();assert.throws(()=>empty.accept({}),/invalid_snapshot/);assert.equal(empty.current,null);
 });
 
 test('real App SDK negotiates host capabilities and reads two revisions through tools/call',async()=>{

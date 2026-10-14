@@ -10,6 +10,6 @@ const hash=value=>`'sha256-${createHash('sha256').update(value).digest('base64')
 // selected only by its actual /reader route. No credential enters an iframe.
 const csp=`default-src 'none'; script-src ${hash(js)}; style-src ${hash(css)}; connect-src 'self'; img-src 'none'; base-uri 'none'; form-action 'none'`;
 const index=await readFile('src/mcp-panel/index.html','utf8');
-const html=index.replace('<title>',`<meta http-equiv="Content-Security-Policy" content="${csp}"><style>${css}</style><title>`).replace('<script type="module" src="./app.js"></script>',`<script>${js}</script>`);
+const html=index.replace('<title>',()=>`<meta http-equiv="Content-Security-Policy" content="${csp}"><style>${css}</style><title>`).replace('<script type="module" src="./app.js"></script>',()=>`<script>${js}</script>`);
 await mkdir('dist',{recursive:true});await writeFile('dist/mcp-reader.html',html);
 console.log('Built self-contained Leaf MCP reader with hashed script/style CSP');

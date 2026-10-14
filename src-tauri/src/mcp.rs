@@ -39,6 +39,8 @@ pub struct OpenedDocument {pub document_id:String,pub session_id:String,pub labe
 #[derive(Default)]
 pub struct OpenedDocumentRegistry {pub documents:HashMap<String,OpenedDocument>}
 type Pending=(String,oneshot::Sender<Value>);
+#[derive(Clone)]
+struct ReaderGrant {client:String,bearer:String,binding:Value,issued:u64,active:bool,port:u16}
 pub struct McpEditorBridge {pending:Mutex<HashMap<String,Pending>>}
 #[derive(Clone,Serialize,Deserialize)]
 pub struct MutationRecord {pub mutation_id:String,pub request_digest:String,pub changes_digest:String,pub source_digest:String,pub session_id:String,pub task_id:String,pub request_id:String,pub authorization_epoch:u64,pub source_revision:u64,pub state:String,pub transitions:Vec<String>,pub result:Option<Value>}
@@ -68,9 +70,9 @@ impl MutationLedger {
 }
 #[derive(Clone)]
 pub struct LeafMcpBroker {pub inner:Arc<BrokerState>}
-pub struct BrokerState {pub tunnel:Mutex<super::chatgpt_tunnel::TunnelManager>,pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,pub credentials:Mutex<HashMap<String,String>>,pub profiles:Mutex<Option<AiClientProfileStore>>,pub results:Mutex<HashMap<String,(String,Value)>>,pub ledger:MutationLedger,leases:Mutex<AuthenticatedLeaseManager>,pending_finishes:Mutex<HashMap<String,Value>>,watchdog_started:std::sync::atomic::AtomicBool}
+pub struct BrokerState {pub tunnel:Mutex<super::chatgpt_tunnel::TunnelManager>,pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,pub credentials:Mutex<HashMap<String,String>>,pub profiles:Mutex<Option<AiClientProfileStore>>,pub results:Mutex<HashMap<String,(String,Value)>>,pub ledger:MutationLedger,leases:Mutex<AuthenticatedLeaseManager>,pending_finishes:Mutex<HashMap<String,Value>>,watchdog_started:std::sync::atomic::AtomicBool,reader_grants:Mutex<HashMap<String,ReaderGrant>>,reader_ports:Mutex<HashMap<String,u16>>}
 impl Default for LeafMcpBroker {
-    fn default()->Self {Self{inner:Arc::new(BrokerState{tunnel:Mutex::new(super::chatgpt_tunnel::TunnelManager::default()),registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default(),leases:Mutex::new(AuthenticatedLeaseManager::default()),pending_finishes:Mutex::new(HashMap::new()),watchdog_started:std::sync::atomic::AtomicBool::new(false)})}}
+    fn default()->Self {Self{inner:Arc::new(BrokerState{tunnel:Mutex::new(super::chatgpt_tunnel::TunnelManager::default()),registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default(),leases:Mutex::new(AuthenticatedLeaseManager::default()),pending_finishes:Mutex::new(HashMap::new()),watchdog_started:std::sync::atomic::AtomicBool::new(false),reader_grants:Mutex::new(HashMap::new()),reader_ports:Mutex::new(HashMap::new())})}}
 }
 impl LeafMcpBroker {
     pub fn register_window(&self,app:&tauri::AppHandle,label:&str)->OpenedDocument {
@@ -182,6 +184,7 @@ impl LeafMcpBroker {
         }).await.map_err(|_|"credential_unavailable")?
     }
     async fn invalidate_client(&self,app:&tauri::AppHandle,client:&str) {
+        self.inner.reader_grants.lock().unwrap().retain(|_,grant|grant.client!=client);
         self.inner.credentials.lock().unwrap().remove(client);
         let documents:Vec<_>=self.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(client)).cloned().collect();
         for mut d in documents {
@@ -367,6 +370,15 @@ impl LeafMcpBroker {
         let mut d=self.document(app,client,&args)?;
         if d.task.as_ref().is_some_and(|task|self.inner.leases.lock().unwrap().expired(task["task_id"].as_str().unwrap_or(""),lease_now())){self.finalize(app,&mut d).await?;}
         match name {
+            "open_browser_reader"=>{
+                let port=*self.inner.reader_ports.lock().unwrap().get(client).ok_or("reader_transport_unavailable")?;
+                let bearer=self.inner.credentials.lock().unwrap().get(client).cloned().ok_or("client_disabled")?;
+                let ticket=ai_credentials::random_token()?;
+                let mut grants=self.inner.reader_grants.lock().unwrap();grants.retain(|_,g|lease_now().saturating_sub(g.issued)<if g.active{3_600_000}else{60_000});
+                if grants.len()>=128{return Err("reader_view_limit".into());}
+                grants.insert(ticket.clone(),ReaderGrant{client:client.into(),bearer,binding:json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch}),issued:lease_now(),active:false,port});
+                Ok(json!({"url":format!("http://127.0.0.1:{port}/reader#{ticket}"),"view_type":"browser_live","label":"浏览器实时视图"}))
+            },
             "open_reader"|"reader_snapshot"=>{
                 let mut snapshot=self.bridge(app,&d.label,"reader_snapshot",json!({})).await?;
                 let scope=d.scope.as_ref().ok_or("not_authorized")?;
@@ -499,6 +511,7 @@ impl LeafMcpBroker {
         let broker=self.clone();
         #[cfg(feature="native-smoke")]
         let handler_app=app.clone();
+        let reader_app=app.clone();
         let handler=LeafMcpHandler{broker:broker.clone(),app,client:client.clone(),bearer:token.clone()};
         let service=StreamableHttpService::new(move||Ok(handler.clone()),Arc::new(LocalSessionManager::default()),StreamableHttpServerConfig::default().with_legacy_session_mode(false).with_json_response(true).enforce_origin_validation());
         let auth=token.clone();let client_key=client.clone();
@@ -508,6 +521,8 @@ impl LeafMcpBroker {
         }}));
         use axum::response::IntoResponse;
         let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.map_err(|_|"broker_bind")?;let port=listener.local_addr().map_err(|_|"broker_bind")?.port();
+        self.inner.reader_ports.lock().unwrap().insert(client.clone(),port);
+        let route=route.merge(reader_routes(self.clone(),reader_app,port));
         tauri::async_runtime::spawn(async move{let _=axum::serve(listener,route).await;});
         #[cfg(feature="native-smoke")]
         if client=="synthetic-client"&&super::mcp_test_driver::enabled(&handler_app)&&std::env::var_os("LEAF_MCP_ADAPTER_TEST").is_some() {
@@ -537,13 +552,10 @@ impl ServerHandler for LeafMcpHandler {
             let html=reader_html(&self.app).map_err(|_|ErrorData::internal_error("reader_asset_unavailable",None))?;
             return serde_json::from_value::<ReadResourceResult>(json!({"contents":[{"uri":p.uri,"mimeType":"text/html;profile=mcp-app","text":html,"_meta":{"ui":{"csp":{"connectDomains":[],"resourceDomains":[]},"prefersBorder":true}}}]})).map(Into::into).map_err(|_|ErrorData::internal_error("resource_encoding",None));
         }
-        let session=p.uri.strip_prefix("leaf://document/").ok_or_else(||ErrorData::invalid_params("unknown_resource",None))?;
-        let d=self.broker.inner.registry.lock().unwrap().documents.get(session).cloned().ok_or_else(||ErrorData::invalid_params("stale_session",None))?;
-        let result=self.broker.call_with_bearer(&self.app,&self.client,Some(&self.bearer),"read_document",json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch})).await.map_err(|_|ErrorData::invalid_params("resource_not_authorized",None))?;
-        serde_json::from_value::<ReadResourceResult>(json!({"contents":[{"uri":p.uri,"mimeType":"text/markdown","text":result["content"]}]})).map(Into::into).map_err(|_|ErrorData::internal_error("resource_encoding",None))
+        Err(ErrorData::invalid_params("unknown_resource",None))
     }
     async fn list_tools(&self,_:Option<PaginatedRequestParams>,_:RequestContext<RoleServer>)->Result<ListToolsResult,ErrorData> {
-        let names=["list_documents","open_reader","reader_snapshot","read_document","list_comments","read_comment","locate_comment","begin_edit","apply_edit_batch","task_status","finish_edit","stop_edit","reconcile_request"];
+        let names=["list_documents","open_reader","open_browser_reader","reader_snapshot","read_document","list_comments","read_comment","locate_comment","begin_edit","apply_edit_batch","task_status","finish_edit","stop_edit","reconcile_request"];
         let tools=names.into_iter().map(tool_definition).collect();Ok(ListToolsResult{tools,..Default::default()})
     }
     async fn call_tool(&self,params:CallToolRequestParams,_:RequestContext<RoleServer>)->Result<CallToolResponse,ErrorData> {
@@ -600,13 +612,53 @@ fn tool_definition(name:&str)->Tool {
     let mut tool=json!({"name":name,"description":description,"inputSchema":schema});
     if name=="open_reader" {tool["description"]=json!("Open Leaf's read-only live reader beside the conversation for this explicitly authorized current document. Reads unsaved buffer, properties, footnotes, tables and comments; never writes.");tool["_meta"]=json!({"ui":{"resourceUri":"ui://leaf/reader"}});}
     if name=="reader_snapshot" {tool["_meta"]=json!({"ui":{"visibility":["app"]}});}
-    if ["open_reader","reader_snapshot"].contains(&name){tool["annotations"]=json!({"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false});}
+    if name=="open_browser_reader" {tool["description"]=json!("Open an explicitly labeled browser live view if the host cannot display MCP Apps. The one-use URL expires after 60 seconds and stays bound to this session and authorization epoch. Never claim it is a native host panel.");}
+    if ["open_reader","open_browser_reader","reader_snapshot"].contains(&name){tool["annotations"]=json!({"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false});}
     serde_json::from_value(tool).expect("static MCP tool schema")
 }
 
 fn reader_html(app:&tauri::AppHandle)->Result<String,String>{
     let asset=app.asset_resolver().get("mcp-reader.html".into()).ok_or("reader_asset_unavailable")?;
     String::from_utf8(asset.bytes).map_err(|_|"reader_asset_encoding".into())
+}
+
+fn reader_routes(broker:LeafMcpBroker,app:tauri::AppHandle,port:u16)->axum::Router{
+    axum::Router::new().route("/reader",axum::routing::get({let broker=broker.clone();let app=app.clone();move |req:axum::extract::Request|reader_request(broker.clone(),app.clone(),port,req)}))
+        .route("/reader-auth",axum::routing::post({let broker=broker.clone();let app=app.clone();move |req:axum::extract::Request|reader_request(broker.clone(),app.clone(),port,req)}))
+        .route("/reader-api",axum::routing::post(move |req:axum::extract::Request|reader_request(broker.clone(),app.clone(),port,req)))
+}
+
+async fn reader_request(broker:LeafMcpBroker,app:tauri::AppHandle,port:u16,req:axum::extract::Request)->axum::response::Response{
+    use axum::{response::IntoResponse,http::{StatusCode,header}};
+    let authority=format!("127.0.0.1:{port}");let origin=format!("http://{authority}");
+    if req.headers().get(header::HOST).and_then(|v|v.to_str().ok())!=Some(authority.as_str()){return StatusCode::FORBIDDEN.into_response();}
+    let path=req.uri().path().to_owned();
+    let sent_origin=req.headers().get(header::ORIGIN).and_then(|v|v.to_str().ok());
+    if sent_origin.is_some_and(|o|o!=origin)||(path!="/reader"&&sent_origin!=Some(origin.as_str())){return StatusCode::FORBIDDEN.into_response();}
+    let safe=[(header::CACHE_CONTROL,"no-store"),(header::REFERRER_POLICY,"no-referrer"),(header::X_FRAME_OPTIONS,"DENY"),(header::X_CONTENT_TYPE_OPTIONS,"nosniff")];
+    if path=="/reader" {return match reader_html(&app){Ok(html)=>(safe,axum::response::Html(html)).into_response(),Err(_)=>StatusCode::SERVICE_UNAVAILABLE.into_response()};}
+    let cookie_name=format!("leaf_reader_{port}=");
+    let cookie=req.headers().get(header::COOKIE).and_then(|v|v.to_str().ok()).and_then(|v|v.split(';').map(str::trim).find_map(|s|s.strip_prefix(&cookie_name))).unwrap_or("").to_owned();
+    let bytes=match axum::body::to_bytes(req.into_body(),4096).await{Ok(b)=>b,Err(_)=>return StatusCode::BAD_REQUEST.into_response()};
+    let args:Value=match serde_json::from_slice(&bytes){Ok(v)=>v,Err(_)=>return StatusCode::BAD_REQUEST.into_response()};
+    if path=="/reader-auth"{
+        let ticket=args["ticket"].as_str().unwrap_or("");
+        let grant=broker.inner.reader_grants.lock().unwrap().remove(ticket);
+        let Some(mut grant)=grant.filter(|g|g.port==port&&!g.active&&lease_now().saturating_sub(g.issued)<60_000)else{return StatusCode::UNAUTHORIZED.into_response();};
+        if broker.call_with_bearer(&app,&grant.client,Some(&grant.bearer),"reader_snapshot",grant.binding.clone()).await.is_err(){return StatusCode::UNAUTHORIZED.into_response();}
+        let token=match ai_credentials::random_token(){Ok(t)=>t,Err(_)=>return StatusCode::SERVICE_UNAVAILABLE.into_response()};
+        grant.active=true;grant.issued=lease_now();broker.inner.reader_grants.lock().unwrap().insert(token.clone(),grant);
+        let mut response=(safe,[(header::CONTENT_TYPE,"application/json")],json!({"authenticated":true}).to_string()).into_response();
+        response.headers_mut().insert(header::SET_COOKIE,format!("{cookie_name}{token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=3600").parse().unwrap());return response;
+    }
+    let grant=broker.inner.reader_grants.lock().unwrap().get(&cookie).cloned();
+    let Some(grant)=grant.filter(|g|g.port==port&&g.active&&lease_now().saturating_sub(g.issued)<3_600_000)else{return StatusCode::UNAUTHORIZED.into_response();};
+    let result=match args["action"].as_str(){
+        Some("snapshot")=>broker.call_with_bearer(&app,&grant.client,Some(&grant.bearer),"reader_snapshot",grant.binding.clone()).await,
+        Some("stop")=>{match broker.call_with_bearer(&app,&grant.client,Some(&grant.bearer),"reader_snapshot",grant.binding.clone()).await{Ok(v)=>{let mut binding=grant.binding.clone();binding["task_id"]=v["task"]["task_id"].clone();if binding["task_id"].is_null(){Ok(json!({"state":"finished"}))}else{broker.call_with_bearer(&app,&grant.client,Some(&grant.bearer),"stop_edit",binding).await}},Err(e)=>Err(e)}},
+        _=>return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match result{Ok(v)=>(safe,[(header::CONTENT_TYPE,"application/json")],v.to_string()).into_response(),Err(_)=>{broker.inner.reader_grants.lock().unwrap().remove(&cookie);StatusCode::UNAUTHORIZED.into_response()}}
 }
 
 #[cfg(feature="native-smoke")]
