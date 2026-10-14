@@ -576,6 +576,18 @@ pub async fn mcp_stop_edit(app:tauri::AppHandle,window:tauri::WebviewWindow,brok
 mod authenticated_lease_tests {
     use super::*;
     #[test]
+    fn repeated_registration_preserves_live_session_and_task() {
+        let broker=LeafMcpBroker::default();
+        let mut document=broker.register("document-test");
+        document.task=Some(json!({"task_id":"synthetic-task"}));
+        broker.inner.registry.lock().unwrap().documents.insert(document.session_id.clone(),document.clone());
+        let registered=broker.register("document-test");
+        assert_eq!(registered.session_id,document.session_id,"registration must not silently retire an active session");
+        assert_eq!(registered.task,document.task,"registration must not discard an active capability");
+        broker.unregister("document-test");
+        assert_ne!(broker.register("document-test").session_id,document.session_id,"close/reopen retires the session");
+    }
+    #[test]
     fn authenticated_lease_long_model_silence_and_request_deadline(){
         let mut leases=AuthenticatedLeaseManager::default();leases.begin("task","client-a",0);
         for now in (5_000..=120_000).step_by(5_000){leases.renew("client-a",now);assert!(!leases.expired("task",now));}
