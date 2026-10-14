@@ -63,6 +63,29 @@ async function nativePage() {
   return page;
 }
 try {
+  await test('current-document authorization requires explicit client and scope and never grants on selection', async () => {
+    const page = await nativePage();
+    assert.equal(await page.locator('#aiAuthorizeDocument').count(), 1, 'normal settings must expose document authorization');
+    assert.ok(await page.locator('#aiAuthorizeDocument').isDisabled());
+    await page.locator('#mcpEnabled').check();
+    await page.locator('#aiClient').selectOption('workbuddy');
+    await page.locator('#aiLocalConfigure').click();
+    await page.waitForFunction(()=>!document.querySelector('#aiAuthorizeDocument').disabled);
+    assert.equal(await page.evaluate(()=>aiMock.calls.filter(c=>c.command==='mcp_authorize').length),0);
+    assert.equal(await page.locator('#aiDocumentScope').inputValue(),'selection');
+    assert.ok(await page.locator('#aiAuthorizeDocument').isDisabled(), 'empty selection must not silently grant the document');
+    await page.locator('#aiDocumentScope').selectOption('document');
+    await page.locator('#aiAuthorizeDocument').click();
+    await page.waitForFunction(()=>aiMock.calls.some(c=>c.command==='mcp_authorize'));
+    const call=await page.evaluate(()=>aiMock.calls.find(c=>c.command==='mcp_authorize'));
+    assert.equal(call.args.client,'workbuddy');
+    assert.equal(call.args.sessionId,'session-ui');
+    assert.deepEqual(call.args.scope,{from:0,to:'# Synthetic\n\nUnchanged body.'.length});
+    assert.ok(Number.isSafeInteger(call.args.revision));
+    await page.locator('#mcpEnabled').uncheck();
+    assert.ok(await page.locator('#aiAuthorizeDocument').isDisabled());
+    await page.close();
+  });
   await test('AI settings are the third tab and require native confirmed connection state', async () => {
     const page = await browser.newPage({viewport:{width:720,height:720}});
     await page.goto(process.env.LEAF_TEST_BASE_URL || 'http://127.0.0.1:41732/');
