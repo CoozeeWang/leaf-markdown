@@ -718,5 +718,6 @@
   "CM0021": "comments.pdf_omit",
   "CM0022": "comments.pdf_revision",
   "CM0023": "comments.position_invalid",
-  "CM0024": "comments.edit_hint"
+  "CM0024": "comments.edit_hint",
+  "CM0025": "comments.no_reading_anchor"
 }

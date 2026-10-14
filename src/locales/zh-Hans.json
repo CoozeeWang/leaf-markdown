@@ -732,5 +732,6 @@
   "comments.pdf_omit": "PDF 不包含批注、隐藏式批注及批注标识。",
   "comments.pdf_revision": "本文包含未处理的修订标记，将按原样导出。",
   "comments.position_invalid": "请把光标放在正文文字之间，再添加批注。",
-  "comments.edit_hint": "双击或按 Enter 编辑批注"
+  "comments.edit_hint": "双击或按 Enter 编辑批注",
+  "comments.no_reading_anchor": "这条隐藏式批注附近没有可显示的正文。请切换到编辑模式查看。"
 }

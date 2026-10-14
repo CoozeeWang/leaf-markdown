@@ -929,13 +929,17 @@ const editor = createLeafEditor({
   onOpen: () => openFile(),
   onCommandPalette: () => openPalette(),
 });
+let readingCommentFlashTimer;
 commentPanel=setupCommentPanel({editor,getMode:()=>state.reading?'reading':state.source?'source':'edit',open:()=>setNotesDrawer(true),status:setStatus,locate:note=>{
   if(!state.reading){editor.goToComment(note.id);return;}
   editor.activateComment(note.id);
+  clearTimeout(readingCommentFlashTimer);
   reader.querySelectorAll('.leaf-comment-range.active,.leaf-comment-located').forEach(el=>el.classList.remove('active','leaf-comment-located'));
   let target=reader.querySelector(`[data-comment-id="${note.id}"]`);
   if(!target){const at=note.from+(/\r\n/.test(state.content)?editor.view.state.doc.sliceString(0,note.from).split('\n').length-1:0);const blocks=readingBlocks();target=blocks.findLast(b=>b.from<=at)?.element??blocks[0]?.element;}
-  target?.classList.add(target.matches('.leaf-comment-range')?'active':'leaf-comment-located');target?.scrollIntoView({block:'center'});
+  if(!target){setStatus(translatedMessage('comments.no_reading_anchor'),'info');return;}
+  target.classList.add(target.matches('.leaf-comment-range')?'active':'leaf-comment-located');target.scrollIntoView({block:'center'});
+  if(note.kind==='hidden')readingCommentFlashTimer=setTimeout(()=>target.classList.remove('leaf-comment-located'),1800);
 }});
 commentPanel.render();
 setupCommentContext({editor,add:()=>commentPanel.add(),desktop,invoke,editable:()=>!state.reading&&!shell.classList.contains('welcome-state')});

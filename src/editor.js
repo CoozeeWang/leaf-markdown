@@ -60,7 +60,7 @@ import { imageDrag } from './image-drag.js';
 import { shortcutText, documentHistoryShortcut } from './platform-shortcuts.js';
 import { footnoteRegion, footnoteRegionEnabled, footnoteBoundaryGuard, prepareBodyBeforeNotes } from './footnote-region.js';
 import { footnoteInlineNodes } from './footnote-inline.js';
-import {commentIndex,commentDecorations,activeComment} from './comment-view.js';
+import {commentIndex,commentDecorations,commentLocation,activeComment,locateComment} from './comment-view.js';
 import {planCommentInsertion,planCommentBody,planCommentDeletion} from './comments.js';
 
 const toggleBlankMarkers = StateEffect.define();
@@ -1222,6 +1222,7 @@ export function createLeafEditor(options) {
       sourceMode,
       commentIndex,
       commentDecorations,
+      commentLocation,
       fileNameTitle.init(() => options.showFileNameTitle !== false),
       structuredPreview,
       propertiesFolded,
@@ -1489,7 +1490,7 @@ export function createLeafEditor(options) {
       const changes=planCommentDeletion(view.state.doc.toString(),note);if(!changes.length)return false;
       view.dispatch({changes,userEvent:'delete.comment',annotations:isolateHistory.of('full')});return true;
     },
-    goToComment(id){const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;view.dispatch({effects:[activeComment.of(id),EditorView.scrollIntoView(note.range?.bodyFrom??note.from,{y:'center'})]});return true;},
+    goToComment(id){const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;view.dispatch({effects:[activeComment.of(id),locateComment.of(note.kind==='hidden'?id:null),EditorView.scrollIntoView(note.kind==='hidden'?note.bodyFrom:note.range?.bodyFrom??note.from,{y:'center'})]});return true;},
     setFootnoteBody(label, body) { applyFootnoteBody(view, label, body); },
     deleteFootnote(label) {
       if (reading) return false;
