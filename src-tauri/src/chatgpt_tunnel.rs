@@ -41,7 +41,9 @@ impl TunnelManager {
     #[cfg(feature="native-smoke")]
     pub(crate) fn expire_start_for_test(&mut self){self.started=Some(Instant::now()-Duration::from_secs(91));}
     pub fn start(&mut self,spec:&TunnelLaunchSpec,key:&str)->Result<TunnelRuntimeStatus,String> {
-        if self.status().process&&self.status.generation==spec.generation{return Ok(self.status.clone());}
+        self.status();
+        if self.failure_pending{return Err("tunnel_runtime_failed".into());}
+        if self.status.process&&self.status.generation==spec.generation{return Ok(self.status.clone());}
         self.stop()?;
         if key.is_empty(){return Err("runtime_key_required".into());}
         let mut command=Command::new(&spec.executable);
@@ -324,6 +326,7 @@ mod tests {
         let directory=tempfile::tempdir().unwrap();let mut launch=spec(fixture(directory.path(),"sleep 30 & wait"));launch.health_file=Some(directory.path().join("missing-health"));
         let mut manager=TunnelManager::default();manager.start(&launch,"synthetic-unit-key").unwrap();manager.started=Some(Instant::now()-Duration::from_secs(91));
         assert_eq!(manager.status().last_error.as_deref(),Some("tunnel_start_timeout"));assert!(!manager.status().process);
+        assert!(manager.start(&launch,"synthetic-unit-key").is_err(),"restart cannot consume a failure before native capability retirement");
         assert!(manager.supervise(),"a prior status observation cannot consume native failure invalidation");
         assert!(!manager.supervise(),"one failed generation invalidates once");
         launch.executable=fixture(directory.path(),"sleep 30 & exit 1");launch.health_file=None;manager.start(&launch,"synthetic-unit-key").unwrap();let root=manager.child.as_ref().unwrap().id();
