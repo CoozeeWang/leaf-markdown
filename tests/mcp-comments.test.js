@@ -72,3 +72,13 @@ test('comment mutation union preserves CRLF Unicode body and hidden format, reje
   assert.throws(()=>api.planMcpCommentBatch(source,{operations:[op(notes[0],'delete')]},{...ctx,revision:8}),/comment_missing/);
   assert.throws(()=>api.planMcpCommentBatch(source,{operations:[op(notes[0],'delete')]},{...ctx,scope:{from:notes[0].anchor.from,to:source.length}}),/comment_missing/);
 });
+
+test('native comments task proof executes standard MCP tools with renderer receipts and task undo',async()=>{
+  const driver=await readFile(new URL('../src-tauri/src/mcp_test_driver.rs',import.meta.url),'utf8');
+  const runner=await readFile(new URL('../scripts/test-mcp-native.mjs',import.meta.url),'utf8');
+  assert.ok(driver.includes('async fn comments_task_gate('),'actual native comments task scenario must exist');
+  assert.ok(runner.includes("'comments-task'"),'isolated native runner must accept comments-task');
+  const gate=driver.slice(driver.indexOf('async fn comments_task_gate('));
+  for(const name of ['list_comments','read_comment','locate_comment','apply_edit_batch','reconcile_request'])assert.ok(gate.includes(`"${name}"`),`actual ${name} call must be exercised`);
+  assert.ok(gate.includes('source_digest')&&gate.includes('mutation_id'),'native proof checks committed renderer receipt');
+});
