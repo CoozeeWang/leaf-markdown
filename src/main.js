@@ -19,6 +19,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { shortcutText, renderShortcutText, renderTooltipText } from './platform-shortcuts.js';
 import { labels as calloutLabels } from './callout.js';
 import { indexFootnotes, notePanelRows } from './footnotes.js';
+import {setupCommentPanel} from './comment-panel.js';
+import {stripComments} from './comments.js';
+import {commentShortcuts} from './comment-view.js';
+import {setupCommentContext} from './comment-context.js';
 import { uiIcon, uiIconPaths } from './ui-icons.js';
 import {readingFolding} from './outline-folding.js';
 import { BODY_ZOOM_LEVELS, stepBodyZoom, bodyZoomShortcut } from './body-zoom.js';
@@ -130,6 +134,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <button data-format="sup" aria-label="${t("main.superscript")}" data-i18n-aria-label="main.superscript" data-tooltip="${t("main.superscript_ui0036")}" data-i18n-data-tooltip="main.superscript_ui0036"><span class="format-glyph">x<sup>2</sup></span></button>
       <button data-format="sub" aria-label="${t("main.subscript")}" data-i18n-aria-label="main.subscript" data-tooltip="${t("main.subscript_ui0038")}" data-i18n-data-tooltip="main.subscript_ui0038"><span class="format-glyph">x<sub>2</sub></span></button>
       <button data-format="footnote" aria-label="${t("main.insert_footnote")}" data-i18n-aria-label="main.insert_footnote" data-tooltip="${t("main.insert_footnote_f")}" data-i18n-data-tooltip="main.insert_footnote_f">${icon('footnote')}</button>
+      <button id="commentInsert" aria-label="${t('comments.add')}" data-i18n-aria-label="comments.add">${icon('comment')}</button>
       <span class="toolbar-divider"></span>
       <button data-format="quote" aria-label="${t("main.blockquote")}" data-i18n-aria-label="main.blockquote" data-tooltip="${t("main.blockquote")}" data-i18n-data-tooltip="main.blockquote">${icon('quote')}</button>
       <button data-format="bullet" aria-label="${t("main.bulleted_list")}" data-i18n-aria-label="main.bulleted_list" data-tooltip="${t("main.bulleted_list_8")}" data-i18n-data-tooltip="main.bulleted_list_8">${icon('list')}</button>
@@ -175,12 +180,13 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <div class="drawer-header"><strong>${h("main.outline")}</strong><button data-close="outline" class="icon-control" aria-label="${t("main.collapse_outline")}" data-i18n-aria-label="main.collapse_outline" data-tooltip="${t("main.collapse_outline")}" data-i18n-data-tooltip="main.collapse_outline" aria-controls="outlineDrawer" aria-expanded="true">${icon('outline')}</button></div>
         <div id="outlineList" class="outline-list"></div>
       </aside>
-      <aside id="notesDrawer" class="notes-drawer" aria-label="${t("main.footnotes")}" data-i18n-aria-label="main.footnotes">
-        <div class="notes-resizer" role="separator" aria-label="${t("main.resize_footnotes_panel")}" data-i18n-aria-label="main.resize_footnotes_panel" aria-orientation="vertical" tabindex="0" title="${t("main.drag_to_resize_double_click_to_reset")}" data-i18n-title="main.drag_to_resize_double_click_to_reset"></div>
-        <div class="drawer-header"><strong>${h("main.footnotes")}<span id="notesCount" class="drawer-count"></span></strong><button data-close="notes" class="icon-control" aria-label="${t("main.collapse_footnotes")}" data-i18n-aria-label="main.collapse_footnotes" data-tooltip="${t("main.collapse_footnotes")}" data-i18n-data-tooltip="main.collapse_footnotes" aria-controls="notesDrawer" aria-expanded="true">${icon('notes')}</button></div>
-        <div id="notesList" class="notes-list"></div>
+      <aside id="notesDrawer" class="notes-drawer" aria-label="${t("comments.sidebar")}" data-i18n-aria-label="comments.sidebar">
+        <div class="notes-resizer" role="separator" aria-label="${t("comments.resize")}" data-i18n-aria-label="comments.resize" aria-orientation="vertical" tabindex="0" title="${t("main.drag_to_resize_double_click_to_reset")}" data-i18n-title="main.drag_to_resize_double_click_to_reset"></div>
+        <div class="drawer-header"><div class="annotation-tabs" role="tablist" aria-label="${t('comments.sidebar')}" data-i18n-aria-label="comments.sidebar"><button id="commentsTab" role="tab" aria-controls="commentsList" aria-selected="true"><span>${h('comments.title')}</span><span id="commentsCount" class="drawer-count"></span></button><button id="notesTab" role="tab" aria-controls="notesList" aria-selected="false"><span>${h('main.footnotes')}</span><span id="notesCount" class="drawer-count"></span></button></div><button data-close="notes" class="icon-control" aria-label="${t('comments.collapse')}" data-i18n-aria-label="comments.collapse" data-tooltip="${t('comments.collapse')}" data-i18n-data-tooltip="comments.collapse" aria-controls="notesDrawer" aria-expanded="true">${icon('notes')}</button></div>
+        <div id="commentsList" class="comments-list" role="tabpanel" aria-labelledby="commentsTab"></div>
+        <div id="notesList" class="notes-list" role="tabpanel" aria-labelledby="notesTab" hidden></div>
       </aside>
-      <button id="notesButton" class="sidebar-rail sidebar-rail-right" aria-label="${t("main.expand_footnotes")}" data-i18n-aria-label="main.expand_footnotes" aria-controls="notesDrawer" aria-expanded="false" aria-pressed="false" data-tooltip="${t("main.expand_footnotes")}" data-i18n-data-tooltip="main.expand_footnotes">${icon('notes')}</button>
+      <button id="notesButton" class="sidebar-rail sidebar-rail-right" aria-label="${t("comments.expand")}" data-i18n-aria-label="comments.expand" aria-controls="notesDrawer" aria-expanded="false" aria-pressed="false" data-tooltip="${t("comments.expand")}" data-i18n-data-tooltip="comments.expand">${icon('notes')}</button>
     </section>
 
     <footer class="statusbar">
@@ -371,7 +377,7 @@ function updateDocumentChrome() {
   document.title = shell.classList.contains('welcome-state')
     ? t('main.app_title', { app: leafName })
     : `${changed ? '• ' : ''}${state.fileName} — ${leafName}`;
-  setText(statsElement, () => `${t('main.characters', { count: state.content.length })} · ${t('main.words', { count: state.content.split(/\s+/).filter(Boolean).length })}`);
+  setText(statsElement, () => {const content=stripComments(state.content);return `${t('main.characters', { count: content.length })} · ${t('main.words', { count: content.split(/\s+/).filter(Boolean).length })}`;});
   desktopTitle(document.title);
   editor.setFileName(state.fileName);
 }
@@ -642,7 +648,8 @@ const notesCount = document.querySelector('#notesCount');
 // built from the same index the editor numbers its citations with, so the list
 // and the page cannot disagree. The only thing kept between redraws is the
 // signature of what is on screen.
-function renderNotes() {
+function renderNotes() { renderFootnotes(); commentPanel?.render(); }
+function renderFootnotes() {
   const rows = notePanelRows(indexFootnotes(state.content));
   const signature = JSON.stringify([state.reading, state.source, rows]);
   if (signature === state.notesSignature) return;
@@ -823,6 +830,7 @@ function toggleNotesDrawer() {
 }
 
 function revealNote(label) {
+  commentPanel?.selectTab('notes');
   setNotesDrawer(true);
   const card = notesList.querySelector(`.note-card[data-label="${CSS.escape(label)}"]`);
   if (!card) return;
@@ -880,6 +888,7 @@ function updateHeadingControl(level) {
   }
 }
 
+let commentPanel=null;
 const editor = createLeafEditor({
   parent: document.querySelector('#editor'),
   doc: welcome,
@@ -906,12 +915,23 @@ const editor = createLeafEditor({
   },
   onOutlineChange: renderOutline,
   onNoteActivate: revealNote,
+  onCommentActivate: id=>commentPanel?.reveal(id),
   onSave: () => saveFile(),
   onExport: exportPdf,
   onSaveAs: () => desktop ? desktopSave(true) : saveFile(),
   onOpen: () => openFile(),
   onCommandPalette: () => openPalette(),
 });
+commentPanel=setupCommentPanel({editor,getMode:()=>state.reading?'reading':state.source?'source':'edit',open:()=>setNotesDrawer(true),status:setStatus,locate:note=>{
+  if(!state.reading){editor.goToComment(note.id);return;}
+  editor.activateComment(note.id);
+  reader.querySelectorAll('.leaf-comment-range.active,.leaf-comment-located').forEach(el=>el.classList.remove('active','leaf-comment-located'));
+  let target=reader.querySelector(`[data-comment-id="${note.id}"]`);
+  if(!target){const at=note.from+(/\r\n/.test(state.content)?editor.view.state.doc.sliceString(0,note.from).split('\n').length-1:0);const blocks=readingBlocks();target=blocks.findLast(b=>b.from<=at)?.element??blocks[0]?.element;}
+  target?.classList.add(target.matches('.leaf-comment-range')?'active':'leaf-comment-located');target?.scrollIntoView({block:'center'});
+}});
+commentPanel.render();
+setupCommentContext({editor,add:()=>commentPanel.add(),desktop,invoke,editable:()=>!state.reading&&!shell.classList.contains('welcome-state')});
 
 updateHeadingControl(editor.headingLevel());
 
@@ -951,7 +971,7 @@ new ResizeObserver(scheduleOutlineCurrent).observe(readingPane);
 new ResizeObserver(() => { syncReadingZoom(); scheduleOutlineCurrent(); }).observe(reader);
 function renderReading() {
   scheduleOutlineCurrent();
-  renderPrintDocument(reader,state.content,{name:state.fileName,numbered:state.showHeadingNumbers,properties:true,expandCallouts:false,fallbackTitle:false,fileNameTitle:state.showFileNameTitle,sourcePositions:true});
+  renderPrintDocument(reader,state.content,{name:state.fileName,numbered:state.showHeadingNumbers,properties:true,expandCallouts:false,fallbackTitle:false,fileNameTitle:state.showFileNameTitle,sourcePositions:true,annotations:true,annotationNotes:editor.comments().notes});
   const title=reader.querySelector('.leaf-file-name-title');if(title){title.tabIndex=0;setAttr(title, 'title', () => t("main.double_click_to_rename_the_file"));setAttr(title, 'aria-label', () => t("main.double_click_or_press_enter_to_rename", {"fileName": state.fileName}));}
   for (const table of reader.querySelectorAll('table')) {
     const wrap = document.createElement('div'); wrap.className = 'reading-table-scroll';
@@ -1423,6 +1443,7 @@ async function exportPdf() {
 }
 
 const commands = [
+  {id:'comments.add',get name(){return t('comments.add');},get shortcut(){return commentShortcuts();},action:()=>commentPanel.add()},
   { id: 'main.zoom_in', get name() { return t('main.zoom_in'); }, shortcut: '⇧⌘=', action: () => runBodyZoom('in') },
   { id: 'main.zoom_out', get name() { return t('main.zoom_out'); }, shortcut: '⇧⌘−', action: () => runBodyZoom('out') },
   { id: 'main.zoom_reset', get name() { return t('main.zoom_reset'); }, shortcut: '⇧⌘0', action: () => runBodyZoom('reset') },
@@ -1480,7 +1501,7 @@ const commandGroups = [
   ['main.settings_ui0238', ['main.appearance_typography_ui0202', 'main.saving_recovery_ui0204']],
   ['main.file', ['main.open_file_ui0212', 'main.save_file', 'main.export_pdf_ui0211', 'main.document_properties_ui0217']],
   ['main.edit_ui0240', ['main.undo_ui0209', 'main.redo_ui0210', 'main.copy_as_rich_text', 'main.paste_as_plain_text', 'main.find_in_document', 'main.clean_up_blank_lines', 'main.renumber_footnotes_in_reference_order']],
-  ['main.insert_format', ['main.insert_image', 'main.insert_attachment', 'main.set_to_heading_1', 'main.bold_ui0226', 'main.italic_ui0227', 'main.highlight', 'main.inline_code', 'main.blockquote_ui0228', 'main.insert_footnote_ui0229', 'main.insert_callout_ui0230', 'main.bulleted_list_ui0232', 'main.insert_table_ui0233']],
+  ['main.insert_format', ['main.insert_image', 'main.insert_attachment', 'main.set_to_heading_1', 'main.bold_ui0226', 'main.italic_ui0227', 'main.highlight', 'main.inline_code', 'main.blockquote_ui0228', 'main.insert_footnote_ui0229', 'comments.add', 'main.insert_callout_ui0230', 'main.bulleted_list_ui0232', 'main.insert_table_ui0233']],
   ['main.view', ['main.display_options', 'main.cycle_view_mode', 'main.zoom_in', 'main.zoom_out', 'main.zoom_reset', 'main.show_or_hide_editing_marks', 'main.show_or_hide_outline', 'main.show_or_hide_footnotes', 'main.show_or_hide_source_line_numbers', 'main.toggle_focus_mode', 'main.toggle_light_dark_theme']],
   ['main.recovery', ['main.versions_drafts_ui0234', 'main.recover_unsaved_drafts', 'main.restore_version_before_last_save_ui0236']],
 ];
@@ -2091,7 +2112,7 @@ renderRecentFiles();
 // inputs (document properties, callouts, search) keep the native undo manager.
 function runHistory(action) {
   const active = document.activeElement;
-  if (active?.closest('.cm-editor') || editor.ownsHistoryTarget(active)) { editor[action](); return; }
+  if (active?.closest('.cm-editor') || editor.ownsHistoryTarget(active) || commentPanel?.ownsHistoryTarget(active)) { editor[action](); return; }
   try { document.execCommand(action); } catch { /* No native history for this target. */ }
 }
 
@@ -2126,6 +2147,7 @@ if (desktop) {
     settings: () => openSettings(),
     copyRich: () => writing.copyRich(),
     pastePlain: () => writing.pastePlain(),
+    addComment:()=>commentPanel.add(),
     undo: () => runHistory('undo'),
     redo: () => runHistory('redo'),
     attach: (files, point) => writing.attachments(files, true, point),

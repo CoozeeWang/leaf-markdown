@@ -3,6 +3,8 @@ import { leafMarkdownExtensions } from './markdown-extensions.js';
 import { inlineTagSpans, isVoidInlineTag } from './inline-html.js';
 import { imageNode, safeTarget } from './resources.js';
 import './writing.css';
+import {indexComments} from './comments.js';
+import {commentBubble} from './comment-view.js';
 const inlineParser = parser.configure(leafMarkdownExtensions);
 
 // "[^1]" parses as a Link with no URL child whether or not a definition exists,
@@ -51,9 +53,17 @@ export function citationLabel(text, map) {
 // `footnotes.link === false` renders the number without the link to the note:
 // the editor would otherwise put an anchor inside the document the webview
 // navigates, and there the number is a label on the text, not a destination.
-export function renderInline(target, text, footnotes) {
+export function renderInline(target, text, footnotes, comments = {}) {
   target.replaceChildren();
   const tree = inlineParser.parse(text);
+  const localComments=indexComments(text);
+  const noteAt=from=>{
+    const local=localComments.notes.find(n=>n.from===from||n.range?.from===from);
+    if(!local)return null;
+    const exact=comments.notes?.find(n=>n.from===from+(comments.offset??0)||n.range?.from===from+(comments.offset??0));
+    const nearby=comments.notes?.find(n=>n.from>=local.from+(comments.offset??0)&&n.kind===local.kind&&n.text===local.text);
+    return exact??nearby??(comments.show?null:local);
+  };
   const openAt = new Map(), closeAt = new Map();
   for (const span of inlineTagSpans(text, tree)) {
     openAt.set(span.openFrom, span);
@@ -79,6 +89,11 @@ export function renderInline(target, text, footnotes) {
     return sup;
   }
   function visit(node, parent, inLink = false) {
+    if(node.name==='CriticRevision'){parent.append(document.createTextNode(text.slice(node.from,node.to)));return;}
+    if(node.name==='ObsidianComment'||node.name==='CriticMark')return;
+    if(node.name==='CriticComment'){
+      const note=noteAt(node.from);if(comments.show&&note){parent.append(commentBubble(note));}else if(comments.show){parent.append(document.createTextNode(text.slice(node.from,node.to)));}return;
+    }
     if (node.name === 'HardBreak') { parent.append(document.createElement('br')); return; }
     if (node.name === 'Escape') { parent.append(document.createTextNode(text.slice(node.from + 1, node.to))); return; }
     if (node.name === 'Image') {
@@ -103,6 +118,11 @@ export function renderInline(target, text, footnotes) {
     if (/^(EmphasisMark|StrikethroughMark|CodeMark|LinkMark|LeafHighlightMark)$/.test(node.name) || (inLink && node.name === 'URL')) return;
     const tags = { StrongEmphasis: 'strong', Emphasis: 'em', Strikethrough: 's', InlineCode: 'code', Link: 'span', LeafHighlight: 'mark' };
     let container = parent;
+    if(node.name==='CriticRange'){
+      const note=noteAt(node.from);
+      if(note&&comments.show){container=document.createElement('span');container.className='leaf-comment-range';container.dataset.commentId=note.id;parent.append(container);}
+      else if(!note){container=document.createElement('mark');container.className='leaf-critic-highlight';parent.append(container);}
+    }
     if (tags[node.name]) {
       container = document.createElement(tags[node.name]); parent.append(container);
       if (node.name === 'Link') {

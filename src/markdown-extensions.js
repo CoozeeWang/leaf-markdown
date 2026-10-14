@@ -1,7 +1,8 @@
 import { GFM } from '@lezer/markdown';
+import { commentMarkdownExtension } from './comment-syntax.js';
 
 const highlightDelimiter = { resolve: 'LeafHighlight', mark: 'LeafHighlightMark' };
-export const leafMarkdownExtensions = [GFM, {
+export const leafMarkdownExtensions = [GFM, commentMarkdownExtension, {
   defineNodes: ['LeafHighlight', 'LeafHighlightMark'],
   parseInline: [{
     name: 'LeafHighlight',

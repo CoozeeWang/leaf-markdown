@@ -12,6 +12,7 @@ const core = [
   'version-display', 'properties-insert-guard', 'image-drop', 'image-insertion', 'image-reveal', 'image-tooltips', 'image-drag',
   'paragraph-blank-lines', 'paragraph-input',
   'body-fonts',
+  'comments',
   'list-images', 'clipboard-images',
   'recovery-notice', 'file-feedback', 'status-notices',
 ].map(name => `${name}-browser.mjs`);

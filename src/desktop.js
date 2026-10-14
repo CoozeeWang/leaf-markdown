@@ -137,6 +137,7 @@ export async function initDesktop(callbacks) {
     if (payload === 'settings') hooks.settings?.();
     if (payload === 'copy-rich') hooks.copyRich?.();
     if (payload === 'paste-plain') hooks.pastePlain?.();
+    if (payload === 'add-comment') hooks.addComment?.();
     if (payload === 'recovery') hooks.recovery();
     if (payload === 'export-pdf') hooks.exportPdf();
     if (payload === 'rename') hooks.rename?.();

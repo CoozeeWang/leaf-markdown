@@ -8,6 +8,7 @@ body { margin: 0; }
 .export-toolbar label { white-space: nowrap; }
 .export-toolbar button { font: inherit; font-size: 14px; text-align: start; border: 0; border-radius: 8px; background:var(--export-accent); color:var(--export-accent-text); padding: 10px 16px; cursor: pointer; }
 .export-help { text-align: center; color:var(--export-muted); font-size: 12px; padding: 0 16px; }
+.export-comment-help{display:block;margin-top:4px}
 .print-document { --text: #353b38; --heading-primary: #35684f; --heading-secondary: #4b704c; --heading-3: #667346; --heading-4: #7b7040; --heading-5: #85633f; --heading-6: #906333; --strong: #966039; --emphasis: #826080; --code-text: #486b83; --highlight-text: #66512a; --highlight-bg: #f3e5b5; --link: #31777b; --quote-bg: #f1f3ed; --muted: #697164; --line: #dedfd7; --accent: #607b68; --accent-soft: #e4ebe4; --code: #edf1f3; color-scheme:light; color:var(--text); width: min(100%, 210mm); padding: 18mm; margin: 24px auto; background: white; font-size: 11pt; line-height: 1.8; overflow-wrap: anywhere; }
 .print-document h1,.print-document h2,.print-document h3,.print-document h4,.print-document h5,.print-document h6 { line-height: 1.45; margin: 1.5em 0 .65em; font-weight: 600; break-after: avoid; page-break-after: avoid; }
 .print-document > :first-child { margin-top: 0; }

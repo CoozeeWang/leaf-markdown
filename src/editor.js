@@ -60,6 +60,8 @@ import { imageDrag } from './image-drag.js';
 import { shortcutText, documentHistoryShortcut } from './platform-shortcuts.js';
 import { footnoteRegion, footnoteRegionEnabled, footnoteBoundaryGuard, prepareBodyBeforeNotes } from './footnote-region.js';
 import { footnoteInlineNodes } from './footnote-inline.js';
+import {commentIndex,commentDecorations,activeComment} from './comment-view.js';
+import {planCommentInsertion,planCommentBody,planCommentDeletion} from './comments.js';
 
 const toggleBlankMarkers = StateEffect.define();
 const typedProperties = StateEffect.define();
@@ -401,6 +403,9 @@ function livePreviewDecorations(view) {
   tree.iterate({
     enter(node) {
       if (node.from < suppressUntil) return false;
+      const annotations=view.state.field(commentIndex,false);
+      if(node.name!=='Document' && annotations && annotations.notes.some(n=>node.from>=n.from&&node.to<=n.to))return false;
+      if(node.name==='CriticMark'||node.name==='CriticRevision')return false;
       const line = doc.lineAt(node.from);
       const heading = node.name.match(/^(?:ATX|Setext)Heading([1-6])$/);
       const yaml = view.state.field(structuredPreview).model.yaml;
@@ -1211,6 +1216,8 @@ export function createLeafEditor(options) {
       bracketMatching(),
       markdown({ extensions: leafMarkdownExtensions, addKeymap: false }),
       sourceMode,
+      commentIndex,
+      commentDecorations,
       fileNameTitle.init(() => options.showFileNameTitle !== false),
       structuredPreview,
       propertiesFolded,
@@ -1309,6 +1316,8 @@ export function createLeafEditor(options) {
   });
 
   const view = new EditorView({ state, parent: options.parent });
+  view.dom.addEventListener('leaf-comment-activate',event=>options.onCommentActivate?.(event.detail.id));
+  view.dom.addEventListener('click',event=>{const id=event.target.closest?.('.leaf-comment-range')?.dataset.commentId;if(id)options.onCommentActivate?.(id);});
   view.dom.addEventListener("leaf-image-ready", () => view.requestMeasure());
   // Dragging a file over the property block must not offer a position there: the
   // drop lands in the body instead, so a cursor drawn over the block would point
@@ -1457,6 +1466,27 @@ export function createLeafEditor(options) {
     // The notes panel writes through here rather than keeping a copy of the note:
     // what it shows and what the file holds are the same words, so the reading
     // view and the PDF follow the panel as it is typed into.
+    comments:()=>view.state.field(commentIndex),
+    activateComment(id){view.dispatch({effects:activeComment.of(id)});},
+    addComment(){
+      if(reading||view.compositionStarted)return {error:'selection'};
+      const range=view.state.selection.main,plan=planCommentInsertion(view.state.doc.toString(),range.from,range.to);
+      if(plan.error)return plan;
+      view.dispatch({changes:plan.change,selection:{anchor:plan.anchor},userEvent:'input.comment',annotations:isolateHistory.of('full')});
+      return {note:view.state.field(commentIndex).notes.find(n=>n.from===plan.commentFrom)};
+    },
+    setCommentBody(id,text){
+      if(reading)return false;const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;
+      const change=planCommentBody(view.state.doc.toString(),note,text);if(!change)return false;
+      if(view.state.doc.sliceString(change.from,change.to)!==text)view.dispatch({changes:change,userEvent:'input.comment-body'});
+      return true;
+    },
+    deleteComment(id){
+      if(reading)return false;const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;
+      const changes=planCommentDeletion(view.state.doc.toString(),note);if(!changes.length)return false;
+      view.dispatch({changes,userEvent:'delete.comment',annotations:isolateHistory.of('full')});return true;
+    },
+    goToComment(id){const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;view.dispatch({effects:[activeComment.of(id),EditorView.scrollIntoView(note.range?.bodyFrom??note.from,{y:'center'})]});return true;},
     setFootnoteBody(label, body) { applyFootnoteBody(view, label, body); },
     deleteFootnote(label) {
       if (reading) return false;

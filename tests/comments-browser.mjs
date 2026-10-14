@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import {chromium,webkit} from 'playwright';
+import {mkdirSync} from 'node:fs';
+const engine=process.env.LEAF_COMMENT_ENGINE==='webkit'?webkit:chromium;
+const browser=await engine.launch({headless:true,...(engine===chromium&&process.env.LEAF_BROWSER_CHANNEL?{channel:process.env.LEAF_BROWSER_CHANNEL}:{})});
+const base=process.env.LEAF_TEST_BASE_URL||'http://127.0.0.1:41732';
+mkdirSync('test-results',{recursive:true});
+const source='# 合成批注样本\n\n正文{==**范围文字**==}{>>范围批注内容<<}继续。{>>位置批注内容<<}\n\n%%隐藏注释内容\n\n# 不应出现在大纲\n%%\n\n普通段落供选择。\n\n修订{~~旧字~>新字~~}。\n\n代码：`%%代码示例%%`。\n\n脚注引用[^test]。\n\n[^test]: 脚注内容';
+const errors=[];
+try{
+ const page=await browser.newPage({viewport:{width:1200,height:850},locale:'zh-CN'});page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base);await page.click('#welcomeNewButton');
+ const setDoc=async(text,from=0,to=from)=>page.evaluate(async({text,from,to})=>{const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');window.v??=EditorView.findFromDOM(document.querySelector('#editor .cm-editor'));v.dispatch({changes:{from:0,to:v.state.doc.length,insert:text},selection:{anchor:from,head:to}});v.focus();},{text,from,to});
+ const doc=()=>page.evaluate(()=>v.state.doc.toString());
+ const mode=async value=>{await page.click('#readingToggle');await page.locator(`[data-mode="${value}"]`).click();};
+ await setDoc(source);await page.click('#notesButton');await page.click('#commentsTab');
+ assert.equal(await page.locator('.comment-card').count(),3);
+ assert.equal(await page.locator('#editor .leaf-comment-bubble').count(),2);
+ assert.equal(await page.locator('#editor .leaf-comment-range').innerText(),'范围文字');
+ assert.ok(!(await page.locator('#editor').innerText()).includes('范围批注内容'));
+ assert.ok(!(await page.locator('#editor').innerText()).includes('隐藏注释内容'));
+ assert.ok((await page.locator('#editor').innerText()).includes('{~~旧字~>新字~~}'));
+ assert.ok(!(await page.locator('#outlineList').innerText()).includes('不应出现在大纲'));
+ await page.locator('#editor .leaf-comment-bubble').first().click();assert.equal(await page.locator('.comment-card.active .comment-body').innerText(),'范围批注内容');
+ const glyph=await page.locator('#editor .leaf-comment-bubble').first().evaluate(e=>({height:e.getBoundingClientRect().height,svg:getComputedStyle(e.querySelector('svg')).width,top:getComputedStyle(e).top}));assert.equal(glyph.svg,'11px');assert.ok(parseFloat(glyph.top)<0);
+ await page.locator('.comment-card').first().locator('.comment-edit').click();const input=page.locator('.comment-card textarea');
+ await input.fill('修改后的范围批注');assert.ok((await doc()).includes('{>>修改后的范围批注<<}'));
+ await input.press('Meta+z');assert.equal(await doc(),source);
+ await input.press('Meta+Shift+z');assert.ok((await doc()).includes('修改后的范围批注'));
+ await input.evaluate(area=>{window.composingArea=area;area.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));area.value='输入法组合样本';area.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertCompositionText',data:'输入法组合样本',isComposing:true}));});assert.equal(await input.evaluate(area=>area===window.composingArea),true);assert.ok((await doc()).includes('输入法组合样本'));await input.evaluate(area=>area.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'输入法组合样本'})));
+ await input.press('Escape');await page.locator('.comment-card').first().locator('.comment-delete').click();assert.ok((await doc()).includes('正文**范围文字**继续。'));assert.ok(!(await doc()).includes('{=='));
+ await page.click('#undoButton');assert.ok((await doc()).includes('{==**范围文字**==}'));
+ await setDoc(source);await mode('reading');assert.equal(await page.locator('.reading-document .leaf-comment-bubble').count(),2);assert.equal(await page.locator('.reading-document .leaf-comment-range').innerText(),'范围文字');assert.equal(await page.locator('.comment-delete:visible').count(),0);
+ await page.locator('.reading-document .leaf-comment-bubble').last().click();assert.equal(await page.locator('.comment-card.active .comment-body').innerText(),'位置批注内容');
+ await page.locator('.comment-card').first().locator('.comment-quote').click();assert.equal(await page.locator('.reading-document .leaf-comment-range.active').count(),1);
+ await mode('source');await page.evaluate(()=>v.dispatch({selection:{anchor:0},scrollIntoView:true}));await page.waitForTimeout(150);const raw=await page.locator('#editor').innerText();assert.ok(raw.includes('{>>范围批注内容<<}'),JSON.stringify({raw,doc:await doc(),mode:await page.evaluate(async()=>v.state.field((await import('/src/view-mode.js')).sourceMode))}));assert.ok(raw.includes('%%隐藏注释内容'));assert.equal(await doc(),source);
+ await mode('edit');await page.click('#notesTab');assert.ok((await page.locator('#notesList').innerText()).includes('脚注内容'));await page.click('#commentsTab');
+ // Add via actual shortcut, then undo both the body edit and insertion.
+ await setDoc('普通段落供选择。',0,4);await page.keyboard.press('Alt+Meta+a');await page.waitForSelector('.comment-card textarea');await page.locator('.comment-card textarea').fill('新批注');await page.locator('.comment-card textarea').press('Escape');assert.equal(await doc(),'{==普通段落==}{>>新批注<<}供选择。');
+ await page.click('#undoButton');await page.click('#undoButton');assert.equal(await doc(),'普通段落供选择。');
+ await page.evaluate(()=>{v.dispatch({selection:{anchor:0,head:4}});v.focus();});const position=await page.evaluate(()=>{const r=v.coordsAtPos(2);return {x:r.left+1,y:(r.top+r.bottom)/2};});await page.mouse.click(position.x,position.y,{button:'right'});await page.locator('.comment-context-menu button').first().click();await page.locator('.comment-card textarea').fill('右键批注');await page.locator('.comment-card textarea').press('Escape');assert.ok((await doc()).includes('{==普通段落==}{>>右键批注<<}'));
+ await setDoc('命令面板样本',0,4);await page.click('#commandsButton');await page.fill('#paletteInput','添加批注');await page.locator('#paletteList button').filter({hasText:'添加批注'}).click();await page.waitForSelector('.comment-card textarea');assert.equal(await doc(),'{==命令面板==}{>><<}样本');
+ await setDoc('第一段\n\n第二段',0,8);await page.click('#commentInsert');assert.equal(await doc(),'第一段\n\n第二段');assert.ok((await page.locator('#saveStatus').innerText()).includes('同一段落'));assert.deepEqual(await page.evaluate(()=>[v.state.selection.main.from,v.state.selection.main.to]),[0,8]);
+ // PDF/clipboard renderer strips annotations and retains unresolved revisions.
+ await page.evaluate(async source=>{const {renderPrintDocument}=await import('/src/print-document.js');const root=document.createElement('div');renderPrintDocument(root,source,{fallbackTitle:false});window.printed=root.innerHTML;},source);
+ const printed=await page.evaluate(()=>printed);assert.ok(printed.includes('<strong>范围文字</strong>'));assert.ok(!printed.includes('批注内容'));assert.ok(!printed.includes('隐藏注释内容'));assert.ok(!printed.includes('leaf-comment-bubble'));assert.ok(printed.includes('{~~旧字'));
+ await setDoc(source);await page.setViewportSize({width:900,height:700});
+ for(const language of ['zh-Hans','zh-Hant-TW','en']){await page.evaluate(async language=>{const i18n=await import('/src/i18n.js');await i18n.setLanguagePreference(language);},language);assert.ok((await page.locator('#commentsTab').innerText()).includes(language==='en'?'Comments':language==='zh-Hant-TW'?'批註':'批注'));}
+ await page.screenshot({path:`test-results/comments-${engine.name()}.png`});
+ // Real export window instructions in every language, without touching files.
+ for(const language of ['zh-Hans','zh-Hant-TW','en']){
+  await page.evaluate(({source,language})=>{localStorage.setItem('leaf-language',language);sessionStorage.setItem('comment-export',JSON.stringify({name:'synthetic.md',source,numbered:false}));},{source,language});
+  await page.goto(base+'/pdf-export.html?export=comment-export');await page.waitForSelector('.export-comment-help');assert.equal(await page.locator('.export-comment-help').count(),2);assert.equal(await page.locator('.print-document .leaf-comment-bubble').count(),0);
+  const msgs=await page.locator('.export-comment-help').allTextContents();assert.ok(msgs[0].includes(language==='en'?'not included':language==='zh-Hant-TW'?'批註':'批注'));await page.emulateMedia({media:'print'});assert.equal(await page.locator('.export-help').isVisible(),false);await page.emulateMedia({media:'screen'});
+ }
+ await page.addInitScript(()=>Object.defineProperty(navigator,'platform',{get:()=> 'Win32'}));await page.goto(base);await page.click('#welcomeNewButton');await page.evaluate(async()=>{const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');const v=EditorView.findFromDOM(document.querySelector('#editor .cm-content'));v.dispatch({changes:{from:0,to:v.state.doc.length,insert:'Windows sample'},selection:{anchor:0,head:7}});v.focus();});await page.keyboard.press('Control+Alt+m');await page.waitForSelector('.comment-card textarea');
+ assert.deepEqual(errors,[]);console.log('PASS comments: rendered ranges and superscript bubbles, sidebar/history, modes, selection guard, three languages, PDF and both platform shortcuts');
+}finally{await browser.close();}

@@ -7,6 +7,7 @@ import { renderInline } from './inline-preview.js';
 import { applyTableWidths } from './table-layout.js';
 import { parseCallout, labels as calloutLabels } from './callout.js';
 import { indexFootnotes, displayNotes } from './footnotes.js';
+import {indexComments,maskHiddenComments} from './comments.js';
 
 const markdown = parser.configure(leafMarkdownExtensions);
 
@@ -19,12 +20,14 @@ const markdown = parser.configure(leafMarkdownExtensions);
 // its number inside a callout instead of starting a second, local numbering.
 export function renderPrintDocument(target, source, {
   name = t("desktop.untitled_md"), numbered = false, properties = false,
-  fallbackTitle = true, fileNameTitle = false, expandCallouts = true, sourcePositions = false, footnotes: shared,
+  fallbackTitle = true, fileNameTitle = false, expandCallouts = true, sourcePositions = false, footnotes: shared, annotations = false, annotationNotes = [],
 } = {}) {
   const root = !shared;
   const state = shared ?? createFootnoteState(source);
   target.replaceChildren();
   const model = analyzeMarkdown(source);
+  const annotationIndex=indexComments(source).notes.map((n,i)=>({...n,id:annotationNotes[i]?.id??'reading-comment-'+n.from}));
+  const inline=(target,text,at=0)=>renderInline(target,text,state,{show:annotations,notes:annotationIndex,offset:at});
   const add = (tag, parent = target, text) => {
     const el = document.createElement(tag); if (text !== undefined) el.textContent = text; parent.append(el); return el;
   };
@@ -45,7 +48,7 @@ export function renderPrintDocument(target, source, {
     } else add('pre', box, source.slice(0, model.yaml.to));
   }
   const offset = model.yaml?.to ?? 0;
-  const region = source.slice(offset);
+  const region = maskHiddenComments(source).slice(offset);
   // A definition is blanked rather than skipped while walking the tree: the base
   // grammar reads "[^1]: text" as a link reference definition and the indented
   // continuation below it as a CodeBlock, so dropping just the definition's own
@@ -90,7 +93,7 @@ export function renderPrintDocument(target, source, {
       const h = markSource(add(`h${level}`, parent), node, doc);
       if (isMain && heading) h.dataset.sourceLine = String(source.slice(0, heading.from).split('\n').length);
       if (numbered && isMain && heading) add('span', h, heading.number + ' ').className = 'print-heading-number';
-      const title = add('span', h); renderInline(title, content, state); return;
+      const title = add('span', h); inline(title, content, node.from+offset+text.indexOf(content)); return;
     }
     if (node.name === 'Table') {
       const block = model.blocks.find(b => b.kind === 'table' && b.from === node.from + offset);
@@ -101,7 +104,7 @@ export function renderPrintDocument(target, source, {
         const tr = add('tr', i ? tbody : head);
         for (let c = 0; c < block.columns; c++) {
           const cell = add(i ? 'td' : 'th', tr); cell.style.textAlign = block.align[c];
-          renderInline(cell, row.cells[c]?.raw ?? '', state);
+          inline(cell, row.cells[c]?.raw ?? '', row.cells[c]?.from ?? 0);
         }
       }); return;
     }
@@ -121,7 +124,7 @@ export function renderPrintDocument(target, source, {
         cursor = mark.to + (/^[ \t]/.test(doc.slice(mark.to)) ? 1 : 0);
       }
       content += doc.slice(cursor, node.to);
-      renderInline(markSource(add('p', parent), node, doc), content, state); return;
+      inline(markSource(add('p', parent), node, doc), content,node.from+offset); return;
     }
     if (node.name === 'Task') {
       const p = markSource(add('p', parent), node, doc); p.textContent = /^\[[xX]\]/.test(text) ? '☑ ' : '☐ ';

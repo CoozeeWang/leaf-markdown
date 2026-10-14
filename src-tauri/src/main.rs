@@ -359,6 +359,18 @@ fn open_link(app: tauri::AppHandle, window: tauri::WebviewWindow, target: String
 }
 
 #[tauri::command]
+fn show_comment_context(window: tauri::WebviewWindow) -> Result<(), String> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    let app = window.app_handle();
+    let add = MenuItem::with_id(app, "add-comment", i18n::app_text(app, "comments.add"), true, None::<&str>).map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(app, &[&add, &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+        &PredefinedMenuItem::cut(app, Some(&i18n::app_text(app,"native.cut"))).map_err(|e| e.to_string())?,
+        &PredefinedMenuItem::copy(app, Some(&i18n::app_text(app,"native.copy"))).map_err(|e| e.to_string())?,
+        &PredefinedMenuItem::paste(app, Some(&i18n::app_text(app,"native.paste"))).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
+    window.popup_menu(&menu).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn print_export(window: tauri::WebviewWindow) -> Result<(), String> {
     if !window.label().starts_with("export-") { return Err(crate::i18n::error("main.open_the_pdf_export_preview_first", serde_json::json!({})).into()); }
     #[cfg(target_os = "macos")]
@@ -1050,7 +1062,7 @@ fn main() {
     let builder = builder.manage(OpenRequests::default());
     builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open])
+        .invoke_handler(tauri::generate_handler![i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, show_comment_context, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open])
         .setup(|app| {
             app.manage(i18n::Language::load(app.path().app_data_dir()?.join("language-v1.json")));
             let recent_path = app.path().app_data_dir()?.join("recent-files-v1.json");
@@ -1092,7 +1104,9 @@ fn main() {
             let undo = MenuItem::with_id(handle, "undo", "撤销", true, Some("CmdOrCtrl+Z"))?;
             let redo = MenuItem::with_id(handle, "redo", "重做", true, Some("CmdOrCtrl+Shift+Z"))?;
             let cycle_mode = MenuItem::with_id(handle, "cycle-mode", "切换视图模式", true, Some("CmdOrCtrl+R"))?;
-            let edit = Submenu::with_items(handle, "编辑", true, &[&undo, &redo, &PredefinedMenuItem::cut(handle, None)?, &PredefinedMenuItem::copy(handle, None)?, &PredefinedMenuItem::paste(handle, None)?, &PredefinedMenuItem::select_all(handle, None)?, &find, &copy_rich, &paste_plain, &cycle_mode])?;
+            let comment_shortcut = if cfg!(target_os="macos") { "Cmd+Alt+A" } else { "Ctrl+Alt+M" };
+            let add_comment = MenuItem::with_id(handle, "add-comment", "添加批注", true, Some(comment_shortcut))?;
+            let edit = Submenu::with_items(handle, "编辑", true, &[&undo, &redo, &PredefinedMenuItem::cut(handle, None)?, &PredefinedMenuItem::copy(handle, None)?, &PredefinedMenuItem::paste(handle, None)?, &PredefinedMenuItem::select_all(handle, None)?, &find, &copy_rich, &paste_plain, &add_comment, &cycle_mode])?;
             let menu = Menu::with_items(handle, &[&app_menu, &file, &edit])?;
             app.state::<i18n::Language>().attach_menu(&menu)?;
             app.set_menu(menu)?;

@@ -150,6 +150,8 @@ NSIS 配置启用 English、SimpChinese、TradChinese 和语言选择器，直�
 
 脚注侧栏三模式由 `footnote-sidebar-modes-browser.mjs` 检查；文末定义格式由 `footnote-definition-format-browser.mjs` 在 Chromium/WebKit 检查实际格式、解析器边界、多行内容、源码/光标标记与撤销，位置映射另由 `footnote-inline.test.js` 覆盖 CRLF 和缩进。长文浮框输入由 `footnote-input-performance-browser.mjs` 使用约十九万字符合成样本检查即时写回、侧栏同步和组合输入。macOS 原生夹具为 `native-footnote-sidebar.html`，使用现有 `native-table-keys` 入口验证实际 WKWebView 的文末/侧栏渲染与共享撤销。性能数字来自本机合成样本，不代替用户原文、真实输入法或安装版验收。
 
+批注使用既有 CriticMarkup 范围／位置格式与 Obsidian `%%…%%`。`comments.test.js` 检查位置、CRLF、代码／转义／属性保护、非法选区和删除保留正文；`comments-browser.mjs` 检查侧栏标签、上标气泡、文字格式、共享历史、三模式、三语、两平台快捷键、PDF 提示和打印隐藏。支持 `LEAF_TEST_BASE_URL`，默认 Chromium，`LEAF_COMMENT_ENGINE=webkit` 切换 WebKit。macOS 在 `src-tauri` 运行 `cargo run --locked --example native-table-keys -- ../tests/native-comments.html http://127.0.0.1:41732/tests/native-comments.html`，验证真实 WKWebView、保存格式、历史和 AppKit Option+Command+A；合成组合输入及平台模拟不等于实际输入法或 Windows 验收。Obsidian 互通另外使用独立测试库与已记录版本的 CriticMarkup 插件，不能只凭解析器测试宣称原生互通。Leaf 不读取外部编辑器的私有批注数据库。
+
 普通正文 Enter 与脚注完成由 `paragraph-enter.test.js`、`footnote-completion.test.js` 及双引擎 `paragraph-input-browser.mjs` 检查，覆盖空格不延续、结构缩进、先成对括号后填标识、组合输入结束后补空定义和一次撤销。macOS 使用 `native-table-keys` 运行 `../tests/native-paragraph-input.html` 与 `http://127.0.0.1:41732/tests/native-paragraph-input.html`；Enter 来自 AppKit，组合输入为合成事件，仍需实际中文输入法与英文标点人工验收。
 
 正文缩放由 `body-zoom-browser.mjs` 检查八档比例、编辑坐标与真实鼠标输入、高亮快捷键区分、撤销、视图切换、长文位置、三语、菜单和独立导出预览。默认 Chromium，`LEAF_ZOOM_ENGINE=webkit` 可检查 WebKit；平台模拟不等于 Windows 实机。macOS 使用已有 `native-table-keys` 入口运行 `../tests/native-body-zoom.html` 与 `http://127.0.0.1:41732/tests/native-body-zoom.html`，加 `--foreground` 检查实际 WKWebView 的比例、坐标及 AppKit Shift 快捷键；后台窗口的帧测量可能暂停。正式安装版的真实输入法、保存重开、图片拖放、实际 PDF 和两平台验收仍分开记录。
