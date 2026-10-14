@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {EditorState} from '@codemirror/state';
 import {history,undo,redo} from '@codemirror/commands';
 import {sourceMode} from '../src/view-mode.js';
-import {footnoteIndex,footnoteRenumber,footnoteReferenceCompletion,footnoteReferenceDeletion,footnoteLabelFollow} from '../src/footnote-state.js';
+import {footnoteIndex,footnoteRenumber,footnoteReferenceCompletion,footnoteReferenceDeletion,footnoteLabelFollow,finishFootnoteComposition} from '../src/footnote-state.js';
 const create=(doc,source=false)=>EditorState.create({doc,extensions:[sourceMode.init(()=>source),footnoteIndex,footnoteRenumber,footnoteReferenceCompletion,footnoteReferenceDeletion,footnoteLabelFollow,history()]});
 const type=(state,at,insert,userEvent='input.type')=>state.update({changes:{from:at,insert},selection:{anchor:at+insert.length},userEvent}).state;
 test('typed closing bracket creates an ordered empty definition and preserves caret, undo and redo',()=>{
@@ -40,4 +40,56 @@ test('loading, paste, source, code, metadata, existing undefined citations and p
 test('another reference reuses the existing definition',()=>{
  const original='正文[^name] 另一处[^name\n\n[^name]: 内容',at=original.indexOf('\n');
  assert.equal(type(create(original),at,']').doc.toString(),original.slice(0,at)+']'+original.slice(at));
+});
+test('typing a label inside existing brackets completes the new inline citation',()=>{
+ const original='正文[^1]。\n\n跨段落[]\n\n[^1]: 第一条';
+ let state=create(original), at=original.indexOf('[]')+1;
+ state=type(state,at,'^');
+ state=type(state,at+1,'6');
+ assert.equal(state.doc.toString(),original.replace('[]','[^6]'));
+ state=state.update({selection:{anchor:at+3},userEvent:'select'}).state;
+ assert.equal(state.doc.toString(),'正文[^1]。\n\n跨段落[^2]\n\n[^1]: 第一条\n\n[^2]:');
+ const target={get state(){return state;},dispatch:tr=>{state=tr.state;}};
+ assert.ok(undo(target));assert.equal(state.doc.toString(),original);
+ assert.ok(redo(target));assert.ok(state.doc.toString().endsWith('[^2]:'));
+});
+test('composition waits until commit and joins completion to the same undo event',()=>{
+ const original='甲[^1]。\n\n正文[]\n\n[^1]: A',at=original.indexOf('[]')+1;
+ let state=type(create(original),at,'^','input.type.compose.start');
+ state=type(state,at+1,'6','input.type.compose');
+ assert.equal(state.doc.toString(),original.replace('[]','[^6]'));
+ state=state.update({effects:finishFootnoteComposition.of(null),userEvent:'input.type.compose'}).state;
+ assert.equal(state.doc.toString(),original.replace('[]','[^6]'));
+ state=state.update({selection:{anchor:at+3},userEvent:'select'}).state;
+ const completed=original.replace('[]','[^2]')+'\n\n[^2]:';
+ assert.equal(state.doc.toString(),completed);
+ assert.equal(state.selection.main.head,at+3);
+ const target={get state(){return state;},dispatch:tr=>{state=tr.state;}};
+ assert.ok(undo(target));assert.equal(state.doc.toString(),original);
+ assert.ok(redo(target));assert.equal(state.doc.toString(),completed);
+});
+test('a label can keep growing inside paired brackets before completion',()=>{
+ const original='正文[]';let state=create(original);
+ let at=3;
+ for(const c of '^66'){state=type(state,at,c);at=state.selection.main.head;}
+ assert.equal(state.doc.toString(),'正文[^66]');
+ state=state.update({selection:{anchor:at+1},userEvent:'select'}).state;
+ assert.equal(state.doc.toString(),'正文[^1]\n\n[^1]:');
+});
+test('a partial new label never renames an existing note with the same first digit',()=>{
+ const original='甲[^1]。\n\n正文[]\n\n[^1]: 原注';let state=create(original),at=original.indexOf('[]')+1;
+ for(const c of '^12'){state=type(state,at,c);at=state.selection.main.head;}
+ assert.equal(state.doc.toString(),original.replace('[]','[^12]'));
+ state=state.update({selection:{anchor:at+1},userEvent:'select'}).state;
+ assert.equal(state.doc.toString(),original.replace('[]','[^2]')+'\n\n[^2]:');
+});
+test('cancelled composition and edits near old undefined references do not add definitions',()=>{
+ let state=type(create('正文[]'),3,'^6','input.type.compose.start');
+ state=state.update({changes:{from:3,to:5,insert:''},userEvent:'input.type.compose'}).state;
+ state=state.update({effects:finishFootnoteComposition.of(null),userEvent:'input.type.compose'}).state;
+ assert.equal(state.doc.toString(),'正文[]');
+ const original='甲[^old] 乙';
+ state=type(create(original),0,'新','input.type.compose.start');
+ state=state.update({effects:finishFootnoteComposition.of(null),userEvent:'input.type.compose'}).state;
+ assert.equal(state.doc.toString(),'新'+original);
 });

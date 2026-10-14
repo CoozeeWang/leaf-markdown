@@ -1,4 +1,5 @@
-import { StateField, EditorState, MapMode, ChangeSet } from '@codemirror/state';
+import { StateField, StateEffect, EditorState, Transaction, MapMode, ChangeSet } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
 import { indexFootnotes, displayNotes, labelPartAt, planLabelFollow, planFootnoteRenumbering, planFootnoteDeletion, planFootnoteDefinitionOrder, appendDefinition } from './footnotes.js';
 import {isolateHistory} from '@codemirror/commands';
 import {sourceMode} from './view-mode.js';
@@ -29,28 +30,66 @@ export function footnoteReader(state) {
   return { map: displayNotes(index).map, link: false, seen: new Map() };
 }
 
-// Completing an inline citation in live editing creates the same empty
-// definition as the toolbar. Only the newly typed closing bracket qualifies:
-// loading, paste, history, code examples and unrelated edits leave source intact.
-export const footnoteReferenceCompletion = EditorState.transactionFilter.of(tr => {
-  if (!tr.docChanged || !tr.isUserEvent('input.type') || tr.startState.field(sourceMode, false)) return tr;
-  const endings = [];
-  tr.changes.iterChanges((_fromA, _toA, fromB, toB, inserted) => {
-    if (inserted.toString().includes(']')) endings.push({from:fromB,to:toB});
-  });
-  if (!endings.length) return tr;
+function newInlineCitations(tr) {
   const before = tr.startState.field(footnoteIndex, false);
-  if (!before) return tr;
+  if (!before) return [];
   const oldStarts = new Set(before.notes.flatMap(note => note.refs.map(ref => tr.changes.mapPos(ref.from, -1))));
+  const touched = [];
+  tr.changes.iterChangedRanges((_fromA, _toA, from, to) => touched.push({from, to}));
+  return indexFootnotes(tr.newDoc.toString()).notes.flatMap(note => note.refs)
+    .filter(ref => !oldStarts.has(ref.from) && touched.some(range => range.from < ref.to && range.to > ref.from));
+}
+
+function editingCitation(tr, ref) {
+  return tr.newSelection.ranges.some(range => range.from >= ref.from && range.to < ref.to);
+}
+
+// IMEs can finish a citation before compositionend. Remember just the newly
+// created references, without appending definitions or changing their labels
+// while the input method still owns the text. Opening/paste/undo don't queue work.
+export const finishFootnoteComposition = StateEffect.define();
+const pendingCitations = StateField.define({
+  create: () => ({starts: [], composing: false}),
+  update(value, tr) {
+    if (tr.state.field(sourceMode, false) || (tr.docChanged && !tr.isUserEvent('input.type'))) return {starts: [], composing: false};
+    const finishing = tr.effects.some(e => e.is(finishFootnoteComposition));
+    const typing = tr.docChanged && tr.isUserEvent('input.type');
+    const starts = new Set(value.starts.map(pos => tr.changes.mapPos(pos, -1)));
+    if (typing) for (const ref of newInlineCitations(tr)) starts.add(ref.from);
+    return {
+      starts: indexFootnotes(tr.newDoc.toString()).notes.flatMap(note => note.refs
+        .filter(ref => starts.has(ref.from) && (!note.def || editingCitation(tr, ref)))).map(ref => ref.from),
+      composing: finishing ? false : typing ? tr.isUserEvent('input.type.compose') : value.composing,
+    };
+  },
+});
+
+// Detect a newly completed citation, including typing ^6 inside existing [].
+// Unrelated edits to an already undefined reference leave its source intact.
+const completeCitations = EditorState.transactionFilter.of(tr => {
+  const finishing = tr.effects.some(e => e.is(finishFootnoteComposition));
+  const pending = tr.startState.field(pendingCitations, false) ?? {starts: [], composing: false};
+  const typing = tr.docChanged && tr.isUserEvent('input.type');
+  const leaving = !tr.docChanged && tr.selection && pending.starts.length;
+  if (tr.startState.field(sourceMode, false) || (!typing && !leaving && !finishing) ||
+    (!finishing && (tr.isUserEvent('input.type.compose') || (pending.composing && !typing)))) return tr;
+  const starts = new Set(pending.starts.map(pos => tr.changes.mapPos(pos, -1)));
+  if (typing && !finishing) for (const ref of newInlineCitations(tr)) starts.add(ref.from);
+  if (!starts.size) return tr;
   let doc = tr.newDoc;
-  const candidates = indexFootnotes(doc.toString()).notes.filter(note => !note.def && note.refs.some(ref => {
-    if (oldStarts.has(ref.from) || !endings.some(range => range.from < ref.to && ref.to <= range.to)) return false;
-    // A marker at the start of a line may be a definition still being written.
-    // Its contents can be completed explicitly through the sidebar instead.
-    return doc.sliceString(doc.lineAt(ref.from).from, ref.from).trim().length > 0;
-  }));
+  const candidates = indexFootnotes(doc.toString()).notes.filter(note => !note.def && note.refs.some(ref =>
+    starts.has(ref.from) && doc.sliceString(doc.lineAt(ref.from).from, ref.from).trim().length > 0 &&
+    // In pre-existing brackets the label may still be growing (^6 -> ^66).
+    // Wait for the caret to leave it before assigning a number.
+    !editingCitation(tr, ref)));
   if (!candidates.length) return tr;
-  const specs = [tr];
+  // Selection-only completion still belongs to the preceding typed label. Give
+  // the combined edit a compose event so numbering and history see one edit.
+  const specs = [leaving ? {
+    changes: tr.changes, selection: tr.newSelection, effects: [...tr.effects, finishFootnoteComposition.of(null)],
+    annotations: [...tr.annotations.filter(a => a.type !== Transaction.userEvent), Transaction.userEvent.of('input.type.compose')],
+    scrollIntoView: tr.scrollIntoView,
+  } : tr];
   for (const note of candidates) {
     const changes = appendDefinition(doc.toString(), note.id, '');
     specs.push({changes,sequential:true});
@@ -58,6 +97,19 @@ export const footnoteReferenceCompletion = EditorState.transactionFilter.of(tr =
   }
   return specs;
 });
+
+export const footnoteReferenceCompletion = [pendingCitations, completeCitations, EditorView.domEventHandlers({
+  compositionend(_event, view) {
+    // Let CodeMirror flush the final DOM mutation first. Its compose event joins
+    // this completion to the same undo step even though the definition is remote.
+    setTimeout(() => {
+      if (view.dom.isConnected && !view.compositionStarted && view.state.field(pendingCitations).composing) {
+        view.dispatch({effects: finishFootnoteComposition.of(null), userEvent: 'input.type.compose'});
+      }
+    }, 0);
+    return false;
+  },
+})];
 
 // Renaming a citation by hand used to leave its definition behind under the old
 // name, which reads as two halves of one note and renumbers everything after it.
@@ -70,6 +122,11 @@ export const footnoteLabelFollow = EditorState.transactionFilter.of(tr => {
   if (!tr.docChanged) return tr;
   const before = tr.startState.field(footnoteIndex, false);
   if (!before?.notes.length) return tr;
+  const pending = new Set(tr.startState.field(pendingCitations, false)?.starts ?? []);
+  // A newly created reference may temporarily spell an existing label while
+  // the author is still typing (^1 -> ^12). It isn't a rename of the old note.
+  if (before.notes.flatMap(note => note.refs).some(ref => pending.has(ref.from) &&
+    tr.changes.touchesRange(ref.from, ref.to))) return tr;
   const spans = [];
   let onALabel = false;
   tr.changes.iterChanges((fromA, toA, fromB, toB) => {
@@ -95,6 +152,12 @@ export const footnoteRenumber = EditorState.transactionFilter.of(tr => {
   if (!tr.isUserEvent('input') && !tr.isUserEvent('delete') && !tr.isUserEvent('move')) return tr;
   const text = tr.newDoc.toString();
   if (!text.includes('[^')) return tr;
+  if (tr.isUserEvent('input.type') && !tr.startState.field(sourceMode, false) &&
+    !tr.effects.some(effect => effect.is(finishFootnoteComposition))) {
+    const starts = new Set([...(tr.startState.field(pendingCitations, false)?.starts ?? []).map(pos => tr.changes.mapPos(pos, -1)),
+      ...newInlineCitations(tr).map(ref => ref.from)]);
+    if (indexFootnotes(text).notes.flatMap(note => note.refs).some(ref => starts.has(ref.from) && editingCitation(tr, ref))) return tr;
+  }
   const {changes} = planFootnoteRenumbering(text);
   const specs = [tr];
   if (changes.length) specs.push({changes, sequential:true});

@@ -49,6 +49,7 @@ import { leafMarkdownExtensions } from './markdown-extensions.js';
 import { structuredPreview, documentName, fileNameTitle, toggleFileNameTitle } from './structured-preview.js';
 import { renderInline, citationSignature, citationLabel } from './inline-preview.js';
 import { paragraphBlankLineChanges } from './blank-lines.js';
+import { insertPlainParagraphNewline } from './paragraph-enter.js';
 import { frontmatter, bodyStart } from './markdown-model.js';
 import { protectPropertyInsertions } from './properties-insert-guard.js';
 import { fileDropTarget, fileDropFeedback, setFileDropTarget, setFileDragging } from './file-drop.js';
@@ -1138,7 +1139,7 @@ export function createLeafEditor(options) {
     { key: 'Delete', run: view => !view.state.field(sourceMode) && (deleteFootnoteReference(view,true) || deleteLeafParagraphSeparator(view,true)) },
     {
       key: 'Enter',
-      run: (view) => !view.state.field(sourceMode) && (insertYamlNewline(view) || clearListContinuation(view) || insertNewlineContinueMarkup(view)),
+      run: (view) => !view.state.field(sourceMode) && (insertYamlNewline(view) || clearListContinuation(view) || insertNewlineContinueMarkup(view) || insertPlainParagraphNewline(view)),
     },
     { key: 'Tab', run: insertWritingTab },
     { key: 'Shift-Tab', run: outdentWritingImage },
