@@ -34,13 +34,3 @@ export function footnoteHiddenRanges(doc, definitions) {
   }
   return ranges;
 }
-
-export function continueBodyPosition(doc, definitions) {
-  let end = doc.length;
-  for (const def of [...definitions].reverse()) {
-    if (!doc.sliceString(def.to, end).trim()) end = def.lineFrom;
-    else break;
-  }
-  while (end > 0 && /\s/.test(doc.sliceString(end - 1, end))) end--;
-  return end;
-}

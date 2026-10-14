@@ -16,6 +16,24 @@ for(const [engine,platform] of engines.flatMap(engine=>(engine==='chrome'?['MacI
   assert.equal(await page.evaluate(()=>testEditor.getValue()),source,'opening must retain bytes');
   assert.equal(await page.locator('.leaf-footnote-region').count(),1);
   const foot=page.locator('.leaf-footnote-region');
+  assert.equal(await page.locator('.leaf-continue-body').count(),0);
+  assert.equal(await foot.locator('.leaf-footnote-region-hint').textContent(),'双击或按 Enter 编辑脚注');
+  const baselines=await foot.locator('.leaf-footnote-region-head').evaluate(head=>[...head.children].map(child=>{
+    const probe=document.createElement('span');Object.assign(probe.style,{display:'inline-block',width:'0',height:'0',verticalAlign:'baseline'});child.append(probe);const baseline=probe.getBoundingClientRect().top;probe.remove();return baseline;
+  }));
+  assert.ok(Math.abs(baselines[0]-baselines[1])<.5,'title and hint must share their text baseline');
+  await page.evaluate(()=>v.focus());await page.keyboard.press('Escape');
+  for(let n=0;n<8;n++){
+    await page.keyboard.press('Tab');
+    if(await foot.locator('.cm-content').evaluate(el=>el===document.activeElement))break;
+  }
+  assert.equal(await foot.locator('.cm-content').evaluate(el=>el===document.activeElement),true,'Tab reaches a note without entering edit mode');
+  assert.equal(await foot.locator('.cm-content').getAttribute('contenteditable'),'false');
+  assert.ok(await foot.locator('.leaf-endnote').evaluate(el=>{const c=getComputedStyle(el);return c.outlineStyle==='solid'&&parseFloat(c.outlineWidth)>=2;}),'keyboard focus must visibly outline the note');
+  await foot.screenshot({path:artifactPath(`leaf-footnote-keyboard-focus-${engine}-${platform}.png`)});
+  await page.keyboard.press('Enter');assert.equal(await foot.locator('.cm-content').getAttribute('contenteditable'),'true');
+  await page.keyboard.press('Escape');
+
   assert.equal(await foot.locator('.tok-strong').textContent(),'粗体');
   assert.equal(await foot.locator('.tok-emphasis').textContent(),'斜体');
   const positions=await page.evaluate(()=>({note:document.querySelector('.leaf-footnote-region').getBoundingClientRect().top,body:[...v.contentDOM.children].find(n=>n.textContent==='尾段')?.getBoundingClientRect().bottom}));
@@ -56,11 +74,9 @@ for(const [engine,platform] of engines.flatMap(engine=>(engine==='chrome'?['MacI
   assert.equal(await foot.locator('.cm-content').getAttribute('contenteditable'),'false','Escape locks note again: '+JSON.stringify(await page.evaluate(()=>{const n=document.querySelector('.leaf-endnote')._editor.view;return {composing:n.composing,compositionStarted:n.compositionStarted,focus:n.hasFocus,readonly:n.state.readOnly};})));
   await foot.locator('.cm-content').focus();await page.keyboard.press('Enter');
   assert.equal(await foot.locator('.cm-content').getAttribute('contenteditable'),'true','keyboard entry remains available');
-  await page.locator('.leaf-continue-body').click();
-  assert.equal(await foot.locator('.cm-content').getAttribute('contenteditable'),'false','leaving note restores preview');
-  const beforeRepeated=await page.evaluate(()=>testEditor.getValue());
-  await page.locator('.leaf-continue-body').click();
-  assert.equal(await page.evaluate(()=>testEditor.getValue()),beforeRepeated,'repeated continue does not append blank paragraphs');
+  await page.locator('#editor .cm-line').filter({hasText:'尾段'}).click();
+  assert.equal(await foot.locator('.cm-content').getAttribute('contenteditable'),'false','clicking body restores note preview');
+  await page.keyboard.press('End');await page.keyboard.press('Enter');await page.keyboard.press('Enter');
   await page.keyboard.type('Continued body');
   const saved=await page.evaluate(()=>testEditor.getValue());
   assert.ok(saved.indexOf('Continued body')<saved.indexOf('[^a]:'));

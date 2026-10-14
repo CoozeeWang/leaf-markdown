@@ -1178,9 +1178,7 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 
 /* A document-end editing region; its separator is never written as Markdown. */
 .cm-editor .leaf-footnote-region { border-top:1px solid var(--line); margin:24px var(--leaf-selection-inset) 0; padding-top:12px; font-size:calc(var(--editor-font-size) * .85); line-height:1.7; }
-.leaf-footnote-region-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; color:var(--muted); font-family:var(--ui-font); }
-.leaf-continue-body { font:inherit; color:var(--accent); background:transparent; border:1px solid var(--line); border-radius:6px; padding:4px 10px; cursor:pointer; }
-.leaf-continue-body:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.leaf-footnote-region-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; color:var(--muted); font-family:var(--ui-font); }
 .leaf-endnote { display:grid; grid-template-columns:minmax(3ch,max-content) minmax(0,1fr); gap:.5em; margin:0 0 12px; }
 .leaf-endnote-number { align-self:start; font-size:inherit; }
 .cm-editor .leaf-footnote-region .cm-editor { font-size:inherit; height:auto; }
@@ -1193,3 +1191,4 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .leaf-endnote:not(.is-editing) .cm-cursorLayer { display:none; }
 .leaf-endnote:not(.is-editing) .cm-content { cursor:default; }
 .leaf-endnote.is-editing .leaf-footnote-body { background:color-mix(in srgb, var(--accent-soft) 65%, transparent); box-shadow:inset 0 -1px var(--accent); }
+.leaf-endnote:has(.cm-content:focus-visible) { outline:2px solid var(--accent); outline-offset:4px; border-radius:5px; }

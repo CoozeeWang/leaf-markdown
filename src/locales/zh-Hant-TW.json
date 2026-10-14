@@ -696,6 +696,5 @@
   "main.zoom_out": "縮小內文",
   "main.zoom_reset": "還原 100%",
   "main.zoom_level": "內文縮放 {{percent}}%，選擇縮放比例",
-  "editor.continue_body": "繼續正文",
   "editor.edit_footnote_hint": "按兩下或按 Enter 編輯註腳"
 }

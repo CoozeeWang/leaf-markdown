@@ -5,21 +5,10 @@ import { footnoteIndex } from './footnote-state.js';
 import { displayNotes, indexFootnotes } from './footnotes.js';
 import { sourceMode, setSourceMode } from './view-mode.js';
 import { t, setText, setAttr } from './i18n.js';
-import { collectFootnoteDefinitions, footnoteHiddenRanges, continueBodyPosition } from './footnote-region-model.js';
+import { collectFootnoteDefinitions, footnoteHiddenRanges } from './footnote-region-model.js';
 
 export const footnoteRegionEnabled = StateField.define({create:()=>true, update:value=>value});
 const collectNotes = StateEffect.define();
-
-export function continueFootnoteBody(view) {
-  const at = continueBodyPosition(view.state.doc, view.state.field(footnoteIndex).definitions);
-  const limit=view.state.field(footnoteIndex).definitions.find(def=>def.lineFrom>=at)?.lineFrom??view.state.doc.length;
-  const gap=view.state.doc.sliceString(at,limit);
-  const existing=(at?/^\n[ \t]*\n[ \t]*\n[ \t]*\n/:/^\n[ \t]*\n/).test(gap);
-  const anchor=at?at+2:0;
-  view.dispatch({...(existing?{}:{changes:{from:at,insert:'\n\n'}}),selection:{anchor},
-    annotations:isolateHistory.of('full'),userEvent:'input.footnote-body',scrollIntoView:true});
-  view.focus();
-}
 
 export function prepareBodyBeforeNotes(view) {
   if(view.state.field(sourceMode)||!view.state.selection.main.empty||view.state.selection.main.head!==0||view.state.field(footnoteIndex).definitions[0]?.lineFrom!==0)return false;
@@ -37,10 +26,7 @@ class FootnoteRegion extends WidgetType {
     const title=document.createElement('span');setText(title,()=>t('print_document.footnotes'));
     const hint=document.createElement('span');hint.className='leaf-footnote-region-hint';
     setText(hint,()=>t('editor.edit_footnote_hint'));
-    const button=document.createElement('button');button.type='button';button.className='leaf-continue-body';
-    setText(button,()=>t('editor.continue_body'));
-    button.addEventListener('click',()=>{root._lockNotes();continueFootnoteBody(view);});
-    head.append(title,hint,button);root.append(head);root._notes=new Map();
+    head.append(title,hint);root.append(head);root._notes=new Map();
     root._lockNotes=except=>{for(const card of root._notes.values())if(card!==except&&!card._editor.view.state.readOnly&&!card._editor.view.compositionStarted)card._editor.setEditing(false);};
     root._outside=event=>{if(view.contentDOM.contains(event.target))root._lockNotes(event.target.closest('.leaf-endnote'));};
     view.dom.addEventListener('pointerdown',root._outside,true);root._parentView=view;

@@ -696,6 +696,5 @@
   "main.zoom_out": "Zoom Out",
   "main.zoom_reset": "Reset to 100%",
   "main.zoom_level": "Body zoom {{percent}}%, choose zoom level",
-  "editor.continue_body": "Continue body",
   "editor.edit_footnote_hint": "Double-click or press Enter to edit a footnote"
 }

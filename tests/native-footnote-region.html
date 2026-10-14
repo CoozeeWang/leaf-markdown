@@ -29,9 +29,12 @@ window.startTest=async()=>{
   check(card._editor.view.contentDOM===dom,'input DOM replaced');
   check(testEditor.undo(),'undo missing');check(testEditor.getValue()===source,'undo did not restore original source order');
   check(testEditor.redo(),'redo missing');
-  document.querySelector('.leaf-continue-body').click();
+  check(!document.querySelector('.leaf-continue-body'),'removed body button remains');
+  const at=v.state.doc.toString().indexOf('尾段')+2;
+  v.dispatch({selection:{anchor:at}});v.focus();await pause();
   check(note.state.readOnly,'leaving note did not restore preview');
-  const once=testEditor.getValue();document.querySelector('.leaf-continue-body').click();check(testEditor.getValue()===once,'continue duplicated blank lines');
+  let bodyTrusted=false;v.contentDOM.addEventListener('keydown',e=>{if(e.key==='Enter')bodyTrusted=e.isTrusted;});
+  for(let n=3;n<=4;n++){document.title='LeafKey Enter '+n;await pause();check(bodyTrusted,'expected native body Enter');}
   v.dispatch({...v.state.replaceSelection('续写正文'),userEvent:'input.type'});
   const saved=testEditor.getValue();
   check(saved.indexOf('续写正文')<saved.indexOf('[^a]:'),'body landed after notes');
