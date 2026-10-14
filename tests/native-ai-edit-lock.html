@@ -23,6 +23,22 @@ window.runTest=async()=>{
   editor.view.destroy();
   return {pass:true,layer:'WK-controls',imports,clipboardReads};
 };
+window.runLateTest=async()=>{
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:'Synthetic draft',onChange(){}});
+  let release;
+  const waiting=new Promise(resolve=>{release=resolve;});
+  let importing=false;
+  const writing=setupWriting({editor,desktop:true,invoke:async()=>{importing=true;return waiting;},save:async()=>true,choose:async()=>['synthetic.txt'],serialized:action=>action(),editable:()=>true,status(){},icon:()=>''});
+  const original=editor.mcpSnapshot();
+  const pending=writing.attachments(['synthetic.txt'],false);
+  while(!importing)await new Promise(resolve=>setTimeout(resolve,1));
+  editor.beginAiTask({task_id:'late-task',session_id:'synthetic-session',authorization_epoch:2,revision:original.revision,scope:{from:0,to:original.content.length}});
+  editor.finishAiTask({task_id:'late-task'});
+  release('.assets/synthetic.txt');await pending;
+  assert(editor.mcpSnapshot().revision===original.revision,'pre-lock attachment completion must remain invalid after stop');
+  assert(editor.getValue()===original.content,'late attachment must preserve expected source');
+  editor.destroy();return {pass:true};
+};
 if(!new URLSearchParams(location.search).has('browser')) {
   try {await window.runTest();document.title='LeafTest PASS AI lock controls';}
   catch(error){document.title='LeafTest FAIL '+error.message;}
