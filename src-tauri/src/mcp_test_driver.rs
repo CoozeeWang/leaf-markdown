@@ -75,7 +75,8 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     let _=broker.bridge(app,label,"test",json!({"action":"reset","content":""})).await?;
     let original=broker.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).cloned().ok_or("renderer registration absent")?;
     ensure(original.client.is_none(),"default authorization must be closed")?;
-    if mode=="chatgpt-tunnel-tracer" || mode=="chatgpt-tunnel-dev-bundle" {return tunnel_tracer(app,label,broker,mode).await;}
+    if mode=="chatgpt-tunnel-tracer" {return tunnel_tracer(app,label,broker,mode).await;}
+    if mode=="chatgpt-tunnel-dev-bundle" {return tunnel_lifecycle(app,label,broker).await;}
     let token=super::mcp::digest(&json!(std::env::var("LEAF_MCP_TEST_DIR").unwrap()));
     broker.inner.credentials.lock().unwrap().insert("synthetic-client".into(),token.clone());
     *broker.inner.enabled.lock().unwrap()=true;
@@ -149,7 +150,7 @@ async fn tunnel_tracer(app:&tauri::AppHandle,label:&str,broker:&super::mcp::Leaf
     use super::chatgpt_tunnel::TunnelLaunchSpec;
     let directory=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
     let profile_path=directory.join("transient-tunnel.json");let evidence=directory.join("tunnel-evidence.json");
-    let formal=directory.join("mcp-profiles-v1.json");let before=std::fs::read(&formal).ok();
+    let formal=super::application_data(app).map_err(|_|"test data")?.join("mcp-profiles-v1.json");let before=std::fs::read(&formal).ok();
     let source="Synthetic live Tunnel buffer";
     broker.bridge(app,label,"test",json!({"action":"reset","content":source})).await?;
     let session=broker.window_binding(label).ok_or("test document")?.session_id;
@@ -184,6 +185,94 @@ async fn tunnel_tracer(app:&tauri::AppHandle,label:&str,broker:&super::mcp::Leaf
     let stopped=broker.inner.tunnel.lock().unwrap().stop();
     let _=tauri::async_runtime::spawn_blocking(move||OsKeyring.delete(&reference)).await;
     outcome?;stopped?;Ok(())
+}
+
+async fn tunnel_lifecycle(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker)->Result<(),String>{
+    use rmcp::{ServiceExt,transport::{StreamableHttpClientTransport,streamable_http_client::StreamableHttpClientTransportConfig}};
+    use super::mcp::ai_credentials::{OsKeyring,random_token};
+    let root=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());let evidence=root.join("tunnel-evidence.json");
+    let source="Synthetic live Tunnel buffer";let exe=std::env::current_exe().map_err(|_|"Dev executable")?;
+    ensure(exe.to_string_lossy().contains(".cache/Leaf Dev.app/Contents/MacOS/leaf"),"actual lifecycle must launch from staged Leaf Dev bundle")?;
+    let helper=exe.parent().unwrap().join("leaf-mcp-adapter");let fixture=root.join("connector-fixture/tunnel-client");
+    std::fs::create_dir_all(fixture.parent().unwrap()).map_err(|_|"fixture directory")?;std::fs::copy(&exe,&fixture).map_err(|_|"fixture copy")?;
+    #[cfg(unix)]{use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(&fixture,std::fs::Permissions::from_mode(0o700)).map_err(|_|"fixture permissions")?;}
+    let b=broker.configure_client(app,"workbuddy","local-synthetic".into(),"buddy-config",0).await?;broker.enable_client("workbuddy","buddy-enable",b.generation).await?;broker.set_enabled(app,true).await?;
+    let buddy=broker.inner.profiles.lock().unwrap().as_ref().unwrap().status("workbuddy")?;
+    let generation=||broker.inner.profiles.lock().unwrap().as_ref().unwrap().status("chatgpt").map(|p|p.generation);
+    let first=broker.configure_tunnel(app,format!("tunnel_{}","a".repeat(32)),fixture.clone(),"synthetic-tunnel-key-sentinel".into(),"tunnel-config".into(),generation()?).await?;
+    ensure(first["profile"]["has_runtime_key"]==true&&first["runtime"]["saved_config"]==true&&first["runtime"]["process"]==false,"saved configuration is distinct from a running connector")?;
+    let runtime_ref=broker.inner.profiles.lock().unwrap().as_ref().unwrap().status("chatgpt")?.runtime_ref;
+    let current=generation()?;broker.enable_client("chatgpt","tunnel-enable",current).await?;
+    let reset=broker.bridge(app,label,"test",json!({"action":"reset","content":source})).await?;
+    let session=broker.window_binding(label).ok_or("test document")?.session_id;
+    let d=broker.authorize(app,label,&session,"chatgpt",json!({"from":0,"to":source.encode_utf16().count()})).await?;
+    let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+    write_tunnel_input(&root,&helper,&binding,"normal")?;
+    let started=broker.start_tunnel(app).await?;let proof=wait_tunnel_proof(broker,&evidence,true).await?;
+    ensure(broker.start_tunnel(app).await?["runtime"]["epoch"]==started["runtime"]["epoch"],"repeated native start owns the same connector")?;
+    let trace:Value=serde_json::from_slice(&std::fs::read(root.join("adapter-env.json")).map_err(|_|"adapter environment trace")?).map_err(|_|"adapter environment trace")?;
+    ensure(trace["has_runtime_key"]==false,"actual helper environment excludes the runtime key")?;
+    let acl:Value=serde_json::from_slice(&std::fs::read(root.join("acl-runtime-effective.json")).map_err(|_|"runtime ACL evidence")?).map_err(|_|"runtime ACL evidence")?;
+    ensure(acl.as_array().is_some_and(|rows|rows.iter().any(|r|r["trusted_apps"]==1))&&!acl.as_array().unwrap().iter().any(|r|r["trusted_apps"]==2),"actual runtime entry trusts only the GUI")?;
+    let descriptor:super::mcp::ai_credentials::BrokerDescriptor=serde_json::from_slice(&std::fs::read(super::application_data(app).unwrap().join("mcp/chatgpt.json")).unwrap()).unwrap();
+    let token=broker.inner.profiles.lock().unwrap().as_ref().unwrap().token("chatgpt",&OsKeyring)?;
+    let client=().serve(StreamableHttpClientTransport::from_config(StreamableHttpClientTransportConfig::with_uri(descriptor.uri).auth_header(token).reinit_on_expired_session(false))).await.map_err(|_|"lifecycle MCP")?;
+    let mut begin=binding.clone();begin["request_id"]=json!("tunnel-task");begin["revision"]=reset["revision"].clone();let task=tool(&client,"begin_edit",begin).await?;
+    let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!("tunnel-batch");batch["revision"]=reset["revision"].clone();batch["changes"]=json!([{"from":source.encode_utf16().count(),"to":source.encode_utf16().count(),"expected":"","insert":" revised"}]);tool(&client,"apply_edit_batch",batch).await?;
+    let retained=broker.bridge(app,label,"snapshot",json!({})).await?;
+    broker.stop_tunnel(app).await?;ensure_tree_stopped(&proof).await?;
+    ensure(broker.bridge(app,label,"snapshot",json!({})).await?["content"]==retained["content"]&&!broker.window_locked(label),"native stop preserves applied draft and releases the task immediately")?;
+    ensure(tool(&client,"read_document",binding).await.is_err(),"stop retires old authorization")?;let _=client.cancel().await;
+    let undo=broker.bridge(app,label,"test",json!({"action":"undo"})).await?;ensure(undo["content"]==source,"stopped Tunnel task remains one undo")?;
+    let _=broker.bridge(app,label,"test",json!({"action":"redo"})).await?;
+    let root_ref=&root;let helper_ref=&helper;let evidence_ref=&evidence;
+    let start_fixture=|mode:String|async move {
+        let g=generation()?;broker.enable_client("chatgpt",&format!("enable-{}",random_token()?),g).await?;
+        broker.bridge(app,label,"test",json!({"action":"reset","content":source})).await?;
+        let session=broker.window_binding(label).unwrap().session_id;
+        let d=broker.authorize(app,label,&session,"chatgpt",json!({"from":0,"to":source.encode_utf16().count()})).await?;
+        write_tunnel_input(root_ref,helper_ref,&json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch}),&mode)?;
+        let _=std::fs::remove_file(evidence_ref);broker.start_tunnel(app).await?;Ok::<(),String>(())
+    };
+    start_fixture("normal".into()).await?;let old=wait_tunnel_proof(broker,&evidence,true).await?;
+    broker.configure_tunnel(app,format!("tunnel_{}","b".repeat(32)),fixture.clone(),String::new(),"replace-blank".into(),generation()?).await?;ensure_tree_stopped(&old).await?;
+    ensure(broker.inner.profiles.lock().unwrap().as_ref().unwrap().status("chatgpt")?.runtime_ref==runtime_ref,"blank reconfiguration retains the GUI-only key entry")?;
+    start_fixture("hang-start".into()).await?;
+    broker.inner.tunnel.lock().unwrap().expire_start_for_test();
+    for _ in 0..200{if !broker.tunnel_status()?["runtime"]["process"].as_bool().unwrap_or(false){break;}tokio::time::sleep(std::time::Duration::from_millis(100)).await;}
+    ensure(broker.tunnel_status()?["runtime"]["last_error"]=="tunnel_start_timeout","actual startup is bounded")?;
+    start_fixture("crash-root".into()).await?;let crashed=wait_tunnel_proof(broker,&evidence,false).await?;
+    for _ in 0..100{if broker.tunnel_status()?["runtime"]["process"]==false{break;}tokio::time::sleep(std::time::Duration::from_millis(50)).await;}
+    ensure_tree_stopped(&crashed).await?;ensure(broker.tunnel_status()?["runtime"]["local_ready"]==false,"parent crash cannot leave local ready")?;
+    start_fixture("normal".into()).await?;let cleared=wait_tunnel_proof(broker,&evidence,true).await?;
+    broker.revoke_client(app,"chatgpt",true,"tunnel-clear").await?;ensure_tree_stopped(&cleared).await?;
+    ensure(broker.tunnel_status()?["profile"]["has_runtime_key"]==false&&broker.tunnel_status()?["runtime"]["saved_config"]==false,"clear removes only ChatGPT configuration")?;
+    ensure(broker.inner.profiles.lock().unwrap().as_ref().unwrap().status("workbuddy")?==buddy,"ChatGPT lifecycle leaves another client's profile unchanged")?;
+    broker.configure_tunnel(app,format!("tunnel_{}","c".repeat(32)),fixture.clone(),"synthetic-tunnel-key-sentinel".into(),"configure-again".into(),generation()?).await?;
+    start_fixture("normal".into()).await?;let disabled=wait_tunnel_proof(broker,&evidence,true).await?;broker.set_enabled(app,false).await?;ensure_tree_stopped(&disabled).await?;
+    broker.set_enabled(app,true).await?;start_fixture("normal".into()).await?;let exit_tree=wait_tunnel_proof(broker,&evidence,true).await?;
+    std::fs::write(root.join("app-exit-tree.json"),serde_json::to_vec(&exit_tree).unwrap()).map_err(|_|"app exit evidence")?;
+    std::fs::write(root.join("lifecycle-status.json"),serde_json::to_vec(&broker.tunnel_status()?).unwrap()).map_err(|_|"masked status")?;
+    // Test-only OS entries are deleted before exiting; the running owned tree
+    // is intentionally left for production RunEvent::Exit cleanup to prove.
+    tauri::async_runtime::spawn_blocking({let b=broker.clone();move||{let mut guard=b.inner.profiles.lock().unwrap();let store=guard.as_mut().unwrap();store.clear_runtime(&super::mcp::ai_credentials::GuiRuntimeSecretStore)?;for c in ["chatgpt","workbuddy"]{store.revoke(c,true,&format!("test-cleanup-{c}"),&OsKeyring)?;}Ok::<(),String>(())}}).await.map_err(|_|"test credential cleanup")??;
+    Ok(())
+}
+fn write_tunnel_input(root:&std::path::Path,helper:&std::path::Path,binding:&Value,mode:&str)->Result<(),String>{
+    let descriptor=root.join("app-data/mcp/chatgpt.json");
+    std::fs::write(root.join("fixture-input.json"),serde_json::to_vec(&json!({"helper":helper,"descriptor":descriptor,"binding":binding,"mode":mode,"adapter_env":root.join("adapter-env.json"),"adapter_trace":root.join("adapter-startup.trace"),"evidence":root.join("tunnel-evidence.json")})).unwrap()).map_err(|_|"fixture input".into())
+}
+async fn wait_tunnel_proof(broker:&super::mcp::LeafMcpBroker,path:&std::path::Path,ready:bool)->Result<Value,String>{
+    for _ in 0..950 {
+        if let Ok(bytes)=std::fs::read(path){if let Ok(proof)=serde_json::from_slice::<Value>(&bytes){if !ready||broker.tunnel_status()?["runtime"]["local_ready"]==true {ensure(proof["live_buffer"]==true&&proof["host_verified"]==false,"actual adapter buffer proof remains local-only")?;return Ok(proof);}}}
+        let status=broker.tunnel_status()?;if status["runtime"]["process"]==false{let root=path.parent().unwrap();let stage=std::fs::read_to_string(root.join("adapter-startup.trace")).unwrap_or_else(|_|"adapter_not_started".into());return Err(format!("fixture stopped: {}; helper stage: {stage}; buffer proof: {}",status["runtime"]["last_error"].as_str().unwrap_or("none"),path.exists()));}tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }Err("fixture readiness timed out".into())
+}
+async fn ensure_tree_stopped(proof:&Value)->Result<(),String>{
+    for _ in 0..100 {
+        let alive=["connector_pid","helper_pid","descendant_pid"].iter().any(|k|proof[*k].as_u64().is_some_and(|pid|std::process::Command::new("/bin/kill").args(["-0",&pid.to_string()]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().is_ok_and(|s|s.success())));
+        if !alive{return Ok(());}tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }Err("owned fixture descendant remained alive".into())
 }
 
 async fn footnotes_tables_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{

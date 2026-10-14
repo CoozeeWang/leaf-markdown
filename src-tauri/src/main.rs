@@ -1150,6 +1150,7 @@ fn development_window<'a>(app: &tauri::AppHandle, builder: tauri::WebviewWindowB
 
 mod chatgpt_tunnel;
 fn main() {
+    if std::env::args().nth(1).as_deref()==Some("--leaf-build-identity") {println!("{}",mcp::ai_credentials::native_build_identity());return;}
     #[cfg(feature="native-smoke")]
     if std::env::var("LEAF_MCP_TEST_PROCESS_ROLE").ok().as_deref()==Some("chatgpt-tunnel-fixture") {
         std::process::exit(chatgpt_tunnel::synthetic_fixture_main());
@@ -1354,6 +1355,8 @@ fn main() {
                 }
             }
             tauri::RunEvent::ExitRequested { api, .. } if !app.webview_windows().is_empty() => {
+                #[cfg(feature="native-smoke")]
+                if mcp_test_driver::enabled(app){return;}
                 api.prevent_exit();
                 let _ = app.emit("leaf-close", ());
             }

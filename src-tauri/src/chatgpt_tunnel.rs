@@ -25,12 +25,14 @@ impl TunnelManager {
         }
         if self.status.process&&!self.status.local_ready {
             if self.health_file.as_ref().is_some_and(|p|local_ready_probe(p)){self.status.local_ready=true;}
-            else if self.health_file.is_some()&&self.started.is_some_and(|s|s.elapsed()>Duration::from_secs(15)) {
+            else if self.health_file.is_some()&&self.started.is_some_and(|s|s.elapsed()>Duration::from_secs(90)) {
                 let _=self.stop();self.status.last_error=Some("tunnel_start_timeout".into());
             }
         }self.status.clone()
     }
     pub fn configured(&mut self,saved:bool,present:bool){self.status.saved_config=saved;self.status.runtime_present=present;}
+    #[cfg(feature="native-smoke")]
+    pub(crate) fn expire_start_for_test(&mut self){self.started=Some(Instant::now()-Duration::from_secs(91));}
     pub fn start(&mut self,spec:&TunnelLaunchSpec,key:&str)->Result<TunnelRuntimeStatus,String> {
         if self.status().process&&self.status.generation==spec.generation{return Ok(self.status.clone());}
         self.stop()?;
@@ -40,7 +42,7 @@ impl TunnelManager {
         for name in ["HOME","PATH","SYSTEMROOT","WINDIR","TEMP","TMP","LANG"] {if let Some(v)=std::env::var_os(name){command.env(name,v);}}
         command.env("CONTROL_PLANE_API_KEY",key).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         #[cfg(feature="native-smoke")]
-        if spec.synthetic {command.env("LEAF_MCP_TEST_PROCESS_ROLE","chatgpt-tunnel-fixture").stderr(Stdio::inherit());}
+        if spec.synthetic {command.env("LEAF_MCP_TEST_PROCESS_ROLE","chatgpt-tunnel-fixture").stderr(Stdio::inherit());if let Some(root)=std::env::var_os("LEAF_MCP_TEST_DIR"){command.env("LEAF_MCP_TEST_DIR",root);}}
         #[cfg(unix)] {use std::os::unix::process::CommandExt;command.process_group(0);}
         #[cfg(not(windows))] {self.child=Some(command.spawn().map_err(|_|"tunnel_spawn_failed")?);}
         #[cfg(windows)] {self.child=Some(windows_tree::OwnedJob::spawn(&command)?);}
@@ -97,6 +99,8 @@ fn bounded_cli(executable:&std::path::Path,args:&[String],key:Option<&str>,captu
     let mut command=Command::new(executable);command.args(args).env_clear().stdin(Stdio::null()).stderr(Stdio::null());
     for name in ["HOME","PATH","SYSTEMROOT","WINDIR","TEMP","TMP","LANG"] {if let Some(v)=std::env::var_os(name){command.env(name,v);}}
     if let Some(key)=key{command.env("CONTROL_PLANE_API_KEY",key);}
+    #[cfg(feature="native-smoke")]
+    if is_synthetic_executable(executable){command.env("LEAF_MCP_TEST_PROCESS_ROLE","chatgpt-tunnel-fixture").env("LEAF_MCP_TEST_DIR",std::env::var_os("LEAF_MCP_TEST_DIR").unwrap());}
     command.stdout(if capture{Stdio::from(output.try_clone().map_err(|_|"tunnel_cli_failed")?)}else{Stdio::null()});
     #[cfg(unix)] {use std::os::unix::process::CommandExt;command.process_group(0);}
     #[cfg(not(windows))] let mut child=command.spawn().map_err(|_|"tunnel_cli_failed")?;
@@ -158,6 +162,14 @@ pub fn validate_saved(config:&super::mcp::ai_credentials::TunnelProfile,descript
 }
 fn windows_quote(value:&str)->String {let mut out=String::from("\"");let mut slashes=0;for c in value.chars(){if c=='\\'{slashes+=1;continue;}if c=='"'{out.push_str(&"\\".repeat(slashes*2+1));out.push('"');}else{out.push_str(&"\\".repeat(slashes));out.push(c);}slashes=0;}out.push_str(&"\\".repeat(slashes*2));out.push('"');out}
 
+#[cfg(feature="native-smoke")]
+pub fn is_synthetic_executable(path:&std::path::Path)->bool {
+    let Some(root)=std::env::var_os("LEAF_MCP_TEST_DIR") else{return false;};
+    if path!=PathBuf::from(root).join("connector-fixture/tunnel-client"){return false;}
+    let Ok(current)=std::env::current_exe().and_then(std::fs::read) else{return false;};
+    std::fs::read(path).is_ok_and(|bytes|bytes==current)
+}
+
 #[cfg(windows)]
 mod windows_tree {
     use super::*;
@@ -207,20 +219,52 @@ pub fn synthetic_fixture_main()->i32 {
     // This executable branch precedes Tauri and is absent from production builds.
     let result=(||->Result<(),String>{
         let args=std::env::args().collect::<Vec<_>>();
+        let value=|flag:&str|args.iter().position(|a|a==flag).and_then(|i|args.get(i+1)).cloned().ok_or_else(||"fixture_arguments".to_string());
+        if args.get(1).is_some_and(|s|s=="--version"){println!("0.0.16 synthetic fixture; not official binary");return Ok(());}
+        if args.get(1).is_some_and(|s|s=="help")||args.iter().any(|s|s=="--help"){println!("sample_mcp_stdio_local CONTROL_PLANE_API_KEY --profile-dir --mcp-command --control-plane-api-key-ref --profile-file");return Ok(());}
+        if args.get(1).is_some_and(|s|s=="init") {
+            if value("--sample")?!="sample_mcp_stdio_local"||value("--control-plane-api-key-ref")?!="env:CONTROL_PLANE_API_KEY"{return Err("fixture_init_contract".into());}
+            let directory=PathBuf::from(value("--profile-dir")?);std::fs::create_dir_all(&directory).map_err(|_|"fixture_init")?;
+            let text=format!("config_version: 1\ncontrol_plane:\n  tunnel_id: {}\n  api_key: \"env:CONTROL_PLANE_API_KEY\"\nmcp:\n  commands:\n    - channel: main\n      command: {}\n",serde_json::to_string(&value("--tunnel-id")?).unwrap(),serde_json::to_string(&value("--mcp-command")?).unwrap());
+            std::fs::write(directory.join(format!("{}.yaml",value("--profile")?)),text).map_err(|_|"fixture_init")?;return Ok(());
+        }
         let profile=args.iter().position(|v|v=="--profile"||v=="--profile-file").and_then(|i|args.get(i+1)).ok_or("fixture_profile")?;
-        let profile:serde_json::Value=serde_json::from_slice(&std::fs::read(profile).map_err(|_|"fixture_profile")?).map_err(|_|"fixture_profile")?;
+        let bytes=std::fs::read(profile).map_err(|_|"fixture_profile")?;let mut health_file=None;
+        let profile:serde_json::Value=if profile.ends_with(".json"){serde_json::from_slice(&bytes).map_err(|_|"fixture_profile")?}else{
+            let text=String::from_utf8(bytes).map_err(|_|"fixture_profile")?;
+            if !text.contains("env:CONTROL_PLANE_API_KEY")||!text.contains("commands:"){return Err("fixture_profile_contract".into());}
+            if args.get(1).is_some_and(|s|s=="doctor") {
+                if std::env::var("CONTROL_PLANE_API_KEY").ok().as_deref()!=Some("synthetic-tunnel-key-sentinel"){return Err("fixture_environment".into());}return Ok(());
+            }
+            let root=PathBuf::from(std::env::var_os("LEAF_MCP_TEST_DIR").ok_or("fixture_directory")?);
+            health_file=text.lines().find_map(|line|line.trim().strip_prefix("url_file: ")).and_then(|v|serde_json::from_str::<String>(v).ok());
+            let input:serde_json::Value=serde_json::from_slice(&std::fs::read(root.join("fixture-input.json")).map_err(|_|"fixture_input")?).map_err(|_|"fixture_input")?;
+            if !text.contains(&input["helper"].as_str().ok_or("fixture_helper")?.replace('\\',"\\\\")){return Err("fixture_helper_contract".into());}input
+        };
         if std::env::var("CONTROL_PLANE_API_KEY").ok().as_deref()!=Some("synthetic-tunnel-key-sentinel"){return Err("fixture_environment".into());}
         let runtime=tokio::runtime::Runtime::new().map_err(|_|"fixture_runtime")?;
         runtime.block_on(async {
             use rmcp::ServiceExt;
-            let mut command=tokio::process::Command::new(std::env::current_exe().map_err(|_|"fixture_executable")?.parent().unwrap().join("leaf-mcp-adapter"));
+            if profile["mode"]=="hang-start"{std::future::pending::<()>().await;}
+            let helper=if let Some(path)=profile["helper"].as_str(){PathBuf::from(path)}else{std::env::current_exe().map_err(|_|"fixture_executable")?.parent().unwrap().join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"})};
+            let mut command=tokio::process::Command::new(helper);
+            if let Some(trace)=profile["adapter_env"].as_str(){command.env("LEAF_MCP_TEST_ADAPTER_ENV_TRACE",trace);}
+            if let Some(trace)=profile["adapter_trace"].as_str(){command.env("LEAF_MCP_TEST_TRACE",trace);}
             command.args(["--descriptor",profile["descriptor"].as_str().ok_or("fixture_descriptor")?]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).kill_on_drop(true);
             let mut child=command.spawn().map_err(|_|"fixture_adapter")?;
             let client=().serve((child.stdout.take().unwrap(),child.stdin.take().unwrap())).await.map_err(|_|"fixture_stdio")?;
             let response=client.call_tool(serde_json::from_value(serde_json::json!({"name":"read_document","arguments":profile["binding"]})).unwrap()).await.map_err(|_|"fixture_read")?;
             let result=serde_json::to_value(response).map_err(|_|"fixture_result")?;
             if result["isError"]==true||result["structuredContent"]["content"]!="Synthetic live Tunnel buffer" {return Err("fixture_live_buffer".into());}
-            std::fs::write(profile["evidence"].as_str().ok_or("fixture_evidence")?,b"{\"adapter_stdio\":true,\"live_buffer\":true,\"host_verified\":false}").map_err(|_|"fixture_evidence")?;
+            let descendant=Command::new(if cfg!(windows){"timeout.exe"}else{"/bin/sleep"}).arg("30").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|_|"fixture_descendant")?;
+            let proof=serde_json::json!({"adapter_stdio":true,"live_buffer":true,"host_verified":false,"connector_pid":std::process::id(),"helper_pid":child.id(),"descendant_pid":descendant.id()});
+            std::fs::write(profile["evidence"].as_str().ok_or("fixture_evidence")?,serde_json::to_vec(&proof).unwrap()).map_err(|_|"fixture_evidence")?;
+            if profile["mode"]=="crash-root"{std::process::exit(7);}
+            if let Some(file)=health_file {
+                let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.map_err(|_|"fixture_health")?;
+                std::fs::write(file,format!("http://127.0.0.1:{}",listener.local_addr().unwrap().port())).map_err(|_|"fixture_health")?;
+                tokio::spawn(async move{use tokio::io::{AsyncReadExt,AsyncWriteExt};while let Ok((mut stream,_))=listener.accept().await {let mut request=[0;1024];let _=stream.read(&mut request).await;let _=stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK").await;}});
+            }
             // Keep the real adapter connected so its authenticated heartbeat remains independent.
             std::future::pending::<()>().await;Ok(())
         })
@@ -259,7 +303,7 @@ mod tests {
     #[test]
     fn startup_timeout_and_parent_exit_kill_owned_descendants(){
         let directory=tempfile::tempdir().unwrap();let mut launch=spec(fixture(directory.path(),"sleep 30 & wait"));launch.health_file=Some(directory.path().join("missing-health"));
-        let mut manager=TunnelManager::default();manager.start(&launch,"synthetic-unit-key").unwrap();manager.started=Some(Instant::now()-Duration::from_secs(16));
+        let mut manager=TunnelManager::default();manager.start(&launch,"synthetic-unit-key").unwrap();manager.started=Some(Instant::now()-Duration::from_secs(91));
         assert_eq!(manager.status().last_error.as_deref(),Some("tunnel_start_timeout"));assert!(!manager.status().process);
         launch.executable=fixture(directory.path(),"sleep 30 & exit 1");launch.health_file=None;manager.start(&launch,"synthetic-unit-key").unwrap();let root=manager.child.as_ref().unwrap().id();
         for _ in 0..100{if !manager.status().process{break;}std::thread::sleep(Duration::from_millis(10));}

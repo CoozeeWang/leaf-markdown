@@ -10,7 +10,7 @@ if (process.platform === 'darwin') {
 }
 const cli = fileURLToPath(new URL('../node_modules/@tauri-apps/cli/tauri.js', import.meta.url));
 const targetIndex = process.argv.indexOf('--target');
-await stageAdapter({ target: targetIndex < 0 ? 'current' : process.argv[targetIndex + 1], debug: process.argv.includes('--debug') });
+await stageAdapter({ target: targetIndex < 0 ? 'current' : process.argv[targetIndex + 1], debug: process.argv.includes('--debug'),nativeSmoke:process.argv.some(value=>value.split(',').includes('native-smoke')) });
 const child = spawn(process.execPath, [cli, 'build', ...process.argv.slice(2)], { stdio: 'inherit', env });
 child.on('error', error => { console.error(error); process.exitCode = 1; });
 child.on('exit', code => { process.exitCode = code ?? 1; });

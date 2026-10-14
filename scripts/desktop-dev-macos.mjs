@@ -9,7 +9,15 @@ import { join,resolve } from 'node:path';
 // refreshed each time Cargo rebuilds, while the app identity remains stable.
 export async function stageDevBundle({source,helper,test=false,launch=false}={}) {
 if(process.platform!=='darwin')throw new Error('macOS Dev bundle required');
-helper??=(await stageAdapter({debug:true})).binary;
+const staged=await stageAdapter({debug:true,nativeSmoke:test,reuseBuild:!!helper||test});
+if(helper&&resolve(helper)!==resolve(staged.binary))throw new Error('Dev helper must come from the native staging gate');
+helper=staged.binary;
+const identity=path=>{
+  const result=spawnSync(path,['--leaf-build-identity'],{encoding:'utf8',timeout:5000});
+  if(result.status!==0||!result.stdout.trim())throw new Error('Dev executable identity unavailable');return result.stdout.trim();
+};
+const guiIdentity=identity(source);const helperIdentity=identity(helper);
+if(guiIdentity!==helperIdentity)throw new Error('Dev GUI/helper build identities differ');
 const bundle = fileURLToPath(new URL('../.cache/Leaf Dev.app/', import.meta.url));
 const contents = join(bundle, 'Contents');
 const executable = join(contents, 'MacOS', 'leaf');
@@ -39,7 +47,8 @@ writeFileSync(join(contents, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8
 if(test)for(const path of [adapter,bundle]) {
   if(spawnSync('/usr/bin/codesign',['--force','--sign','-',path],{encoding:'utf8'}).status!==0)throw new Error('Dev test signing failed');
 }
-const result={bundle,executable,helper:adapter,identifier:test?'studio.leaf.editor.dev.mcptest':'studio.leaf.editor.dev',gui_inode:statSync(executable).ino,helper_inode:statSync(adapter).ino};
+const result={bundle,executable,helper:adapter,identifier:test?'studio.leaf.editor.dev.mcptest':'studio.leaf.editor.dev',gui_inode:statSync(executable).ino,helper_inode:statSync(adapter).ino,gui_build_identity:identity(executable),helper_build_identity:identity(adapter)};
+if(result.gui_build_identity!==guiIdentity||result.helper_build_identity!==helperIdentity)throw new Error('Dev staging changed an executable identity');
 if(launch)process.execve(executable, [executable, ...process.argv.slice(3)], process.env);
 return result;
 }

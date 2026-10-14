@@ -20,7 +20,7 @@ async function output(command, args) {
     child.stdout.on('data', chunk => value += chunk); child.on('error', reject); child.on('exit', code => code === 0 ? resolve(value) : reject(new Error('target detection failed')));
   });
 }
-export async function stageAdapter({ target = 'current', debug = false } = {}) {
+export async function stageAdapter({ target = 'current', debug = false, nativeSmoke = false, reuseBuild = false } = {}) {
   const host = (await output('rustc', ['-vV'])).match(/^host: (.+)$/m)?.[1]; assert(host);
   if (target === 'current') target = host;
   assert(/^[a-zA-Z0-9_.-]+$/.test(target), 'valid Rust target triple required');
@@ -28,16 +28,20 @@ export async function stageAdapter({ target = 'current', debug = false } = {}) {
   // The helper's Cargo build must not depend on the sidecar it is producing.
   const cargoConfig = JSON.parse(env.TAURI_CONFIG || '{}'); cargoConfig.bundle = { ...cargoConfig.bundle, externalBin: [] };
   const buildEnv = { ...env, TAURI_CONFIG: JSON.stringify(cargoConfig) };
-  if (target.includes('apple-darwin')) buildEnv.MACOSX_DEPLOYMENT_TARGET = '11.0';
-  await run('cargo', ['build', '--locked', '--manifest-path', 'src-tauri/Cargo.toml', '--bin', 'leaf-mcp-adapter', ...(debug ? [] : ['--release']), ...(target === host ? [] : ['--target', target])], { env: buildEnv });
+  if (target.includes('apple-darwin')) buildEnv.MACOSX_DEPLOYMENT_TARGET = debug ? '14.0' : '11.0';
+  if(!reuseBuild)await run('cargo', ['build', '--locked', '--manifest-path', 'src-tauri/Cargo.toml', '--bin', 'leaf-mcp-adapter', ...(nativeSmoke ? ['--features','native-smoke'] : []), ...(debug ? [] : ['--release']), ...(target === host ? [] : ['--target', target])], { env: buildEnv });
   const binary = join(root, 'src-tauri/target', ...(target === host ? [] : [target]), debug ? 'debug' : 'release', `leaf-mcp-adapter${suffix}`);
+  if(target===host) {
+    const identity=(await output(binary,['--leaf-build-identity'])).trim();
+    assert(identity.includes(nativeSmoke?':native-smoke:':':production:'),'helper feature identity must match the selected build');
+  }
   const staging = join(root, 'src-tauri/binaries'); await mkdir(staging, { recursive: true });
   await copyFile(binary, join(staging, `leaf-mcp-adapter-${target}${suffix}`));
   if (!suffix) await chmod(join(staging, `leaf-mcp-adapter-${target}`), 0o755);
   return { target, host, suffix, binary };
 }
 export async function producePackages(options = {}) {
-  const built = await stageAdapter(options);
+  const built = await stageAdapter({...options,nativeSmoke:!!options.testBundle||!!options.nativeSmoke});
   assert.equal(built.target, built.host, 'packaged launch proof requires a native build target');
   assert(['darwin', 'win32'].includes(process.platform), 'native package producer supports macOS and Windows');
   const cache = join(root, '.cache/mcp-adapter'); await mkdir(cache, { recursive: true });

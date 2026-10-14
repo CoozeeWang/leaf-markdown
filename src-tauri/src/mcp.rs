@@ -292,11 +292,15 @@ impl LeafMcpBroker {
         if self.inner.tunnel.lock().unwrap().status().epoch!=epoch{return Err("stale_runtime".into());}
         self.publish_descriptor_locked(app,"chatgpt").await?;
         if self.inner.tunnel.lock().unwrap().status().epoch!=epoch{return Err("stale_runtime".into());}
-        let spec=super::chatgpt_tunnel::TunnelLaunchSpec{executable:config.executable,profile:config.profile,generation:profile.generation,health_file:Some(config.health_file.clone()),#[cfg(feature="native-smoke")]synthetic:false};
+        #[cfg(feature="native-smoke")] let synthetic=super::chatgpt_tunnel::is_synthetic_executable(&config.executable);
+        let spec=super::chatgpt_tunnel::TunnelLaunchSpec{executable:config.executable,profile:config.profile,generation:profile.generation,health_file:Some(config.health_file.clone()),#[cfg(feature="native-smoke")]synthetic};
         let _=std::fs::remove_file(&config.health_file);
         self.inner.tunnel.lock().unwrap().start(&spec,&key)?;self.tunnel_status()
     }
-    pub async fn stop_tunnel(&self)->Result<Value,String>{let _serial=self.inner.queue.lock().await;self.inner.tunnel.lock().unwrap().stop()?;self.tunnel_status()}
+    pub async fn stop_tunnel(&self,app:&tauri::AppHandle)->Result<Value,String>{
+        let _serial=self.inner.queue.lock().await;self.inner.tunnel.lock().unwrap().stop()?;self.invalidate_client(app,"chatgpt").await;
+        let broker=self.clone();tauri::async_runtime::spawn_blocking(move||broker.inner.profiles.lock().unwrap().as_mut().ok_or("profiles_unavailable")?.revoke("chatgpt",false,&format!("stop-tunnel-{}",ai_credentials::random_token()?),&OsKeyring)).await.map_err(|_|"credential_unavailable")??;self.tunnel_status()
+    }
     pub fn export_stdio_config(&self,client:&str,helper:PathBuf,descriptor:PathBuf)->Result<Value,String> {
         let profile=self.inner.profiles.lock().unwrap().as_ref().ok_or("profiles_unavailable")?.status(client)?;
         if !profile.enabled {return Err("client_disabled".into());}
@@ -788,7 +792,7 @@ pub async fn mcp_configure_tunnel(app:tauri::AppHandle,broker:tauri::State<'_,Le
 #[tauri::command]
 pub async fn mcp_start_tunnel(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpBroker>)->Result<Value,String>{broker.start_tunnel(&app).await}
 #[tauri::command]
-pub async fn mcp_stop_tunnel(broker:tauri::State<'_,LeafMcpBroker>)->Result<Value,String>{broker.stop_tunnel().await}
+pub async fn mcp_stop_tunnel(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpBroker>)->Result<Value,String>{broker.stop_tunnel(&app).await}
 #[tauri::command]
 pub fn mcp_export_stdio(app:tauri::AppHandle,broker:tauri::State<LeafMcpBroker>,client:String)->Result<Value,String> {
     let parent=std::env::current_exe().map_err(|_|"helper_not_installed")?.parent().ok_or("helper_not_installed")?.to_path_buf();

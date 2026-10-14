@@ -68,6 +68,7 @@ fn trace(stage:&str) {
 fn main() {
     // First, while still single-threaded and before runtime/logging startup.
     std::env::remove_var("CONTROL_PLANE_API_KEY");
+    if std::env::args().nth(1).as_deref()==Some("--leaf-build-identity") {println!("{}",ai_credentials::native_build_identity());return;}
     #[cfg(feature="native-smoke")]
     if let Some(path)=std::env::var_os("LEAF_MCP_TEST_ADAPTER_ENV_TRACE"){let _=std::fs::write(path,serde_json::to_vec(&serde_json::json!({"has_runtime_key":std::env::var_os("CONTROL_PLANE_API_KEY").is_some()})).unwrap());}
     let runtime=tokio::runtime::Runtime::new().expect("MCP runtime unavailable");
