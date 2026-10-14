@@ -51,7 +51,7 @@ import { renderInline, citationSignature, citationLabel } from './inline-preview
 import { paragraphBlankLineChanges } from './blank-lines.js';
 import { insertPlainParagraphNewline } from './paragraph-enter.js';
 import { frontmatter, bodyStart } from './markdown-model.js';
-import {planSourceChanges,planStructureOperations} from './ai-structure-operations.js';
+import {planSourceChanges,planStructureOperations,verifyMarkdownPreservation} from './ai-structure-operations.js';
 import { protectPropertyInsertions } from './properties-insert-guard.js';
 import { fileDropTarget, fileDropFeedback, setFileDropTarget, setFileDragging } from './file-drop.js';
 import { paragraphDeletion, selectedParagraphDeletion } from './paragraph-delete.js';
@@ -1071,9 +1071,9 @@ export async function mcpDigest(value) {
   return Array.from(new Uint8Array(bytes),n=>n.toString(16).padStart(2,'0')).join('');
 }
 
-export function planMcpChanges(source, changes, scope) {
+export function planMcpChanges(source, changes, scope,options={}) {
   if(changes?.some(change=>change?.insert?.includes('\r')))throw new Error('invalid_patch');
-  return planSourceChanges(source,changes,scope);
+  return planSourceChanges(source,changes,scope,options);
 }
 
 class AiTaskHistory {
@@ -1451,9 +1451,10 @@ export function createLeafEditor(options) {
       if(!aiTask || batch.task_id!==aiTask.id || batch.session_id!==aiTask.session || batch.authorization_epoch!==aiTask.epoch) throw new Error('stale_task');
       if(batch.revision!==bufferRevision) throw new Error('stale_revision');
       const before=view.state.doc.toString();
-      const structural=batch.operations===undefined?[]:planStructureOperations(before,batch.operations,aiTask.scope);
+      const structural=batch.operations===undefined?[]:planStructureOperations(before,batch.operations,aiTask.scope,{keepUnchanged:true});
       const patches=batch.changes===undefined&&batch.operations!==undefined?[]:batch.changes;
-      const changes=planMcpChanges(before,[...planMcpChanges(before,patches,aiTask.scope),...structural].map(change=>({...change,expected:before.slice(change.from,change.to)})),aiTask.scope);
+      const changes=planMcpChanges(before,[...planMcpChanges(before,patches,aiTask.scope,{keepUnchanged:true}),...structural].map(change=>({...change,expected:before.slice(change.from,change.to)})),aiTask.scope);
+      if(batch.operations!==undefined)verifyMarkdownPreservation(before,changes);
       const after=view.state.changes(changes).apply(view.state.doc).toString();
       const sourceDigest=await mcpDigest(before),resultDigest=await mcpDigest(after),changesDigest=await mcpDigest(JSON.stringify(batch.operations===undefined?batch.changes:{changes:batch.changes??null,operations:batch.operations}));
       if(!aiTask || batch.task_id!==aiTask.id || batch.revision!==bufferRevision)throw new Error('stale_task');

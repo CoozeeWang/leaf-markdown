@@ -57,4 +57,41 @@ try {
     assert.ok(result.render.text.includes('highlight')&&!result.render.text.includes('hidden'));
     assert.notEqual(result.undo,result.after);assert.equal(result.redo,result.after);
   });
+  await test('invalid or conflicting operations leave content revision and history unchanged',async()=>{
+    const result=await page.evaluate(async()=>{
+      const {createLeafEditor}=await import('/src/editor.js');
+      const parent=document.createElement('div');document.body.append(parent);
+      const source='---\nx: "one"\n---\n\nBody😀é\n\n# Outside\n\n![image](synthetic.png)\n';
+      const editor=createLeafEditor({parent,doc:source});
+      const task={task_id:'refusal-task',session_id:'session',authorization_epoch:1,scope:{from:0,to:source.length},revision:0};
+      editor.beginAiTask(task);const before=editor.mcpSnapshot(),history=editor.historyDepth();
+      const field={kind:'property',action:'set',key:'x',expected:'"one"',value:'two'},at=source.indexOf('Body');
+      const invalid=[{operations:[]},{operations:[{kind:'unknown'}]},{operations:[{...field,key:'missing'}]},{operations:[{...field,expected:'stale'}]},
+        {operations:[field],changes:[{from:7,to:12,expected:'"one"',insert:'collision'}]},
+        {operations:[{...field,value:'one'}],changes:[{from:7,to:12,expected:'"one"',insert:'collision'}]},
+        {operations:[field,{kind:'markdown',from:at+5,to:at+5,expected:'',insert:'split'}]},
+        {operations:[field,{kind:'markdown',from:at,to:at+4,expected:'Body',insert:'```'}]},
+        {revision:99,operations:[field]},{session_id:'retired',operations:[field]},{authorization_epoch:0,operations:[field]}];
+      const rows=[];
+      for(const [index,args]of invalid.entries()) {
+        let refused=false;try{await editor.applyMcpBatch({...task,mutation_id:`refused-${index}`,request_id:`refused-${index}`,...args});}catch{refused=true;}
+        rows.push(refused&&JSON.stringify(editor.mcpSnapshot())===JSON.stringify(before)&&JSON.stringify(editor.historyDepth())===JSON.stringify(history));
+      }
+      editor.finishAiTask(task);editor.destroy();parent.remove();return rows;
+    });
+    assert.deepEqual(result,Array(11).fill(true),'all eleven failures must preserve the same snapshot and history');
+  });
+  await test('LF protocol operations preserve original CRLF and exact task undo',async()=>{
+    const result=await page.evaluate(async()=>{
+      const {createLeafEditor}=await import('/src/editor.js');const parent=document.createElement('div');document.body.append(parent);
+      const source='---\r\n---\r\n\r\nBody😀é\r\n',editor=createLeafEditor({parent,doc:source}),before=editor.mcpSnapshot();
+      const task={task_id:'crlf-task',session_id:'session',authorization_epoch:1,scope:{from:0,to:before.content.length},revision:0};editor.beginAiTask(task);
+      const at=before.content.indexOf('Body');
+      await editor.applyMcpBatch({...task,mutation_id:'crlf-mutation',request_id:'crlf-request',operations:[{kind:'property',action:'add',key:'label',expected:'',value:'new'},{kind:'markdown',from:at,to:at+4,expected:'Body',insert:'Updated'}]});
+      editor.finishAiTask(task);const after=editor.getValue(),snapshot=editor.mcpSnapshot();editor.undo();const undo=editor.getValue();editor.redo();const redo=editor.getValue();editor.destroy();parent.remove();return {source,after,snapshot,undo,redo};
+    });
+    assert.equal(result.after,'---\r\n"label": "new"\r\n---\r\n\r\nUpdated😀é\r\n');
+    assert.equal(result.snapshot.line_ending,'\r\n');assert.ok(!result.snapshot.content.includes('\r'));
+    assert.equal(result.undo,result.source);assert.equal(result.redo,result.after);
+  });
 }finally{await browser.close();}

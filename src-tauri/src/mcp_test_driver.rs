@@ -169,9 +169,19 @@ async fn properties_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::Le
         ensure(tool(client,"apply_edit_batch",batch).await.is_err(),"unsupported batch must fail before any mutation")?;
         ensure(broker.bridge(app,label,"snapshot",json!({})).await?==before,"rejected property batch leaves exact snapshot")?;
     }
+    let current=before["content"].as_str().unwrap();let heading_byte=current.find("Heading").unwrap();let heading=current[..heading_byte].encode_utf16().count();
+    let mut mixed=binding.clone();mixed["task_id"]=task["task_id"].clone();mixed["request_id"]=json!("mixed-structure");mixed["revision"]=revision.clone();mixed["operations"]=json!([
+        {"kind":"property","action":"set","key":"count","expected":"0x10","value":20},
+        {"kind":"markdown","from":heading,"to":heading+7,"expected":"Heading","insert":"Updated"}
+    ]);
+    let result=tool(client,"apply_edit_batch",mixed.clone()).await?;ensure(result["changed"]==true,"mixed structure reaches same native transaction")?;
+    ensure(tool(client,"apply_edit_batch",mixed.clone()).await?==result,"mixed structure receipt is idempotent")?;
+    let after=broker.bridge(app,label,"snapshot",json!({})).await?;
+    ensure(after["content"].as_str().unwrap()==current.replace("count: 0x10","count: 20").replace("# Heading","# Updated"),"mixed property and Markdown source exact")?;
+    mixed["request_id"]=json!("stale-structure");ensure(tool(client,"apply_edit_batch",mixed).await.is_err(),"stale structured revision rejected")?;
     let mut end=binding.clone();end["task_id"]=task["task_id"].clone();tool(client,"finish_edit",end).await?;
     ensure(broker.bridge(app,label,"test",json!({"action":"undo"})).await?["content"]==source,"whole property task undo")?;
-    ensure(broker.bridge(app,label,"test",json!({"action":"redo"})).await?["content"]==before["content"],"whole property task redo")?;
+    ensure(broker.bridge(app,label,"test",json!({"action":"redo"})).await?["content"]==after["content"],"whole mixed property and Markdown task redo")?;
     Ok(())
 }
 

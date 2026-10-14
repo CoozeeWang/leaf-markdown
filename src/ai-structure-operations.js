@@ -1,7 +1,10 @@
 import {isMap,isScalar,isSeq} from 'yaml';
 import {propertySourceDocument} from './markdown-model.js';
+import {parseMarkdown} from './markdown-parse.js';
+import {indexComments} from './comments.js';
+import {indexFootnotes} from './footnotes.js';
 
-export function planSourceChanges(source,changes,scope) {
+export function planSourceChanges(source,changes,scope,{keepUnchanged=false}={}) {
   if(typeof source!=='string'||!Array.isArray(changes)||changes.length>256||!scope||!Number.isInteger(scope.from)||!Number.isInteger(scope.to)||scope.from<0||scope.to>source.length||scope.from>scope.to)throw new Error('invalid_batch');
   const boundaries=new Set([0,source.length]);
   for(const item of new Intl.Segmenter('und',{granularity:'grapheme'}).segment(source))boundaries.add(item.index);
@@ -12,7 +15,7 @@ export function planSourceChanges(source,changes,scope) {
     return {from,to,insert};
   }).sort((a,b)=>a.from-b.from||a.to-b.to);
   for(let i=1;i<planned.length;i++)if(planned[i].from<planned[i-1].to||planned[i].from===planned[i-1].from)throw new Error('overlapping_patches');
-  return planned.filter(change=>source.slice(change.from,change.to)!==change.insert);
+  return keepUnchanged?planned:planned.filter(change=>source.slice(change.from,change.to)!==change.insert);
 }
 
 function ordinary(node,source,offset) {
@@ -30,7 +33,46 @@ function resultingSource(source,changes) {
   return result;
 }
 
-export function planPropertyOperations(source,operations,scope={from:0,to:source.length}) {
+const protectedNodes=new Set(['Image','Link','InlineCode','FencedCode','CodeBlock','Table','LeafHighlight','CriticRange','CriticComment','CriticRevision','ObsidianComment']);
+function syntaxFootprint(source) {
+  const yaml=propertySourceDocument(source),ranges=[],start=yaml?yaml.closing+3:0;
+  // Leaf's live parser consumes LF buffer coordinates. Map its syntax ranges
+  // back to raw source when a pure planner is called with a CRLF document.
+  let normalized='';const offsets=[];
+  for(let i=0;i<source.length;i++){if(source[i]==='\r'&&source[i+1]==='\n')continue;offsets.push(i);normalized+=source[i];}
+  offsets.push(source.length);
+  parseMarkdown(normalized).iterate({enter(node){
+    const from=offsets[node.from],to=offsets[node.to];
+    if(from>=start&&(node.node.parent?.name==='Document'||protectedNodes.has(node.name)))ranges.push({name:node.name,from,to});
+  }});
+  for(const note of indexComments(source).hidden)ranges.push({name:'HiddenComment',from:note.from,to:note.to});
+  for(const definition of indexFootnotes(source).definitions)ranges.push({name:'FootnoteDefinition',from:definition.from,to:definition.to});
+  return ranges;
+}
+function touches(change,range) {
+  return change.from===change.to?change.from>=range.from&&change.from<range.to:change.from<range.to&&change.to>range.from;
+}
+export function verifyMarkdownPreservation(source,changes) {
+  changes=changes.filter(change=>source.slice(change.from,change.to)!==change.insert);
+  if(!changes.length)return;
+  const after=resultingSource(source,changes),old=syntaxFootprint(source),current=new Set(syntaxFootprint(after).map(node=>`${node.name}:${node.from}:${node.to}`));
+  for(const range of old) {
+    if(changes.some(change=>touches(change,range)))continue;
+    const shift=changes.filter(change=>change.to<=range.from).reduce((n,c)=>n+c.insert.length-(c.to-c.from),0);
+    const from=range.from+shift,to=range.to+shift;
+    if(!current.has(`${range.name}:${from}:${to}`)||source.slice(range.from,range.to)!==after.slice(from,to))throw new Error('markdown_structure_outside_range');
+  }
+}
+
+export function planMarkdownRangeOperations(source,operations,scope={from:0,to:source.length},options={}) {
+  if(!Array.isArray(operations)||!operations.length||operations.length>256)throw new Error('invalid_operations');
+  const planned=planSourceChanges(source,operations,scope,options),yaml=propertySourceDocument(source);
+  if(yaml&&planned.some(change=>change.from<yaml.closing+3))throw new Error('markdown_property_range');
+  verifyMarkdownPreservation(source,planned);
+  return planned;
+}
+
+export function planPropertyOperations(source,operations,scope={from:0,to:source.length},options={}) {
   if(!Array.isArray(operations)||!operations.length||operations.length>256)throw new Error('invalid_operations');
   const block=propertySourceDocument(source),seen=new Set(),changes=[];
   if(!block&&/^(?:\uFEFF)?---\r?\n/.test(source))throw new Error('invalid_yaml');
@@ -45,7 +87,7 @@ export function planPropertyOperations(source,operations,scope={from:0,to:source
       if(pair)throw new Error('property_exists');
       if(operation.expected!=='')throw new Error('invalid_patch');
       const field=`${JSON.stringify(operation.key)}: ${valueSource(operation.value)}${newline}`;
-      changes.push(block?{from:block.closing,to:block.closing,expected:'',insert:field}:{from:0,to:0,expected:'',insert:`---${newline}${field}---${newline}${source?'\n':''}`});
+      changes.push(block?{from:block.closing,to:block.closing,expected:'',insert:field}:{from:0,to:0,expected:'',insert:`---${newline}${field}---${newline}${source?newline:''}`});
       continue;
     }
     if(!pair)throw new Error('property_missing');
@@ -66,15 +108,18 @@ export function planPropertyOperations(source,operations,scope={from:0,to:source
       changes.push({from:lineFrom,to:lineTo,expected:source.slice(lineFrom,lineTo),insert});
     }
   }
-  const planned=planSourceChanges(source,changes,scope),after=resultingSource(source,planned),result=propertySourceDocument(after);
+  const planned=planSourceChanges(source,changes,scope,options),after=resultingSource(source,planned),result=propertySourceDocument(after);
   if(!result||result.parsed.errors.length||result.parsed.contents&&!isMap(result.parsed.contents))throw new Error('invalid_yaml_result');
   return planned;
 }
 
 // Plan every operation against the same unmodified buffer. No dispatch occurs
 // until the union of ordinary patches and structural operations is validated.
-export function planStructureOperations(source,operations,scope) {
+export function planStructureOperations(source,operations,scope,options={}) {
   if(!Array.isArray(operations)||!operations.length||operations.length>256)throw new Error('invalid_operations');
-  if(operations.some(operation=>operation?.kind!=='property'))throw new Error('unknown_operation');
-  return planPropertyOperations(source,operations,scope);
+  if(operations.some(operation=>!['property','markdown'].includes(operation?.kind)))throw new Error('unknown_operation');
+  const properties=operations.filter(operation=>operation.kind==='property'),markdown=operations.filter(operation=>operation.kind==='markdown');
+  const planned=planSourceChanges(source,[...(properties.length?planPropertyOperations(source,properties,scope,{keepUnchanged:true}):[]),...(markdown.length?planMarkdownRangeOperations(source,markdown,scope,{keepUnchanged:true}):[])].map(change=>({...change,expected:source.slice(change.from,change.to)})),scope,options);
+  verifyMarkdownPreservation(source,planned);
+  return planned;
 }
