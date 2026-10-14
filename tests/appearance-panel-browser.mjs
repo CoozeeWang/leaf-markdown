@@ -20,13 +20,13 @@ try {
  // checked in toolbar-menus, on a document that has a heading to number.
  await page.click('#displayButton');await page.locator('#headingNumberSetting').check();await page.click('#displayButton');
  await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();assert.equal(await page.locator('#headingNumberSetting').isChecked(),true);
- await page.click('#appearanceButton');await page.click('#settingsTab-appearance');await page.selectOption('#englishFontSelect','serif');
+ await page.click('#appearanceButton');await page.click('#settingsTab-appearance');await page.click('#englishFontSelectButton');await page.locator('#englishFontSelectList [data-font-id="georgia"]').click();
  await page.locator('#fontSizeInput').focus();await page.keyboard.press('ArrowRight');
  const value=await page.locator('#fontSizeInput').inputValue();assert.equal(await page.locator('#fontSizeValue').textContent(),value+'px');
  await page.locator('#fontSizeInput').press('Escape');assert.ok(await panel.isHidden());
  await page.click('#appearanceButton');await panel.evaluate(el=>el.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',isComposing:true,bubbles:true})));assert.ok(await panel.isVisible());
  await panel.press('Escape');await page.reload();await page.click('#welcomeNewButton');await page.click('#appearanceButton');
- assert.equal(await page.locator('#fontSizeInput').inputValue(),value);assert.equal(await page.locator('#englishFontSelect').inputValue(),'serif');
+ assert.equal(await page.locator('#fontSizeInput').inputValue(),value);assert.equal(await page.locator('#englishFontSelect').inputValue(),'georgia');
  await page.click('#settingsTab-appearance');await page.selectOption('#themeSelect','dark');await scroll.evaluate(e=>e.scrollTop=0);await page.screenshot({path:artifactPath('appearance-grouped-dark.png')});
  assert.deepEqual(errors,[]);console.log('PASS appearance groups, scroll hint and bottom reachability, keyboard focus/Escape, composition guard, reading sync and persisted values');
 }finally{await browser.close();}

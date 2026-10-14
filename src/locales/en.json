@@ -690,8 +690,8 @@
   "search_panel.matches_other": "{{total}} matches",
   "main.removed_unavailable_entries_one": "Removed {{count}} unavailable entry.",
   "main.removed_unavailable_entries_other": "Removed {{count}} unavailable entries.",
-  "fonts.chinese": "Chinese font",
-  "fonts.english": "English font",
+  "fonts.chinese": "East Asian font",
+  "fonts.english": "Western font",
   "fonts.sans": "System sans serif",
   "fonts.serif": "System serif",
   "fonts.mono": "Monospace",
@@ -703,14 +703,13 @@
   "fonts.checking": "Checking",
   "fonts.checking_local": "Checking local fonts…",
   "fonts.fallback": "{{font}} is unavailable. Using {{fallback}}.",
-  "fonts.local_only": "Uses local fonts. Unavailable fonts cannot be selected; missing characters use a fallback font.",
+  "fonts.local_only": "Font changes apply immediately to the document. Missing characters use a fallback font.",
   "fonts.save_failed": "Could not save font settings. Please try again.",
-  "fonts.preview": "Font preview",
-  "fonts.sample_chinese": "写作，从容一点。",
   "main.highlight": "Highlight",
   "main.body_zoom": "Body Zoom",
   "main.zoom_in": "Zoom In",
   "main.zoom_out": "Zoom Out",
   "main.zoom_reset": "Reset to 100%",
-  "main.zoom_level": "Body zoom {{percent}}%, choose zoom level"
+  "main.zoom_level": "Body zoom {{percent}}%, choose zoom level",
+  "fonts.default": "Default font"
 }

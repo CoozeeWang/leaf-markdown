@@ -1,7 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BODY_FONT_STORAGE, readBodyFonts, loadBodyFonts, resolveBodyFonts, LATIN_RANGE, CHINESE_RANGE } from '../src/body-fonts.js';
+import { BODY_FONT_STORAGE, readBodyFonts, loadBodyFonts, resolveBodyFonts, bodyFontChoices, LATIN_RANGE, CHINESE_RANGE } from '../src/body-fonts.js';
 const storage = entries => ({ getItem: key => entries[key] ?? null });
+
+test('displayed families exclude unavailable fonts and duplicate migrated presets', () => {
+  const catalog = { en: { serif: { available: true, family: 'Georgia' }, georgia: { available: true, family: 'Georgia' },
+    sans: { available: true, family: 'Arial' }, mono: { available: true, family: null },
+    palatino: { available: false, family: null } } };
+  assert.deepEqual(bodyFontChoices('en', catalog).map(({id,family})=>({id,family})),
+    [{id:'georgia',family:'Georgia'},{id:'sans',family:'Arial'}]);
+  assert.deepEqual(bodyFontChoices('zh', null), []);
+});
 
 test('legacy presets migrate both scripts without writing the old setting', () => {
   for (const preset of ['sans','serif','mono']) {

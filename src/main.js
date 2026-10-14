@@ -216,14 +216,13 @@ document.querySelector('#app').innerHTML = shortcutText(`
       </label>
       </fieldset>
       <fieldset class="appearance-group" aria-label="${t("main.body_typography")}" data-i18n-aria-label="main.body_typography">
-      <label class="setting-row body-font-row"><span>${h('fonts.chinese')}</span>
+      <div class="setting-row body-font-row"><span>${h('fonts.chinese')}</span>
         <span class="ui-select"><select id="chineseFontSelect" aria-label="${t('fonts.chinese')}" data-i18n-aria-label="fonts.chinese" aria-describedby="bodyFontStatus"></select>${icon('chevron', 16)}</span>
-      </label>
-      <label class="setting-row body-font-row"><span>${h('fonts.english')}</span>
+      </div>
+      <div class="setting-row body-font-row"><span>${h('fonts.english')}</span>
         <span class="ui-select"><select id="englishFontSelect" aria-label="${t('fonts.english')}" data-i18n-aria-label="fonts.english" aria-describedby="bodyFontStatus"></select>${icon('chevron', 16)}</span>
-      </label>
+      </div>
       <p id="bodyFontStatus" class="setting-hint body-font-status" role="status"></p>
-      <p class="body-font-preview" aria-label="${t('fonts.preview')}" data-i18n-aria-label="fonts.preview"><span lang="zh">${h('fonts.sample_chinese')}</span> <span lang="en">The quick brown fox. 123</span></p>
       <label class="setting-slider"><span>${h("main.body_font_size")}</span><span class="slider-control"><input id="fontSizeInput" type="range" min="14" max="24" step="1" /><output id="fontSizeValue"></output></span></label>
       <label class="setting-slider"><span>${h("main.maximum_body_width")}</span><span class="slider-control"><input id="contentWidthInput" type="range" min="600" max="1100" step="20" /><output id="contentWidthValue"></output></span></label>
       </fieldset>

@@ -690,8 +690,8 @@
   "search_panel.matches_other": "共 {{total}} 處",
   "main.removed_unavailable_entries_one": "已清除 {{count}} 筆失效記錄。",
   "main.removed_unavailable_entries_other": "已清除 {{count}} 筆失效記錄。",
-  "fonts.chinese": "中文字型",
-  "fonts.english": "英文字型",
+  "fonts.chinese": "東亞字型",
+  "fonts.english": "西文字型",
   "fonts.sans": "系統無襯線",
   "fonts.serif": "系統襯線",
   "fonts.mono": "等寬",
@@ -703,14 +703,13 @@
   "fonts.checking": "檢查中",
   "fonts.checking_local": "正在檢查本機字型…",
   "fonts.fallback": "「{{font}}」無法使用，目前使用{{fallback}}。",
-  "fonts.local_only": "僅使用本機字型；無法使用的字型無法選取，缺字使用系統替代字型。",
+  "fonts.local_only": "選取後立即套用至內文；缺字使用系統替代字型。",
   "fonts.save_failed": "字型設定無法儲存，請再試一次。",
-  "fonts.preview": "字型預覽",
-  "fonts.sample_chinese": "寫作，從容一點。",
   "main.highlight": "醒目標示",
   "main.body_zoom": "內文縮放",
   "main.zoom_in": "放大內文",
   "main.zoom_out": "縮小內文",
   "main.zoom_reset": "還原 100%",
-  "main.zoom_level": "內文縮放 {{percent}}%，選擇縮放比例"
+  "main.zoom_level": "內文縮放 {{percent}}%，選擇縮放比例",
+  "fonts.default": "預設字型"
 }

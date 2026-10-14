@@ -20,7 +20,15 @@ window.startTest = async () => {
   const depth=undoDepth(view.state);
   const heading=getComputedStyle(document.querySelector('.cm-leaf-heading')).fontFamily;
   const select=document.querySelector('#englishFontSelect');
-  select.value='georgia'; select.dispatchEvent(new Event('change',{bubbles:true}));
+  const trigger=document.querySelector('#englishFontSelectButton');
+  document.querySelector('#appearanceButton').click(); trigger.click();
+  check(document.activeElement===trigger,'native font picker did not take keyboard focus');
+  trigger.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));
+  trigger.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+  check(!document.querySelector('#appearancePopover').hidden && trigger.getAttribute('aria-expanded')==='false','native font Escape closed settings');
+  trigger.click();document.querySelector('#englishFontSelectList [data-font-id="georgia"]').click();
+  check(!document.querySelector('.body-font-preview'),'native fixed font sample remained');
+  document.querySelector('#settingsClose').click();
   await wait(120);
   check(view.state.doc.toString()===sample && undoDepth(view.state)===depth,'font selection changed native document/history');
   const stack=getComputedStyle(view.scrollDOM).fontFamily;

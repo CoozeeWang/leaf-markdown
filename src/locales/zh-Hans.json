@@ -690,8 +690,8 @@
   "search_panel.matches_other": "共 {{total}} 处",
   "main.removed_unavailable_entries_one": "已清理 {{count}} 条失效记录。",
   "main.removed_unavailable_entries_other": "已清理 {{count}} 条失效记录。",
-  "fonts.chinese": "中文字体",
-  "fonts.english": "英文字体",
+  "fonts.chinese": "东亚字体",
+  "fonts.english": "西文字体",
   "fonts.sans": "系统无衬线",
   "fonts.serif": "系统衬线",
   "fonts.mono": "等宽",
@@ -703,14 +703,13 @@
   "fonts.checking": "检查中",
   "fonts.checking_local": "正在检查本机字体…",
   "fonts.fallback": "“{{font}}”不可用，当前使用{{fallback}}。",
-  "fonts.local_only": "仅使用本机字体；不可用的字体无法选择，缺字使用系统回退。",
+  "fonts.local_only": "选择后立即应用到正文；缺字使用系统回退。",
   "fonts.save_failed": "字体设置未能保存，请重试。",
-  "fonts.preview": "字体预览",
-  "fonts.sample_chinese": "写作，从容一点。",
   "main.highlight": "高亮",
   "main.body_zoom": "正文缩放",
   "main.zoom_in": "放大正文",
   "main.zoom_out": "缩小正文",
   "main.zoom_reset": "恢复 100%",
-  "main.zoom_level": "正文缩放 {{percent}}%，选择缩放比例"
+  "main.zoom_level": "正文缩放 {{percent}}%，选择缩放比例",
+  "fonts.default": "默认字体"
 }

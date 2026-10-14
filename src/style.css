@@ -1036,7 +1036,17 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
 .body-font-row .ui-select { width: 100%; min-width: 0; }
 .body-font-row > span:first-child { flex-shrink: 0; }
 .body-font-status { margin: 4px 7px 8px; overflow-wrap: anywhere; }
-.body-font-preview { margin: 0 7px 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--ui-radius); font: 15px/1.7 var(--body-font, var(--ui-font)); color: var(--text); overflow-wrap: anywhere; }
+.body-font-row .ui-select { position: relative; }
+.body-font-row select[hidden] { display: none; }
+.body-font-trigger { width: 100%; min-height: 36px; padding: 6px 30px 6px 10px; border: 1px solid var(--line); border-radius: var(--ui-radius); font-size: var(--ui-size); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--surface-strong); }
+.body-font-trigger:focus-visible { outline: none; border-color: var(--accent); }
+.body-font-trigger[aria-expanded="true"] { border-color: var(--accent); }
+.body-font-list { position: fixed; z-index: 1200; box-sizing: border-box; padding: 4px; max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--ui-radius); background: var(--surface-strong); box-shadow: var(--shadow); }
+.body-font-list[hidden] { display: none; }
+.body-font-list [role="option"] { display: flex; gap: 8px; align-items: center; min-height: 34px; padding: 5px 8px; font-size: var(--ui-size); border-radius: var(--ui-radius-menu-item); cursor: pointer; overflow-wrap: anywhere; }
+.body-font-list [role="option"]::after { content: ''; width: 1em; flex: none; margin-left: auto; font-family: var(--ui-font); }
+.body-font-list [aria-selected="true"]::after { content: '✓'; }
+.body-font-list .candidate { background: var(--accent-soft); color: var(--accent-strong); }
 .empty-hint, .note-hint { color: var(--muted); }
 input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, .note-body::placeholder { color: var(--muted); opacity: 1; }
 .note-card.active .note-hint { color: var(--accent-strong); }

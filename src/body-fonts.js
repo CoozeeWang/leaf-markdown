@@ -32,6 +32,16 @@ export function readBodyFonts(storage) {
     BODY_FONTS[script].some(font => font.id === value?.[script]) ? value[script] : fallback]));
 }
 export function fontAlias(script, id) { return `Leaf Body ${script} ${id}`; }
+// Preset ids stay valid for migration; the menu exposes each actual family once.
+export function bodyFontChoices(script, catalog) {
+  const seen = new Set();
+  return [...BODY_FONTS[script]].sort((a, b) => Number(!!a.generic) - Number(!!b.generic)).flatMap(font => {
+    const record = catalog?.[script]?.[font.id];
+    if (!record?.available || !record.family || seen.has(record.family.toLowerCase())) return [];
+    seen.add(record.family.toLowerCase());
+    return [{ ...font, family: record.family }];
+  });
+}
 // local() accepts full/PostScript face names. Include their common platform spellings,
 // but never use an unrelated family as a named font's availability substitute.
 function localSources(family, style, weight) {

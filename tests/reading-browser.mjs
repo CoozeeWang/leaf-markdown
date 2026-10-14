@@ -40,8 +40,8 @@ try {
  // Heading fonts stay identical across modes, independently of body preference.
  for (const font of ['serif','sans','mono']) {
   await page.click('#appearanceButton');
-  await page.selectOption('#englishFontSelect',font);
-  await page.selectOption('#chineseFontSelect',font);
+  await page.locator('#englishFontSelect').evaluate((select,font)=>{select.value=font;select.dispatchEvent(new Event('change',{bubbles:true}));},font);
+  await page.locator('#chineseFontSelect').evaluate((select,font)=>{select.value=font;select.dispatchEvent(new Event('change',{bubbles:true}));},font);
   await page.waitForSelector('.shell[data-body-fonts]');
   await page.click('#settingsClose');
   const editFonts=await page.locator('.cm-line.cm-leaf-heading').evaluateAll(els=>els.map(e=>getComputedStyle(e).fontFamily));

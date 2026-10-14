@@ -691,12 +691,11 @@
   "FT0013": "fonts.fallback",
   "FT0014": "fonts.local_only",
   "FT0015": "fonts.save_failed",
-  "FT0016": "fonts.preview",
-  "FT0017": "fonts.sample_chinese",
   "UI0262": "main.highlight",
   "UI0263": "main.body_zoom",
   "UI0264": "main.zoom_in",
   "UI0265": "main.zoom_out",
   "UI0266": "main.zoom_reset",
-  "UI0267": "main.zoom_level"
+  "UI0267": "main.zoom_level",
+  "FT0018": "fonts.default"
 }
