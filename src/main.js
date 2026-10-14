@@ -8,7 +8,7 @@ installMenuInteraction();
 import { setupWriting } from './writing-tools.js';
 import { loadedLocalImagePaths, refreshImages, retryMissingImages, setMovedMissingImages } from './resources.js';
 import { showRecovery, setupWelcomeRecovery } from './recovery-dialog.js';
-import { createLeafEditor } from './editor.js';
+import { createLeafEditor, createLeafNoteEditor } from './editor.js';
 import { setupSidebarResize } from './outline-resize.js';
 import './style.css';
 import { renderPrintDocument } from './print-document.js';
@@ -21,6 +21,7 @@ import { labels as calloutLabels } from './callout.js';
 import { indexFootnotes, notePanelRows } from './footnotes.js';
 import { uiIcon, uiIconPaths } from './ui-icons.js';
 import {readingFolding} from './outline-folding.js';
+import { BODY_ZOOM_LEVELS, stepBodyZoom, bodyZoomShortcut } from './body-zoom.js';
 
 const welcome = t("main.leaf_a_lightweight_markdown_editor");
 const leafDev = typeof __LEAF_DESKTOP_DEV__ !== 'undefined' && __LEAF_DESKTOP_DEV__ && desktop;
@@ -54,6 +55,7 @@ const state = {
   notesSkeleton: '',
   reading: false,
   source: false,
+  bodyZoom: 100,
 };
 
 const iconPaths = {
@@ -123,6 +125,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <span class="toolbar-divider"></span>
       <button data-format="bold" aria-label="${t("main.bold")}" data-i18n-aria-label="main.bold" data-tooltip="${t("main.bold_b")}" data-i18n-data-tooltip="main.bold_b"><span class="format-glyph bold">B</span></button>
       <button data-format="italic" aria-label="${t("main.italic")}" data-i18n-aria-label="main.italic" data-tooltip="${t("main.italic_i")}" data-i18n-data-tooltip="main.italic_i"><span class="format-glyph italic">I</span></button>
+      <button data-format="highlight" aria-label="${t('main.highlight')}" data-i18n-aria-label="main.highlight">${icon('highlight')}</button>
       <button data-format="strike" aria-label="${t("main.strikethrough")}" data-i18n-aria-label="main.strikethrough" data-tooltip="${t("main.strikethrough_x")}" data-i18n-data-tooltip="main.strikethrough_x"><span class="format-glyph strike">S</span></button>
       <button data-format="sup" aria-label="${t("main.superscript")}" data-i18n-aria-label="main.superscript" data-tooltip="${t("main.superscript_ui0036")}" data-i18n-data-tooltip="main.superscript_ui0036"><span class="format-glyph">x<sup>2</sup></span></button>
       <button data-format="sub" aria-label="${t("main.subscript")}" data-i18n-aria-label="main.subscript" data-tooltip="${t("main.subscript_ui0038")}" data-i18n-data-tooltip="main.subscript_ui0038"><span class="format-glyph">x<sub>2</sub></span></button>
@@ -165,7 +168,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
         </div>
         <p class="welcome-drop-hint">${h("main.drop_a_markdown_file_to_open_it")}</p>
       </section>
-      <section id="readingPane" class="reading-pane" aria-label="${t("main.reading_mode")}" data-i18n-aria-label="main.reading_mode" tabindex="0" hidden><article class="reading-document"></article></section>
+      <section id="readingPane" class="reading-pane" aria-label="${t("main.reading_mode")}" data-i18n-aria-label="main.reading_mode" tabindex="0" hidden><div class="reading-zoom-frame"><div class="reading-zoom-canvas"><article class="reading-document"></article></div></div></section>
       <button id="outlineButton" class="sidebar-rail sidebar-rail-left" aria-label="${t("main.expand_outline")}" data-i18n-aria-label="main.expand_outline" aria-controls="outlineDrawer" aria-expanded="false" data-tooltip="${t("main.expand_outline")}" data-i18n-data-tooltip="main.expand_outline">${icon('outline')}</button>
       <aside id="outlineDrawer" class="outline-drawer" aria-label="${t("main.document_outline")}" data-i18n-aria-label="main.document_outline">
         <div class="outline-resizer" role="separator" aria-label="${t("main.resize_outline")}" data-i18n-aria-label="main.resize_outline" aria-orientation="vertical" tabindex="0" title="${t("main.drag_to_resize_double_click_to_reset")}" data-i18n-title="main.drag_to_resize_double_click_to_reset"></div>
@@ -183,10 +186,21 @@ document.querySelector('#app').innerHTML = shortcutText(`
     <footer class="statusbar">
       <span class="cursor-and-save"><span id="cursorStatus">${h("main.line_1_column_1")}</span><span id="saveIndicator" role="status"></span></span>
       <span id="stats"></span>
+      <div class="body-zoom" role="group" aria-label="${t('main.body_zoom')}" data-i18n-aria-label="main.body_zoom">
+        <button id="zoomOut" type="button" aria-label="${t('main.zoom_out')}" data-i18n-aria-label="main.zoom_out">−</button>
+        <button id="zoomLevel" type="button" aria-haspopup="menu" aria-controls="zoomPopover" aria-expanded="false">100%</button>
+        <button id="zoomIn" type="button" aria-label="${t('main.zoom_in')}" data-i18n-aria-label="main.zoom_in">+</button>
+      </div>
       <button id="focusButton" class="status-button icon-control" aria-label="${t("main.focus_mode")}" data-i18n-aria-label="main.focus_mode" data-tooltip="${t("main.focus_mode_press_esc_to_exit")}" data-i18n-data-tooltip="main.focus_mode_press_esc_to_exit">${icon('focus', 15)}</button>
     </footer>
 
     <div id="dropOverlay" class="drop-overlay">${h("main.drop_to_open_a_markdown_file")}</div>
+
+    <section id="zoomPopover" class="popover action-popover zoom-popover" role="menu" aria-label="${t('main.body_zoom')}" data-i18n-aria-label="main.body_zoom" hidden>
+      ${BODY_ZOOM_LEVELS.map(level => `<button type="button" role="menuitemradio" data-zoom="${level}" aria-checked="${level === 100}">${level}%</button>`).join('')}
+      <div class="zoom-menu-divider" role="separator"></div>
+      <button type="button" role="menuitem" data-zoom="100">${h('main.zoom_reset')}<kbd>⇧⌘0</kbd></button>
+    </section>
 
     <section id="appearancePopover" class="popover appearance-popover" role="dialog" aria-label="${t("main.settings_ui0078")}" data-i18n-aria-label="main.settings_ui0078" tabindex="-1" hidden>
       <div class="settings-heading"><h2>${h("main.settings_ui0078")}</h2><button id="settingsClose" aria-label="${t("main.close_settings")}" data-i18n-aria-label="main.close_settings">${icon('close')}</button></div>
@@ -307,6 +321,8 @@ const exportPopover = document.querySelector('#exportPopover');
 const languagePopover = document.querySelector('#languagePopover');
 const displayPopover = document.querySelector('#displayPopover');
 const displayButton = document.querySelector('#displayButton');
+const zoomPopover = document.querySelector('#zoomPopover');
+const zoomLevelButton = document.querySelector('#zoomLevel');
 const palette = document.querySelector('#palette');
 const paletteInput = document.querySelector('#paletteInput');
 const paletteList = document.querySelector('#paletteList');
@@ -374,6 +390,88 @@ function updateAppearance() {
   document.querySelector('#fileNameTitleToggle').checked = state.showFileNameTitle;
   document.querySelector('#lineNumberToggle').checked = state.showLineNumbers;
 }
+
+function updateZoomControls() {
+  zoomLevelButton.textContent = `${state.bodyZoom}%`;
+  setAttr(zoomLevelButton, 'aria-label', () => t('main.zoom_level', { percent: state.bodyZoom }));
+  for (const [id, key, shortcut] of [['zoomIn', 'main.zoom_in', '⇧⌘='], ['zoomOut', 'main.zoom_out', '⇧⌘−']]) {
+    setAttr(document.getElementById(id), 'data-tooltip', () => `${t(key)}  ${shortcutText(shortcut)}`);
+  }
+  document.querySelector('#zoomOut').disabled = state.bodyZoom === BODY_ZOOM_LEVELS[0];
+  document.querySelector('#zoomIn').disabled = state.bodyZoom === BODY_ZOOM_LEVELS.at(-1);
+  for (const button of zoomPopover.querySelectorAll('[role="menuitemradio"]')) button.setAttribute('aria-checked', String(Number(button.dataset.zoom) === state.bodyZoom));
+}
+
+let zoomRevision = 0;
+function setBodyZoom(percent) {
+  if (!BODY_ZOOM_LEVELS.includes(percent) || percent === state.bodyZoom || editor.view.composing) return;
+  const view = editor.view;
+  const snapshot = view.state;
+  const revision = ++zoomRevision;
+  const readingPosition = state.reading ? visibleReadingPosition() : null;
+  const pane = state.reading ? null : view.scrollDOM.getBoundingClientRect();
+  const caret = pane ? view.coordsAtPos(snapshot.selection.main.head) : null;
+  const anchor = pane ? (view.hasFocus && caret && caret.top >= pane.top && caret.bottom <= pane.bottom
+    ? snapshot.selection.main.head : editor.visiblePosition()) : null;
+  const offset = pane ? (view.coordsAtPos(anchor)?.top ?? pane.top) - pane.top : 0;
+  state.bodyZoom = percent;
+  shell.style.setProperty('--body-zoom', String(percent / 100));
+  updateZoomControls();
+  if (readingPosition !== null) { syncReadingZoom(); revealReadingPosition(readingPosition); scheduleOutlineCurrent(); return; }
+  // Measure at the new scale before correcting the scroll position. A display
+  // change must not dispatch a document transaction or disturb its selection.
+  // First let CodeMirror finish rebuilding its height map/viewport. Anchoring
+  // in that same measurement is too early for a virtualized long document.
+  view.requestMeasure({ key: setBodyZoom, read: () => null, write: () => requestAnimationFrame(() => {
+    if (revision !== zoomRevision || state.reading || view.state.doc !== snapshot.doc || !view.state.selection.eq(snapshot.selection)) return;
+    view.requestMeasure({ key: setBodyZoom, read: () => view.coordsAtPos(anchor), write: coords => {
+      if (coords && revision === zoomRevision && !state.reading && view.state.doc === snapshot.doc && view.state.selection.eq(snapshot.selection)) {
+        view.scrollDOM.scrollTop += (coords.top - view.scrollDOM.getBoundingClientRect().top - offset) / view.scaleY;
+      }
+      scheduleOutlineCurrent();
+    }});
+  })});
+}
+
+function runBodyZoom(action) {
+  setBodyZoom(action === 'reset' ? 100 : stepBodyZoom(state.bodyZoom, action === 'in' ? 1 : -1));
+}
+
+updateZoomControls();
+for (const [id, action] of [['zoomIn', 'in'], ['zoomOut', 'out']]) {
+  const button = document.getElementById(id);
+  button.addEventListener('mousedown', event => event.preventDefault());
+  button.addEventListener('click', () => runBodyZoom(action));
+}
+zoomLevelButton.addEventListener('click', () => {
+  const opening = zoomPopover.hidden;
+  closePopovers();
+  zoomPopover.hidden = !opening;
+  zoomLevelButton.setAttribute('aria-expanded', String(opening));
+  if (opening) {
+    positionMenu(zoomPopover, zoomLevelButton.getBoundingClientRect());
+    zoomPopover.querySelector('[aria-checked="true"]')?.focus({preventScroll: true});
+  }
+});
+zoomPopover.addEventListener('click', event => {
+  const button = event.target.closest('button[data-zoom]');
+  if (!button) return;
+  setBodyZoom(Number(button.dataset.zoom));
+  closePopovers();
+  zoomLevelButton.focus({preventScroll: true});
+});
+zoomPopover.addEventListener('keydown', event => {
+  if (event.key === 'Escape' || event.key === 'Tab') {
+    event.preventDefault(); event.stopPropagation(); closePopovers(); zoomLevelButton.focus({preventScroll: true});
+  }
+});
+window.addEventListener('keydown', event => {
+  if (event.defaultPrevented || shell.classList.contains('welcome-state') || !appearancePopover.hidden || !palette.hidden) return;
+  const action = bodyZoomShortcut(event);
+  if (!action) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  runBodyZoom(action);
+}, true);
 
 function parseOutline(markdown) {
   const result = [];
@@ -543,7 +641,7 @@ const notesCount = document.querySelector('#notesCount');
 // signature of what is on screen.
 function renderNotes() {
   const rows = notePanelRows(indexFootnotes(state.content));
-  const signature = JSON.stringify([state.reading, rows]);
+  const signature = JSON.stringify([state.reading, state.source, rows]);
   if (signature === state.notesSignature) return;
   // A drawer that is closed has no width to lay a textarea out in, so a height
   // measured now would be fixed to the wrong width; the redraw waits for the next
@@ -551,7 +649,7 @@ function renderNotes() {
   // Rebuilding under the caret is worse: it would take the words out from under
   // the fingers -- and out of an unfinished pinyin run.
   if (!notesDrawer.classList.contains('visible')) return;
-  if (notesList.contains(document.activeElement)) {
+  if (notesList.contains(document.activeElement) && state.notesMode === (state.reading?'reading':state.source?'source':'edit')) {
     // Keep the focused textarea (including its IME state), but update every
     // card's identity and number before another card can be edited.
     for (const card of notesList.querySelectorAll('.note-card')) {
@@ -565,10 +663,11 @@ function renderNotes() {
       setAttr(number, 'aria-label', () => t("main.jump_to_footnote", {"note": row.number ?? row.label}));
       const body = card.querySelector('.note-body');
       setAttr(body, 'aria-label', () => t("main.content_of_footnote", {"note": row.number ?? row.label}));
-      if (body !== document.activeElement && body.value !== row.body) { body.value = row.body; fitNoteBody(body); }
+      syncNoteBody(card, row);
       if (row.state === 'complete') card.querySelector('.note-card-head')?.remove();
     }
     notesCount.textContent = rows.filter(row => row.number !== null).length || '';
+    state.notesSignature = signature;
     return;
   }
   state.notesSignature = signature;
@@ -577,11 +676,11 @@ function renderNotes() {
   // editor, or in the box under a fresh marker, arrives one keystroke at a time,
   // and rebuilding a row per keystroke would cost a textarea per note in the
   // document each time. Same notes, different words: patch the words.
-  const skeleton = JSON.stringify([state.reading, rows.map(row => [row.label, row.number, row.state])]);
+  const skeleton = JSON.stringify([state.reading, state.source, rows.map(row => [row.label, row.number, row.state])]);
   if (skeleton === state.notesSkeleton) {
     for (const row of rows) {
       const body = notesList.querySelector(`.note-card[data-label="${CSS.escape(row.label)}"] .note-body`);
-      if (body && body.value !== row.body) { body.value = row.body; fitNoteBody(body); }
+      if (body) syncNoteBody(body.closest('.note-card'), row);
     }
     return;
   }
@@ -589,6 +688,8 @@ function renderNotes() {
 
   const numbered = rows.filter(row => row.number !== null).length;
   notesCount.textContent = numbered ? `${numbered}` : '';
+  for (const card of notesList.querySelectorAll('.note-card')) card._noteEditor?.destroy();
+  state.notesMode = state.reading?'reading':state.source?'source':'edit';
   notesList.replaceChildren();
   if (!rows.length) {
     notesList.innerHTML = `<span class="empty-hint">${h("main.no_footnotes_in_this_document")}</span>`;
@@ -599,10 +700,16 @@ function renderNotes() {
   for (const fit of measure) fit();
 }
 
+function syncNoteBody(card, row) {
+  Object.assign(card._noteRow, row);
+  if (card._noteUpdating) return;
+  if (card._noteEditor) card._noteEditor.sync(row.body);
+  else renderPrintDocument(card.querySelector('.note-body'),row.body,{fallbackTitle:false,footnotes:{map:new Map(),link:false,seen:new Map()}});
+}
+
 function fitNoteBody(body) {
-  if (!body.clientWidth) return;
   body.style.height = 'auto';
-  body.style.height = `${body.scrollHeight}px`;
+  body.closest('.note-card')?._noteEditor?.view.requestMeasure();
 }
 
 function noteCard(row, measure) {
@@ -631,25 +738,29 @@ function noteCard(row, measure) {
     head.append(hint);
   }
 
-  const body = document.createElement('textarea');
+  const body = document.createElement('div');
   body.className = 'note-body';
-  body.rows = 1;
-  body.spellcheck = false;
-  body.value = row.body;
-  setAttr(body, 'placeholder', () => t("main.enter_footnote_content"));
-  setAttr(body, 'aria-label', () => t("main.content_of_footnote", {"note": row.number ?? row.label}));
-  // The reading view shows the notes the way they will print, and an edit made
-  // there would be dropped on the floor, so the panel stops offering one.
-  body.readOnly = state.reading;
-  measure.push(() => fitNoteBody(body));
-  body.addEventListener('input', () => { editor.setFootnoteBody(row.label, body.value); fitNoteBody(body); });
-  body.addEventListener('keydown', event => {
-    if (event.isComposing) return;
-    if (event.key === 'Escape' || (event.key === 'Enter' && !event.shiftKey)) {
-      event.preventDefault();
-      if (!state.reading) editor.focus();
+  if (state.reading) {
+    body.classList.add('note-reading');
+    renderPrintDocument(body, row.body, {fallbackTitle:false, footnotes:{map:new Map(),link:false,seen:new Map()}});
+  } else {
+    card._noteEditor = createLeafNoteEditor({parent:body,doc:row.body,source:state.source,
+      label:t('main.content_of_footnote',{note:row.number??row.label}),
+      onChange: value => {
+        card._noteUpdating=true;
+        try { editor.setFootnoteBody(card._noteRow.label,value); }
+        finally { card._noteUpdating=false; }
+      },
+      onUndo:()=>editor.undo(),onRedo:()=>editor.redo(),onLeave:()=>editor.focus()});
+  }
+  if(card._noteEditor) setAttr(card._noteEditor.view.contentDOM,'aria-label',()=>t('main.content_of_footnote',{note:card._noteRow.number??card._noteRow.label}));
+  body.addEventListener('focusin', () => {
+    if (card._noteRow.state === 'undefined' && !state.source && !state.reading) {
+      editor.setFootnoteBody(card._noteRow.label, '');
     }
   });
+  // A source-value accessor keeps diagnostics independent of rendering.
+  Object.defineProperty(body,'value',{get:()=>card._noteEditor?.value()??card._noteRow.body});
 
   // The number goes beside the text, so a row reads the way its definition does
   // in the file instead of stacking the two as separate blocks.
@@ -714,10 +825,7 @@ function revealNote(label) {
   if (!card) return;
   markActiveNote(card);
   card.scrollIntoView({ block: 'nearest' });
-  const body = card.querySelector('.note-body');
-  if (!body || body.readOnly) return;
-  body.focus();
-  body.setSelectionRange(body.value.length, body.value.length);
+  card._noteEditor?.focus();
 }
 
 function markActiveNote(card) {
@@ -727,7 +835,10 @@ function markActiveNote(card) {
 
 // A keystroke in a note leaves the caret in the panel, so the redraw waits for
 // the blur rather than stealing the words mid-word.
-notesList.addEventListener('focusout', () => requestAnimationFrame(renderNotes));
+notesList.addEventListener('focusout', () => {
+  state.notesSignature = '';
+  requestAnimationFrame(renderNotes);
+});
 
 function scheduleSave() {
   clearTimeout(state.saveTimer);
@@ -811,6 +922,8 @@ document.addEventListener('leaf-heading-link', event => {
   if (state.reading) reader.querySelector(`[data-source-line="${event.detail}"]`)?.scrollIntoView({block:'start'});
   else editor.goToLine(event.detail);
 });
+setAttr(document.querySelector('[data-format="highlight"]'), 'data-tooltip', () => shortcutText(`${t('main.highlight')}  ⌘=`));
+setAttr(document.querySelector('[data-format="code"]'), 'data-tooltip', () => shortcutText(`${t('main.inline_code')}  ⌘⌥C`));
 
 // History lives in the editor state, so ask the editor rather than track edits
 // separately: opening a file, undoing back to the start and redoing all move
@@ -824,12 +937,15 @@ function updateHistoryControls() {
 
 const readingPane = document.querySelector('#readingPane');
 const reader = readingPane.querySelector('article');
+function syncReadingZoom() {
+  readingPane.querySelector('.reading-zoom-frame').style.height = `${reader.offsetHeight * state.bodyZoom / 100}px`;
+}
 reader.addEventListener('dblclick',event=>{if(event.target.closest('.leaf-file-name-title'))renameCurrentDocument();});
 reader.addEventListener('keydown',event=>{if(event.target.matches('.leaf-file-name-title')&&['Enter',' '].includes(event.key)){event.preventDefault();renameCurrentDocument();}});
 readingPane.addEventListener('scroll', scheduleOutlineCurrent, {passive: true});
 readingPane.addEventListener('click', scheduleOutlineCurrent);
 new ResizeObserver(scheduleOutlineCurrent).observe(readingPane);
-new ResizeObserver(scheduleOutlineCurrent).observe(reader);
+new ResizeObserver(() => { syncReadingZoom(); scheduleOutlineCurrent(); }).observe(reader);
 function renderReading() {
   scheduleOutlineCurrent();
   renderPrintDocument(reader,state.content,{name:state.fileName,numbered:state.showHeadingNumbers,properties:true,expandCallouts:false,fallbackTitle:false,fileNameTitle:state.showFileNameTitle,sourcePositions:true});
@@ -844,6 +960,7 @@ function renderReading() {
     pre.prepend(label);
   }
   readingFolding(reader);
+  syncReadingZoom();
 }
 function toggleReading() {
   scheduleOutlineCurrent();
@@ -918,7 +1035,7 @@ function setMode(mode){
  if(mode===current){closePopovers();updateModeControl();return;}
  const position=state.reading?visibleReadingPosition():editor.visiblePosition();
  if(state.reading!==(mode==='reading'))toggleReading();
- state.source=mode==='source';editor.setSource(state.source);closePopovers();updateModeControl();
+ state.source=mode==='source';editor.setSource(state.source);closePopovers();updateModeControl();renderNotes();
  if(!state.reading)editor.focus();
  if(state.reading)revealReadingPosition(position);else editor.revealPosition(position);
 }
@@ -1255,7 +1372,7 @@ async function checkExternalChanges() {
 }
 
 function closePopovers(except = null) {
-  for (const popover of [appearancePopover, recentPopover, headingPopover, calloutPopover, modePopover, documentPopover, exportPopover, displayPopover, languagePopover]) {
+  for (const popover of [appearancePopover, recentPopover, headingPopover, calloutPopover, modePopover, documentPopover, exportPopover, displayPopover, languagePopover, zoomPopover]) {
     if (popover !== except) popover.hidden = true;
     if (popover===modePopover && popover.hidden) document.querySelector('#readingToggle').setAttribute('aria-expanded','false');
   }
@@ -1266,6 +1383,7 @@ function closePopovers(except = null) {
   document.querySelector('#documentMenuButton').setAttribute('aria-expanded', String(!documentPopover.hidden));
   document.querySelector('#exportMenuButton').setAttribute('aria-expanded', String(!exportPopover.hidden));
   displayButton.setAttribute('aria-expanded', String(!displayPopover.hidden));
+  zoomLevelButton.setAttribute('aria-expanded', String(!zoomPopover.hidden));
 }
 
 function fuzzyMatch(text, query) {
@@ -1302,6 +1420,9 @@ async function exportPdf() {
 }
 
 const commands = [
+  { id: 'main.zoom_in', get name() { return t('main.zoom_in'); }, shortcut: '⇧⌘=', action: () => runBodyZoom('in') },
+  { id: 'main.zoom_out', get name() { return t('main.zoom_out'); }, shortcut: '⇧⌘−', action: () => runBodyZoom('out') },
+  { id: 'main.zoom_reset', get name() { return t('main.zoom_reset'); }, shortcut: '⇧⌘0', action: () => runBodyZoom('reset') },
   { id: 'main.appearance_typography_ui0202', get name() { return t('main.appearance_typography_ui0202'); }, action: () => openSettings('appearance') },
   { id: 'main.display_options', get name() { return t('main.display_options'); }, action: () => document.querySelector('#displayButton').click() },
   { id: 'main.saving_recovery_ui0204', get name() { return t('main.saving_recovery_ui0204'); }, action: () => openSettings('recovery') },
@@ -1328,6 +1449,8 @@ const commands = [
   { id: 'main.set_to_heading_1', get name() { return t('main.set_to_heading_1'); }, shortcut: '⌥1', action: () => editor.format('heading1') },
   { id: 'main.bold_ui0226', get name() { return t('main.bold_ui0226'); }, shortcut: '⌘B', action: () => editor.format('bold') },
   { id: 'main.italic_ui0227', get name() { return t('main.italic_ui0227'); }, shortcut: '⌘I', action: () => editor.format('italic') },
+  { id: 'main.highlight', get name() { return t('main.highlight'); }, shortcut: '⌘=', action: () => editor.format('highlight') },
+  { id: 'main.inline_code', get name() { return t('main.inline_code'); }, shortcut: '⌘⌥C', action: () => editor.format('code') },
   { id: 'main.blockquote_ui0228', get name() { return t('main.blockquote_ui0228'); }, action: () => editor.format('quote') },
   { id: 'main.insert_footnote_ui0229', get name() { return t('main.insert_footnote_ui0229'); }, shortcut: '⇧⌘F', action: () => editor.format('footnote') },
   { id: 'main.insert_callout_ui0230', get name() { return t('main.insert_callout_ui0230'); }, aliases: ['Callout'], action: () => {if(state.reading)toggleReading();editor.format('callout-note');} },
@@ -1354,8 +1477,8 @@ const commandGroups = [
   ['main.settings_ui0238', ['main.appearance_typography_ui0202', 'main.saving_recovery_ui0204']],
   ['main.file', ['main.open_file_ui0212', 'main.save_file', 'main.export_pdf_ui0211', 'main.document_properties_ui0217']],
   ['main.edit_ui0240', ['main.undo_ui0209', 'main.redo_ui0210', 'main.copy_as_rich_text', 'main.paste_as_plain_text', 'main.find_in_document', 'main.clean_up_blank_lines', 'main.renumber_footnotes_in_reference_order']],
-  ['main.insert_format', ['main.insert_image', 'main.insert_attachment', 'main.set_to_heading_1', 'main.bold_ui0226', 'main.italic_ui0227', 'main.blockquote_ui0228', 'main.insert_footnote_ui0229', 'main.insert_callout_ui0230', 'main.bulleted_list_ui0232', 'main.insert_table_ui0233']],
-  ['main.view', ['main.display_options', 'main.cycle_view_mode', 'main.show_or_hide_editing_marks', 'main.show_or_hide_outline', 'main.show_or_hide_footnotes', 'main.show_or_hide_source_line_numbers', 'main.toggle_focus_mode', 'main.toggle_light_dark_theme']],
+  ['main.insert_format', ['main.insert_image', 'main.insert_attachment', 'main.set_to_heading_1', 'main.bold_ui0226', 'main.italic_ui0227', 'main.highlight', 'main.inline_code', 'main.blockquote_ui0228', 'main.insert_footnote_ui0229', 'main.insert_callout_ui0230', 'main.bulleted_list_ui0232', 'main.insert_table_ui0233']],
+  ['main.view', ['main.display_options', 'main.cycle_view_mode', 'main.zoom_in', 'main.zoom_out', 'main.zoom_reset', 'main.show_or_hide_editing_marks', 'main.show_or_hide_outline', 'main.show_or_hide_footnotes', 'main.show_or_hide_source_line_numbers', 'main.toggle_focus_mode', 'main.toggle_light_dark_theme']],
   ['main.recovery', ['main.versions_drafts_ui0234', 'main.recover_unsaved_drafts', 'main.restore_version_before_last_save_ui0236']],
 ];
 function selectPaletteItem(button) {
@@ -1712,7 +1835,8 @@ document.querySelector('#welcomeNewButton').addEventListener('click', () => {
 
 document.querySelectorAll('[data-format]').forEach((button) => {
   button.addEventListener('click', () => {
-    editor.format(button.dataset.format);
+    const note=document.activeElement.closest?.('.note-card')?._noteEditor;
+    if(note)note.format(button.dataset.format);else editor.format(button.dataset.format);
     closePopovers();
     headingPopover.hidden = true;
     document.querySelector('#headingButton').setAttribute('aria-expanded', 'false');
@@ -1805,7 +1929,7 @@ palette.addEventListener('mousedown', (event) => {
 });
 
 document.addEventListener('mousedown', (event) => {
-    if (!event.target.closest('.quick-language-button') && !event.target.closest('.popover') && !event.target.closest('#readingToggle') && !event.target.closest('#appearanceButton') && !event.target.closest('#welcomeSettings') && !event.target.closest('#recentButton') && !event.target.closest('#welcomeRecentButton') && !event.target.closest('#headingButton') && !event.target.closest('#documentMenuButton') && !event.target.closest('#exportMenuButton') && !event.target.closest('#displayButton')) closePopovers();
+    if (!event.target.closest('.quick-language-button') && !event.target.closest('.popover') && !event.target.closest('#readingToggle') && !event.target.closest('#appearanceButton') && !event.target.closest('#welcomeSettings') && !event.target.closest('#recentButton') && !event.target.closest('#welcomeRecentButton') && !event.target.closest('#headingButton') && !event.target.closest('#documentMenuButton') && !event.target.closest('#exportMenuButton') && !event.target.closest('#displayButton') && !event.target.closest('#zoomLevel')) closePopovers();
 });
 
 let tooltipTimer = null;
@@ -2064,6 +2188,7 @@ languagePopover.addEventListener('keydown', event => {
 syncLanguageControls();
 onLanguageChange(() => {
   syncLanguageControls();
+  updateZoomControls();
   updateDocumentChrome(); updateModeControl(); updateHeadingControl(editor.headingLevel());
   if (!palette.hidden) renderPalette(paletteInput.value);
   for (const el of document.querySelectorAll('[data-callout-label]')) el.textContent = calloutLabels[el.dataset.calloutLabel];

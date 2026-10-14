@@ -5,7 +5,7 @@ import { unfoldAll } from '@codemirror/language';
 import { Compartment, EditorSelection, EditorState, StateEffect, StateField } from '@codemirror/state';
 import { renderBlock, sourceBlock, propertiesFolded, toggleProperties } from './structured-preview.js';
 import { labels as calloutLabels, titleSlotInSource, bodyToSource } from './callout.js';
-import { footnoteIndex, footnoteLabelFollow, footnoteRenumber, footnoteReferenceDeletion, footnoteLabelMap } from './footnote-state.js';
+import { footnoteIndex, footnoteLabelFollow, footnoteRenumber, footnoteReferenceDeletion, footnoteReferenceCompletion, footnoteLabelMap } from './footnote-state.js';
 import { orderedListRenumber } from './list-order.js';
 import { imageLines, outdentWritingImage } from './image-list-indent.js';
 import { planFootnoteInsertion, planFootnoteDeletion, indexFootnotes, displayNotes, footnoteBodyText, appendDefinition } from './footnotes.js';
@@ -44,6 +44,7 @@ import { insertNewlineContinueMarkup, deleteMarkupBackward, markdown } from '@co
 import { openSearchPanel, search, searchKeymap } from '@codemirror/search';
 import { LeafSearchPanel } from './search-panel.js';
 import { tags } from '@lezer/highlight';
+import { planInlineFormat } from './inline-format.js';
 import { leafMarkdownExtensions } from './markdown-extensions.js';
 import { structuredPreview, documentName, fileNameTitle, toggleFileNameTitle } from './structured-preview.js';
 import { renderInline, citationSignature, citationLabel } from './inline-preview.js';
@@ -56,6 +57,7 @@ import {outlineFolding} from './outline-folding.js';
 import { classifyInlineTag, pairInlineTags } from './inline-html.js';
 import { imageDrag } from './image-drag.js';
 import { shortcutText } from './platform-shortcuts.js';
+import { footnoteInlineNodes } from './footnote-inline.js';
 
 const toggleBlankMarkers = StateEffect.define();
 const typedProperties = StateEffect.define();
@@ -193,7 +195,7 @@ const alignLineNumbers = ViewPlugin.fromClass(class {
       }
       if (!coords) return [el, parseFloat(el.style.paddingTop) || 0];
       const labelHeight = parseFloat(getComputedStyle(el).lineHeight) || 11;
-      return [el, coords ? Math.max(0, (coords.top + coords.bottom - labelHeight) / 2 - el.getBoundingClientRect().top) : 0];
+      return [el, coords ? Math.max(0, ((coords.top + coords.bottom - labelHeight * view.scaleY) / 2 - el.getBoundingClientRect().top) / view.scaleY) : 0];
     });
   }
   write(rows) {
@@ -246,7 +248,13 @@ const leafHighlightStyle = HighlightStyle.define([
 // boundaries count as inside: the markup then stays put right after its closing
 // delimiter is typed, and clicking a rendered span reveals its source instead of
 // being swallowed by a replacement that covers the caret.
+const noteFocus = StateField.define({
+  create: () => false,
+  update: (value, tr) => tr.effects.reduce((value, effect) => effect.is(setNoteFocus) ? effect.value : value, value),
+});
+const setNoteFocus = StateEffect.define();
 function caretInRange(state, from, to) {
+  if (state.field(noteFocus, false) === false) return false;
   return state.selection.ranges.some(range => range.from <= to && range.to >= from);
 }
 
@@ -320,6 +328,7 @@ function livePreviewDecorations(view) {
   // drawn as the note's number instead, and goes back to its source while the
   // caret is on the definition, the way every other construct behaves.
   const definitionLines = new Set();
+  const definitionSource = doc.toString();
   for (const note of index.notes) {
     if (!note.def) continue;
     // A definition's own label is not a citation. The grammar turns "[^1]" into a
@@ -345,6 +354,27 @@ function livePreviewDecorations(view) {
     if (!editing) {
       for (const indent of note.def.continuations) {
         ranges.push(Decoration.replace({}).range(indent.from, indent.to));
+      }
+      // Unlike the document's LinkReference node, this tree describes the note's
+      // real inline Markdown. Decorations refer to the original source offsets.
+      let suppressed = -1;
+      for (const part of footnoteInlineNodes(definitionSource, note.def)) {
+        if (part.from < suppressed) continue;
+        if (['Link', 'Image'].includes(part.name) && part.ranges.length === 1) {
+          const span = part.ranges[0], signature = citationSignature(part.text, noteNumbers);
+          ranges.push(Decoration.replace({ widget: new InlinePreview(span.from, part.text, {
+            footnotes, signature: signature ?? '', note: citationLabel(part.text, noteNumbers),
+          }) }).range(span.from, span.to));
+          suppressed = part.to;
+          continue;
+        }
+        const classes = { StrongEmphasis: 'tok-strong', Emphasis: 'tok-emphasis',
+          Strikethrough: 'tok-strike', InlineCode: 'cm-leaf-inline-code', LeafHighlight: 'leaf-highlight' };
+        const hide = ['EmphasisMark', 'StrikethroughMark', 'CodeMark', 'LeafHighlightMark'].includes(part.name);
+        for (const span of part.ranges) {
+          if (hide) ranges.push(Decoration.replace({}).range(span.from, span.to));
+          else if (classes[part.name]) ranges.push(Decoration.mark({ class: classes[part.name] }).range(span.from, span.to));
+        }
       }
     }
   }
@@ -373,6 +403,10 @@ function livePreviewDecorations(view) {
       const heading = node.name.match(/^(?:ATX|Setext)Heading([1-6])$/);
       const yaml = view.state.field(structuredPreview).model.yaml;
       if (yaml && node.from < yaml.to && node.name !== 'Document') return false;
+      // The body pass above owns these spans, including when their source is
+      // exposed for editing. Do not overlay the grammar's mistaken link/code UI.
+      if (node.name !== 'Document' && index.notes.some(note => note.def
+        && node.from >= note.def.markerFrom && node.to <= note.def.to)) return false;
 
       const inline = inlineSpans.get(node.from);
       if (inline && !caretInRange(view.state, inline.openFrom, inline.closeTo)) {
@@ -487,7 +521,7 @@ const livePreview = ViewPlugin.fromClass(
     }
 
     update(update) {
-      if (update.transactions.some(tr => tr.effects.some(effect => effect.is(languageChanged))) || update.docChanged || update.selectionSet || update.viewportChanged || update.startState.field(sourceMode) !== update.state.field(sourceMode) || update.startState.field(blankMarkers) !== update.state.field(blankMarkers) || update.startState.field(headingNumbers) !== update.state.field(headingNumbers)) {
+      if (update.transactions.some(tr => tr.effects.some(effect => effect.is(languageChanged) || effect.is(setNoteFocus))) || update.docChanged || update.selectionSet || update.viewportChanged || update.startState.field(sourceMode) !== update.state.field(sourceMode) || update.startState.field(blankMarkers) !== update.state.field(blankMarkers) || update.startState.field(headingNumbers) !== update.state.field(headingNumbers)) {
         this.decorations = livePreviewDecorations(update.view);
       }
     }
@@ -626,7 +660,17 @@ function wrapMark(view, left, right = left) {
     changes: { from: range.from, to: range.to, insert },
     selection: EditorSelection.cursor(anchor),
     userEvent: 'input',
+    annotations: isolateHistory.of('full'),
   });
+  view.focus();
+}
+
+function formatInline(view, type) {
+  const { from, to } = view.state.selection.main;
+  const source = view.state.doc.toString();
+  const plan = planInlineFormat(source, from, to, type, { bodyFrom: bodyStart(source) });
+  if (plan) view.dispatch({ changes: plan.changes, selection: EditorSelection.cursor(plan.anchor),
+    userEvent: 'input', annotations: isolateHistory.of('full') });
   view.focus();
 }
 
@@ -832,7 +876,7 @@ function placeFootnotePopup() {
 // definition behind, so the marker and the note stay paired.
 function applyFootnoteBody(view, label, body) {
   const text = view.state.doc.toString();
-  const note = indexFootnotes(text).notes.find(candidate => candidate.id === label);
+  const note = view.state.field(footnoteIndex).notes.find(candidate => candidate.id === label);
   if (!note) return;
   const changes = note.def
     ? [{ from: note.def.markerTo, to: note.def.bodyTo, insert: body.trim() ? ` ${footnoteBodyText(body)}` : '' }]
@@ -926,11 +970,8 @@ function formatEditor(view, type) {
     return;
   }
   if (type === 'footnote') return insertFootnote(view);
+  if (['bold', 'italic', 'strike', 'highlight', 'code'].includes(type)) return formatInline(view, type);
   const marks = {
-    bold: ['**', '**'],
-    italic: ['*', '*'],
-    strike: ['~~', '~~'],
-    code: ['`', '`'],
     codeblock: ['```\n', '\n```'],
     // Obsidian renders superscript/subscript from HTML tags, not ^x^ / ~x~.
     sup: ['<sup>', '</sup>'],
@@ -1081,6 +1122,8 @@ export function createLeafEditor(options) {
     { key: 'Mod-f', run: openSearchPanel },
     { key: 'Mod-b', run: (view) => (formatEditor(view, 'bold'), true) },
     { key: 'Mod-i', run: (view) => (formatEditor(view, 'italic'), true) },
+    { key: 'Mod-=', run: (view) => (formatEditor(view, 'highlight'), true) },
+    { key: 'Mod-Alt-c', run: (view) => (formatEditor(view, 'code'), true) },
     { key: 'Mod-Shift-x', run: (view) => (formatEditor(view, 'strike'), true) },
     { key: 'Mod-.', run: (view) => (formatEditor(view, 'sup'), true) },
     { key: 'Mod-,', run: (view) => (formatEditor(view, 'sub'), true) },
@@ -1128,6 +1171,7 @@ export function createLeafEditor(options) {
       // Registered before the reading-mode filter below, which runs first: a
       // document that is only being read has no edit for this one to follow.
       footnoteRenumber,
+      footnoteReferenceCompletion,
       footnoteReferenceDeletion,
       footnoteLabelFollow,
       orderedListRenumber,
@@ -1389,4 +1433,51 @@ export function createLeafEditor(options) {
       view.destroy();
     },
   };
+}
+
+// A note uses the same Markdown grammar and live-preview decorations as the
+// document, but sends every edit through the document's history/save pipeline.
+export function createLeafNoteEditor({parent, doc, source = false, label, onChange, onUndo, onRedo, onLeave}) {
+  let syncing = false;
+  const view = new EditorView({parent, doc, extensions: [
+    markdown({extensions: leafMarkdownExtensions, addKeymap: false}),
+    sourceMode.init(() => source), blankMarkers, headingNumbers,
+    fileNameTitle.init(() => false), propertiesFolded, structuredPreview,
+    footnoteIndex, noteFocus,
+    syntaxHighlighting(leafHighlightStyle), livePreview,
+    EditorView.lineWrapping,
+    EditorView.contentAttributes.of({'aria-label': label, spellcheck: 'false'}),
+    EditorView.theme({'&': {backgroundColor:'transparent'}, '.cm-content': {padding:'0', minHeight:'1.7em'}, '.cm-line': {padding:'0'}, '.cm-scroller': {overflow:'visible', fontFamily:'inherit'}}),
+    EditorView.updateListener.of(update => {
+      if (update.docChanged && !syncing) onChange(update.state.doc.toString());
+    }),
+    EditorView.domEventHandlers({
+      focus(_event, view) { view.dispatch({effects:setNoteFocus.of(true)}); return false; },
+      blur(_event, view) { view.dispatch({effects:setNoteFocus.of(false)}); return false; },
+    }),
+    keymap.of([
+      {key:'Mod-z',run:()=>{onUndo();return true;}},
+      {key:'Mod-Shift-z',run:()=>{onRedo();return true;}},
+      ...[['Mod-b','bold'],['Mod-i','italic'],['Mod-=','highlight'],['Mod-Alt-c','code']].map(([key,type])=>({key,run:view=>{formatEditor(view,type);return true;}})),
+      {key:'Mod-k',run:view=>{const r=view.state.selection.main;const selected=view.state.doc.sliceString(r.from,r.to);const address=t('writing_tools.link_address');const insert=`[${selected||t('writing_tools.link_text')}](${address})`;const from=r.from+insert.lastIndexOf(address);view.dispatch({changes:{from:r.from,to:r.to,insert},selection:{anchor:from,head:from+address.length},userEvent:'input'});return true;}},
+      {key:'Shift-Enter',run:view=>{view.dispatch(view.state.replaceSelection('\n'));return true;}},
+      {key:'Enter',run:()=>{onLeave();return true;}},
+      {key:'Escape',run:()=>{onLeave();return true;}},
+      ...defaultKeymap,
+    ]),
+  ]});
+  view.dom.classList.add('leaf-note-editor');
+  const sync = text => {
+    if (view.state.doc.toString() === text) return;
+    syncing = true;
+    const length = view.state.doc.length;
+    let from=0, suffix=0;const before=view.state.doc.toString();
+    while(from<Math.min(length,text.length)&&before[from]===text[from])from++;
+    while(suffix<Math.min(length,text.length)-from&&before[length-1-suffix]===text[text.length-1-suffix])suffix++;
+    view.dispatch({changes:{from,to:length-suffix,insert:text.slice(from,text.length-suffix)}});
+    syncing = false;
+  };
+  return {view, sync, focus(){view.focus();view.dispatch({selection:{anchor:view.state.doc.length}});},
+    value:()=>view.state.doc.toString(), format:type=>formatEditor(view,type),
+    destroy:()=>view.destroy()};
 }

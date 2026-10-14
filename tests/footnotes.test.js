@@ -238,3 +238,15 @@ test('random documents keep the index self-consistent', () => {
     assertConsistent(text);
   }
 });
+
+test('repeated immutable footnote snapshots share indexing without mixing documents', () => {
+  const a='正文[^a]\n\n[^a]: 甲', b='正文[^b]\n\n[^b]: 乙';
+  const first=indexFootnotes(a), second=indexFootnotes(b);
+  assert.equal(indexFootnotes(a),first);
+  assert.equal(indexFootnotes(b),second);
+  assert.equal(first.notes[0].def.body,'甲');
+  assert.equal(second.notes[0].def.body,'乙');
+  const changed=indexFootnotes(a+'更新');
+  assert.equal(changed.notes[0].def.body,'甲更新');
+  assert.equal(first.notes[0].def.body,'甲','cached snapshots are not edited in place');
+});

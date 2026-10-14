@@ -13,7 +13,7 @@ try{
  assert.ok((await source()).includes('[^1]: 第一条'));
  const once=await source();await select('[^1]');await page.keyboard.press('Backspace');
  assert.ok(!(await source()).includes('第一条'));assert.equal(await page.locator('.note-card').count(),1);
- assert.equal(await page.locator('.note-body').inputValue(),'第二条');
+ assert.equal(await page.locator('.note-body').evaluate(el=>el.value),'第二条');
  await page.click('#undoButton');assert.equal(await source(),once);assert.equal(await page.locator('.note-card').count(),2);
  await page.click('#redoButton');assert.equal(await page.locator('.note-card').count(),1);
  await setup('甲[^note]\n\n[^note]: 内容');
@@ -26,7 +26,7 @@ try{
  assert.equal(await page.evaluate(()=>window.cutText),'[^note]');
  await page.evaluate(()=>{v.dispatch({selection:{anchor:2}});v.focus();const data=new DataTransfer();data.setData('text/plain',window.cutText);document.activeElement.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));});
  assert.equal(await page.locator('.note-card[data-state="complete"]').count(),1);
- assert.equal(await page.locator('.note-body').inputValue(),'保留内容');
+ assert.equal(await page.locator('.note-body').evaluate(el=>el.value),'保留内容');
  // Native-style textarea input paths (Callout and table) must tag cuts too.
  for(const text of ['> [!NOTE]\n> 甲[^note]乙\n\n[^note]: 内容','| A |\n| --- |\n| 甲[^note]乙 |\n\n[^note]: 内容']){
   await setup(text);

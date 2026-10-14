@@ -1,0 +1,32 @@
+<!doctype html><html><meta charset="utf-8"><div id="editor" style="height:700px"></div>
+<script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import '/src/style.css';
+window.startTest=async()=>{
+ try {
+  const source='前文 示例 后文';
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:source}),view=editor.view;
+  let step=0;
+  const select=()=>{view.dispatch({selection:{anchor:3,head:5}});view.focus();};
+  view.contentDOM.addEventListener('keydown',event=>{
+   const trusted=event.isTrusted;
+   setTimeout(()=>{
+    try {
+     if(!trusted)throw Error('expected an AppKit key event');
+     const marker=step===0?'==':'`';
+     if(editor.getValue()!==`前文 ${marker}示例${marker} 后文`)throw Error('native shortcut did not format the selection');
+     const selector=step===0?'.leaf-highlight':'.cm-leaf-inline-code';
+     if(!view.dom.querySelector(selector)?.textContent.includes('示例'))throw Error('formatted text did not render');
+     editor.undo();if(editor.getValue()!==source)throw Error('one undo did not restore the document');
+     editor.redo();if(editor.getValue()!==`前文 ${marker}示例${marker} 后文`)throw Error('redo did not restore formatting');
+     editor.undo();
+     if(step++===0){select();document.title='LeafKey CmdOptionC';}
+     else document.title='LeafTest PASS native Cmd+= and Cmd+Option+C, rendered formatting and undo/redo';
+    }catch(error){document.title='LeafTest FAIL '+error.message;}
+   },200);
+  },true);
+  select();document.title='LeafKey CmdEquals';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};
+document.title='LeafSource';
+</script></html>

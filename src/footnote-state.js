@@ -1,6 +1,7 @@
 import { StateField, EditorState, MapMode, ChangeSet } from '@codemirror/state';
-import { indexFootnotes, displayNotes, labelPartAt, planLabelFollow, planFootnoteRenumbering, planFootnoteDeletion, planFootnoteDefinitionOrder } from './footnotes.js';
+import { indexFootnotes, displayNotes, labelPartAt, planLabelFollow, planFootnoteRenumbering, planFootnoteDeletion, planFootnoteDefinitionOrder, appendDefinition } from './footnotes.js';
 import {isolateHistory} from '@codemirror/commands';
+import {sourceMode} from './view-mode.js';
 
 // The number a citation shows is derived from the whole document, so the index is
 // rebuilt when the text changes and kept across cursor moves -- re-indexing on
@@ -27,6 +28,36 @@ export function footnoteReader(state) {
   const index = state.field(footnoteIndex);
   return { map: displayNotes(index).map, link: false, seen: new Map() };
 }
+
+// Completing an inline citation in live editing creates the same empty
+// definition as the toolbar. Only the newly typed closing bracket qualifies:
+// loading, paste, history, code examples and unrelated edits leave source intact.
+export const footnoteReferenceCompletion = EditorState.transactionFilter.of(tr => {
+  if (!tr.docChanged || !tr.isUserEvent('input.type') || tr.startState.field(sourceMode, false)) return tr;
+  const endings = [];
+  tr.changes.iterChanges((_fromA, _toA, fromB, toB, inserted) => {
+    if (inserted.toString().includes(']')) endings.push({from:fromB,to:toB});
+  });
+  if (!endings.length) return tr;
+  const before = tr.startState.field(footnoteIndex, false);
+  if (!before) return tr;
+  const oldStarts = new Set(before.notes.flatMap(note => note.refs.map(ref => tr.changes.mapPos(ref.from, -1))));
+  let doc = tr.newDoc;
+  const candidates = indexFootnotes(doc.toString()).notes.filter(note => !note.def && note.refs.some(ref => {
+    if (oldStarts.has(ref.from) || !endings.some(range => range.from < ref.to && ref.to <= range.to)) return false;
+    // A marker at the start of a line may be a definition still being written.
+    // Its contents can be completed explicitly through the sidebar instead.
+    return doc.sliceString(doc.lineAt(ref.from).from, ref.from).trim().length > 0;
+  }));
+  if (!candidates.length) return tr;
+  const specs = [tr];
+  for (const note of candidates) {
+    const changes = appendDefinition(doc.toString(), note.id, '');
+    specs.push({changes,sequential:true});
+    doc = ChangeSet.of(changes, doc.length).apply(doc);
+  }
+  return specs;
+});
 
 // Renaming a citation by hand used to leave its definition behind under the old
 // name, which reads as two halves of one note and renumbers everything after it.

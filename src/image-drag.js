@@ -77,7 +77,7 @@ export const imageDrag = editable => ViewPlugin.fromClass(class {
         const box = this.view.scrollDOM.getBoundingClientRect(), p = this.point;
         if (p.x >= box.left && p.x <= box.right && p.y >= box.top && p.y <= box.bottom) {
           const delta = p.y < box.top+32 ? -10 : p.y > box.bottom-32 ? 10 : 0;
-          if (delta) {this.view.scrollDOM.scrollTop += delta;this.show();}
+          if (delta) {this.view.scrollDOM.scrollTop += delta / this.view.scaleY;this.show();}
         }
       }
       this.tick();

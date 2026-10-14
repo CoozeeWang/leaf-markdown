@@ -1,0 +1,50 @@
+<!doctype html><html><meta charset="utf-8"><div id="app"></div>
+<script type="module">
+import {initializeLanguage} from '/src/i18n.js';
+await initializeLanguage();await import('/src/main.js');
+window.startTest=async()=>{
+ const pause=()=>new Promise(r=>setTimeout(r,120));
+ const check=(value,message)=>{if(!value)throw Error(message);};
+ try {
+  document.querySelector('#welcomeNewButton').click();
+  const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');
+  const view=EditorView.findFromDOM(document.querySelector('#editor .cm-content'));
+  const compact='正文[^a]。\n\n[^a]: **粗体**、*斜体*、`code`、==高亮==。';
+  view.dispatch({changes:{from:0,to:view.state.doc.length,insert:compact},selection:{anchor:0}});await pause();
+  check(document.querySelector('#editor .leaf-footnote-body .tok-strong')?.textContent==='粗体','definition bold missing');
+  check(document.querySelector('#editor .leaf-footnote-body .tok-emphasis')?.textContent==='斜体','definition italic missing');
+  check(document.querySelector('#editor .leaf-footnote-body .cm-leaf-inline-code')?.textContent==='code','definition inline code missing');
+  check(document.querySelector('#editor .leaf-footnote-body .leaf-highlight')?.textContent==='高亮','definition highlight missing');
+  check(view.state.doc.toString()===compact,'definition preview changed source');
+  const source='正文[^a]。\n\n[^a]: **粗体**、*斜体*、`code`、==高亮== 和 [链接](https://example.com)。';
+  view.dispatch({changes:{from:0,to:view.state.doc.length,insert:source},selection:{anchor:0}});
+  document.querySelector('#notesButton').click();await pause();
+  check(document.querySelector('.note-body .tok-strong')?.textContent==='粗体','edit rendering missing');
+  const mode=async name=>{document.querySelector('#readingToggle').click();document.querySelector(`[data-mode=${name}]`).click();await pause();};
+  await mode('source');check(document.querySelector('.note-body').textContent.includes('**粗体**'),'source markers missing');
+  await mode('reading');check(document.querySelector('.note-body strong')?.textContent==='粗体','reading formatting missing');
+  check(!document.querySelector('.note-body [contenteditable=true],.note-delete'),'reading view editable');
+  await mode('edit');
+  const card=document.querySelector('.note-card'),note=card._noteEditor.view;
+  note.dispatch({changes:{from:2,insert:'新'},selection:{anchor:3},userEvent:'input.type'});
+  check(view.state.doc.toString().includes('**新粗体**'),'note edit not saved to document buffer');
+  document.querySelector('#undoButton').click();check(view.state.doc.toString()===source,'note undo changed source');
+  check(!card._noteEditor.value().includes('新粗体'),'note undo left stale sidebar text');
+  check(document.querySelector('[data-format=highlight] svg'),'highlighter icon missing');
+  const incomplete='正文[^1] ==高亮[^6==\n\n[^1]: 第一条';
+  view.dispatch({changes:{from:0,to:view.state.doc.length,insert:incomplete}});
+  const at=incomplete.indexOf('==',incomplete.indexOf('==')+2);
+  view.dispatch({changes:{from:at,insert:']'},selection:{anchor:at+1},userEvent:'input.type'});
+  check(view.state.doc.toString()==='正文[^1] ==高亮[^2]==\n\n[^1]: 第一条\n\n[^2]:','typed citation not completed');
+  await pause();check(document.querySelector('#notesCount').textContent==='2','completed note count wrong');
+  check(!document.querySelector('.note-card[data-state=undefined]'),'completed note still undefined');
+  const old='正文[^6]';view.dispatch({changes:{from:0,to:view.state.doc.length,insert:old}});await pause();
+  check(view.state.doc.toString()===old,'loading altered an undefined citation');
+  document.querySelector('.note-body .cm-content').focus();await pause();
+  check(view.state.doc.toString()==='正文[^1]\n\n[^1]:','editing missing note did not complete definition');
+  document.querySelector('#undoButton').click();check(view.state.doc.toString()===old,'missing note completion undo wrong');
+  document.title='LeafTest PASS native footnote definition format, sidebar modes, shared undo, toolbar icon and manual citation completion';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};
+document.title='LeafSource';
+</script></html>

@@ -21,8 +21,8 @@ try {
   assert.equal(await doc(),'甲[^1] 乙[^2] 丙[^3] 新增[^Test] 丁[^5] 戊[^6]\n\n[^1]: A\n[^2]: B\n[^3]: C\n[^Test]: Test\n[^5]: D\n[^6]: E');
   await page.click('#notesButton');
   assert.equal(await page.locator('.note-label').count(),0,'侧栏不再显示重复的标签行');
-  await page.locator('.note-card[data-label="5"] .note-body').fill('D 改写');
-  await page.locator('.note-card[data-label="6"] .note-body').fill('E 改写');
+  await page.locator('.note-card[data-label="5"] .note-body .cm-content').fill('D 改写');
+  await page.locator('.note-card[data-label="6"] .note-body .cm-content').fill('E 改写');
   assert.ok((await doc()).includes('[^5]: D 改写\n[^6]: E 改写'));
   await page.click('[data-close="notes"]');
 
@@ -34,12 +34,13 @@ try {
   for (const key of '[^Test]') {
     typed+=key;
     await page.keyboard.type(key);
-    assert.equal(await doc(),original.slice(0,at)+typed+original.slice(at),`输入 ${typed} 不得改动旧定义`);
+    const expected=key===']'?'甲[^1] 乙[^Test][^3]\n\n[^1]: A\n[^Test]:\n[^3]: B':original.slice(0,at)+typed+original.slice(at);
+    assert.equal(await doc(),expected,`输入 ${typed} 保留旧脚注内容`);
   }
   await page.click('#notesButton');
-  assert.deepEqual(await page.locator('.note-body').evaluateAll(es=>es.map(e=>e.value)),['A','B','']);
+  assert.deepEqual(await page.locator('.note-body').evaluateAll(es=>es.map(e=>e.value)),['A','','B']);
   const newBody=page.locator('.note-card[data-label="Test"] .note-body');
-  await newBody.fill('行业注释');
+  await newBody.locator('.cm-content').fill('行业注释');
   await newBody.press('Escape');
   await page.waitForTimeout(150);
   assert.deepEqual(await page.locator('.note-body').evaluateAll(es=>es.map(e=>e.value)),['A','行业注释','B']);
@@ -53,10 +54,10 @@ try {
 
   await setDoc('甲[^1] 中间[^9] 乙[^2]\n\n[^1]: A\n[^2]: B');
   await page.click('#notesButton');
-  await page.locator('.note-card[data-label="9"] .note-body').fill('新');
+  await page.locator('.note-card[data-label="9"] .note-body .cm-content').fill('新');
   await page.keyboard.type('注释');
   assert.equal(await page.evaluate(()=>document.activeElement.closest('.note-card').dataset.label),'2');
-  await page.locator('.note-card[data-label="3"] .note-body').fill('旧注释改写');
+  await page.locator('.note-card[data-label="3"] .note-body .cm-content').fill('旧注释改写');
   assert.equal(await doc(),'甲[^1] 中间[^2] 乙[^3]\n\n[^1]: A\n[^2]: 新注释\n[^3]: 旧注释改写');
   await page.click('[data-close="notes"]');
 
@@ -90,7 +91,7 @@ try {
   await setDoc('甲[^1][^2]。\n\n[^1]: A\n[^2]: B');
   await caret(0);
   await page.locator('.cm-content .footnote-ref').nth(1).click();
-  assert.equal(await page.locator('.note-card.active .note-body').inputValue(),'B');
+  assert.equal(await page.locator('.note-card.active .note-body').evaluate(el=>el.value),'B');
   await page.click('[data-close="notes"]');
 
   // A title caret offset must be added to the title's source start.

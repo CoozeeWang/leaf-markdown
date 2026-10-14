@@ -97,8 +97,8 @@ try {
   await page.waitForTimeout(150);
   assert.equal(await page.locator('.footnote-box').count(),0,'已有的注释不再用浮框打开');
   assert.equal(await page.locator('#notesDrawer.visible').count(),1,'点角标要打开注释侧栏');
-  assert.equal(await page.locator('.note-card.active .note-body').inputValue(),'一号注释','要带出已有的注释内容');
-  assert.equal(await page.evaluate(()=>document.activeElement.classList.contains('note-body')),true,'光标要落在那条注释里');
+  assert.equal(await page.locator('.note-card.active .note-body').evaluate(el=>el.value),'一号注释','要带出已有的注释内容');
+  assert.equal(await page.evaluate(()=>!!document.activeElement.closest('.note-body')),true,'光标要落在那条注释里');
   await page.click('[data-close="notes"]');
   assert.equal(await page.locator('#notesDrawer.visible').count(),0,'关掉侧栏，后面的检查不受它影响');
 

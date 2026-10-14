@@ -45,6 +45,7 @@
   "main.numbered_list": "有序列表",
   "main.numbered_list_7": "有序列表  ⌘⇧7",
   "main.inline_code": "行内代码",
+  "main.highlight": "高亮",
   "main.code_block": "代码块",
   "main.insert_table": "插入表格",
   "main.insert_callout": "插入提示块",
@@ -689,5 +690,10 @@
   "search_panel.matches_one": "共 {{total}} 处",
   "search_panel.matches_other": "共 {{total}} 处",
   "main.removed_unavailable_entries_one": "已清理 {{count}} 条失效记录。",
-  "main.removed_unavailable_entries_other": "已清理 {{count}} 条失效记录。"
+  "main.removed_unavailable_entries_other": "已清理 {{count}} 条失效记录。",
+  "main.body_zoom": "正文缩放",
+  "main.zoom_in": "放大正文",
+  "main.zoom_out": "缩小正文",
+  "main.zoom_reset": "恢复 100%",
+  "main.zoom_level": "正文缩放 {{percent}}%，选择缩放比例"
 }

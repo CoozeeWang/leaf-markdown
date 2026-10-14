@@ -18,13 +18,13 @@ try {
   const active=()=>page.evaluate(()=>document.querySelector('.note-card.active')?.dataset.label??null);
   const focusTag=()=>page.evaluate(()=>{
     const el=document.activeElement;
-    if(el.classList.contains('note-body'))return 'note-body';
+    if(el.closest('.note-body'))return 'note-body';
     if(el.classList.contains('cm-content'))return 'cm-content';
     return el.tagName.toLowerCase();
   });
   // Leaving a note is what lets the panel redraw: it never rebuilds under a
   // caret, or a pinyin run being typed would be cut in half.
-  const leaveNote=async()=>{await page.click('.cm-content',{position:{x:6,y:6}});await page.waitForTimeout(120);};
+  const leaveNote=async()=>{await page.click('#editor .cm-content',{position:{x:6,y:6}});await page.waitForTimeout(120);};
 
   // The collapsed edge rail opens the panel without a toolbar control.
   const button=page.locator('#notesButton');
@@ -65,7 +65,7 @@ try {
   await page.keyboard.press('Shift+Enter');
   await page.keyboard.type('第二行');
   assert.equal(await doc(),'丙[^c] 甲[^a] 乙[^b] 悬空[^d]\n\n[^a]: 甲注释续写\n    第二行\n[^b]: 乙注释\n[^c]: 丙注释\n[^orphan]: 没人引用\n','换行要续在同一个定义里');
-  assert.equal(await body.inputValue(),'甲注释续写\n第二行','方框里读回的是去掉缩进的原文');
+  assert.equal(await body.evaluate(el=>el.value),'甲注释续写\n第二行','方框里读回的是去掉缩进的原文');
 
   // Enter leaves the note instead of adding a line, so the keyboard never gets
   // stuck in the panel.
@@ -77,7 +77,7 @@ try {
   //    the list redraws with its number once the caret leaves.
   const missing=page.locator('.note-card[data-label="d"] .note-body');
   assert.equal(await missing.count(),1,'没有定义的引用也要有一行');
-  await missing.fill('补上的注释');
+  await missing.locator('.cm-content').fill('补上的注释');
   assert.equal(await doc(),'丙[^c] 甲[^a] 乙[^b] 悬空[^d]\n\n[^a]: 甲注释续写\n    第二行\n[^b]: 乙注释\n[^c]: 丙注释\n[^orphan]: 没人引用\n\n[^d]: 补上的注释','补写要真的落成一条定义');
   await leaveNote();
   assert.deepEqual((await rows()).map(row=>row.slice(0,2)),[['c','1'],['a','2'],['b','3'],['d','4'],['orphan','']],'补写之后这一行要有编号');
@@ -112,14 +112,14 @@ try {
   //    the matching row.
   await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();
   await page.waitForTimeout(180);
-  assert.equal(await page.locator('.note-card[data-number="1"] .note-body').getAttribute('readonly'),'','阅读模式下不可改写');
+  assert.equal(await page.locator('.note-card[data-number="1"] .note-body [contenteditable=true]').count(),0,'阅读模式下不可改写');
   await page.click('.reading-document .footnote-ref >> nth=0');
   await page.waitForTimeout(100);
   assert.equal(await active(),'1','阅读视图里点角标也要点亮对应的一行');
   await page.screenshot({path:artifactPath('leaf-notes-reading.png')});
   await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();
   await page.waitForTimeout(180);
-  assert.equal(await page.locator('.note-card[data-number="1"] .note-body').getAttribute('readonly'),null,'回到编辑模式要能改写');
+  assert.equal(await page.locator('.note-card[data-number="1"] .note-body [contenteditable=true]').count(),1,'回到编辑模式要能改写');
 
   // 8. A note cited twice is one row, and nothing the panel does may reach the
   //    file's own structure.
@@ -142,7 +142,7 @@ try {
   await page.keyboard.type('新写的');
   assert.equal(await page.evaluate(()=>window.__row===document.querySelector('.note-card .note-body')),true,'改字只该改字，不该重建整行');
   assert.equal(await page.locator('.footnote-box textarea').inputValue(),'新写的');
-  assert.equal(await page.locator('.note-card[data-number="1"] .note-body').inputValue(),'新写的','浮框里写的要同步到侧栏');
+  assert.equal(await page.locator('.note-card[data-number="1"] .note-body').evaluate(el=>el.value),'新写的','浮框里写的要同步到侧栏');
   assert.equal(await doc(),'正文。[^1]\n\n[^1]: 新写的','两边写的还是同一条定义');
   await page.keyboard.press('Escape');
   assert.equal(await focusTag(),'cm-content','关掉浮框要回到正文');

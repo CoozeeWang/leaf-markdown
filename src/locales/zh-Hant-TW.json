@@ -45,6 +45,7 @@
   "main.numbered_list": "編號清單",
   "main.numbered_list_7": "編號清單  ⌘⇧7",
   "main.inline_code": "行內程式碼",
+  "main.highlight": "醒目標示",
   "main.code_block": "程式碼區塊",
   "main.insert_table": "插入表格",
   "main.insert_callout": "插入提示區塊",
@@ -689,5 +690,10 @@
   "search_panel.matches_one": "共 {{total}} 處",
   "search_panel.matches_other": "共 {{total}} 處",
   "main.removed_unavailable_entries_one": "已清除 {{count}} 筆失效記錄。",
-  "main.removed_unavailable_entries_other": "已清除 {{count}} 筆失效記錄。"
+  "main.removed_unavailable_entries_other": "已清除 {{count}} 筆失效記錄。",
+  "main.body_zoom": "內文縮放",
+  "main.zoom_in": "放大內文",
+  "main.zoom_out": "縮小內文",
+  "main.zoom_reset": "還原 100%",
+  "main.zoom_level": "內文縮放 {{percent}}%，選擇縮放比例"
 }

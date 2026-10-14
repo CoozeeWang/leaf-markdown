@@ -16,6 +16,13 @@ export function tableEdgeControls(root, table, act) {
   menu.addEventListener('mousedown',e=>e.preventDefault());
   menu.addEventListener('keydown',()=>menu.classList.remove('pointer-open'));
   let currentRow=0,currentCol=0,target=null,menuTrigger=null;
+  // DOM rectangles use screen coordinates; positioned children use the
+  // unscaled local coordinates of their zoomed document widget.
+  const cellBox=cell=>{
+    const rect=cell.getBoundingClientRect(),box=root.getBoundingClientRect();
+    const sx=box.width/root.offsetWidth||1,sy=box.height/root.offsetHeight||1;
+    return {rect,x:(rect.left-box.left)/sx,y:(rect.top-box.top)/sy,width:rect.width/sx,height:rect.height/sy};
+  };
   const position=(el,x,y)=>{el.style.left=`${x}px`;el.style.top=`${y}px`;el.hidden=false;};
   const hide=()=>{if(!menu.hidden)return;guide.hidden=insert.hidden=true;if(!root.contains(document.activeElement))row.hidden=col.hidden=true;};
   const close=()=>{menu.hidden=true;hide();};
@@ -26,18 +33,17 @@ export function tableEdgeControls(root, table, act) {
   table.addEventListener('focusin',e=>{
     const cell=e.target.closest('th,td');if(!cell)return;
     currentRow=cell.parentElement.rowIndex;currentCol=cell.cellIndex;
-    const r=cell.getBoundingClientRect(),box=root.getBoundingClientRect();
-    position(row,0,r.top-box.top+r.height/2);position(col,r.left-box.left+r.width/2,0);
+    const {x,y,width,height}=cellBox(cell);
+    position(row,0,y+height/2);position(col,x+width/2,0);
   });
   table.addEventListener('mousemove',e=>{
     if(!menu.hidden)return;
     const cell=e.target.closest('th,td');if(!cell)return;
     currentRow=cell.parentElement.rowIndex;currentCol=cell.cellIndex;
-    const r=cell.getBoundingClientRect(), box=root.getBoundingClientRect();
-    const x=r.left-box.left,y=r.top-box.top;
-    position(row,0,y+r.height/2);position(col,x+r.width/2,0);
-    const edges=[['col',currentCol,Math.abs(e.clientX-r.left),x,y+r.height/2],['col',currentCol+1,Math.abs(e.clientX-r.right),x+r.width,y+r.height/2],
-      ['row',currentRow,Math.abs(e.clientY-r.top),x+r.width/2,y],['row',currentRow+1,Math.abs(e.clientY-r.bottom),x+r.width/2,y+r.height]]
+    const {rect:r,x,y,width,height}=cellBox(cell);
+    position(row,0,y+height/2);position(col,x+width/2,0);
+    const edges=[['col',currentCol,Math.abs(e.clientX-r.left),x,y+height/2],['col',currentCol+1,Math.abs(e.clientX-r.right),x+width,y+height/2],
+      ['row',currentRow,Math.abs(e.clientY-r.top),x+width/2,y],['row',currentRow+1,Math.abs(e.clientY-r.bottom),x+width/2,y+height]]
       .filter(([axis,i])=>axis!=='row'||i>0).sort((a,b)=>a[2]-b[2]);
     target=edges[0];
     if(target[2]<10){position(insert,target[3],target[4]);setAttr(insert, 'aria-label', () => target[0]==='row'?t("table_edge_controls.insert_row_here"):t("table_edge_controls.insert_column_here"));insert.title=insert.getAttribute('aria-label');

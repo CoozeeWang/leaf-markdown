@@ -15,6 +15,10 @@ npm run test:browser
 
 The runner owns its Vite server on port 41732 and fails if that port is occupied. It runs pinned Chromium by default. Screenshots are written to ignored `test-results/`. Browser platform emulation does not replace native Windows testing.
 
+行内格式生成由 `inline-format.test.js` 检查真实 Markdown 解析、标点外侧补空格、首尾空白、CRLF、段落、结构保护、脚注及反引号。`inline-format-browser.mjs` 检查格式按钮、Mac／Windows 快捷键路径、实际字形样式、取消格式及一次撤销／重做；`LEAF_INLINE_ENGINE=webkit` 可检查 WebKit。平台模拟不等于 Windows 安装版实测。
+
+macOS 原生格式检查使用开发服务器，在 `src-tauri` 运行 `cargo run --locked --example native-table-keys -- ../tests/native-inline-format.html http://127.0.0.1:41732/tests/native-inline-format.html`。夹具检查实际 WKWebView 中的共享格式入口、字形、CRLF、脚注、行内代码和撤销；不代替安装版操作、原生快捷键或 Windows 实测。
+
 选区合成回归同时运行 Chromium 与 WebKit；两者都需要安装。它覆盖重复色块、编辑器原生选区透明范围和结构化输入框的选区，不代替 macOS WKWebView 真机验收。
 
 Rust 测试在 `src-tauri` 中运行：
@@ -22,6 +26,8 @@ Rust 测试在 `src-tauri` 中运行：
 ```sh
 cargo test --locked --all-targets
 ```
+
+高亮与行内代码快捷键由 `inline-format-shortcuts-browser.mjs` 检查，覆盖两端按键、三语命令、实际渲染及撤销／重做。已有 Vite 测试服务运行时，macOS 可执行 `cargo run --locked --example native-table-keys -- ../tests/native-inline-format-shortcuts.html http://127.0.0.1:41732/tests/native-inline-format-shortcuts.html`，以 AppKit 按键验证实际 WKWebView；不代替安装版及真实中文输入法验收。
 
 Issue #36 的文件跟随回归包含 `src-tauri/src/document_location.rs` 中的原生文件身份测试，以及 `tests/document-session.test.js` 中的串行轮询、未保存编辑和保存去向测试。Rust 测试在本机一次性目录中改名、移动和替换文件；前端测试使用模拟文件接口。两者通过后，仍需分别在 macOS、Windows 原生应用中用一次性 Markdown 文件检查文件名、最近打开和保存位置。浏览器测试与 macOS 结果不能代替 Windows 实测；构建通过也不能代替已安装应用的人工验收。
 
@@ -133,3 +139,7 @@ NSIS 配置启用 English、SimpChinese、TradChinese 和语言选择器，直�
 `Internal test packages` 的 Windows 作业在一次性 runner 中运行 `tests/windows-i18n-installer.ps1`，检查实际 EXE 的三语注册、重装更新、应用语言偏好保护及新文件名，然后运行文件图标/关联/卸载检查。脚本拒绝运行于用户电脑；静默安装使用 MUI2 保存的安装语言驱动，不能代替语言选择器界面实机验收。D 仍需在 Windows 检查选择器、系统匹配/回退、应用三语布局与真实右键操作。
 
 已安装 NSIS 的开发机可运行 `node tests/windows-i18n-nsis.mjs` 编译无操作的合成夹具，检查钩子和三语资源语法。生成 EXE 位于忽略提交的 `test-results`，不执行钩子、不安装 Leaf；不算正式 Windows 包。macOS 编译子进程使用 `en_US.UTF-8`，避免不支持的 locale 造成中文编码错误。
+
+脚注侧栏三模式由 `footnote-sidebar-modes-browser.mjs` 检查；文末定义格式由 `footnote-definition-format-browser.mjs` 在 Chromium/WebKit 检查实际格式、解析器边界、多行内容、源码/光标标记与撤销，位置映射另由 `footnote-inline.test.js` 覆盖 CRLF 和缩进。长文浮框输入由 `footnote-input-performance-browser.mjs` 使用约十九万字符合成样本检查即时写回、侧栏同步和组合输入。macOS 原生夹具为 `native-footnote-sidebar.html`，使用现有 `native-table-keys` 入口验证实际 WKWebView 的文末/侧栏渲染与共享撤销。性能数字来自本机合成样本，不代替用户原文、真实输入法或安装版验收。
+
+正文缩放由 `body-zoom-browser.mjs` 检查八档比例、编辑坐标与真实鼠标输入、高亮快捷键区分、撤销、视图切换、长文位置、三语、菜单和独立导出预览。默认 Chromium，`LEAF_ZOOM_ENGINE=webkit` 可检查 WebKit；平台模拟不等于 Windows 实机。macOS 使用已有 `native-table-keys` 入口运行 `../tests/native-body-zoom.html` 与 `http://127.0.0.1:41732/tests/native-body-zoom.html`，加 `--foreground` 检查实际 WKWebView 的比例、坐标及 AppKit Shift 快捷键；后台窗口的帧测量可能暂停。正式安装版的真实输入法、保存重开、图片拖放、实际 PDF 和两平台验收仍分开记录。

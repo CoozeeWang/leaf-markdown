@@ -1,0 +1,46 @@
+<!doctype html><html><meta charset="utf-8"><div id="app"></div>
+<script type="module">
+import {initializeLanguage} from '/src/i18n.js';
+await initializeLanguage(); await import('/src/main.js');
+window.startTest = async () => {
+  const pause=()=>new Promise(resolve=>setTimeout(resolve,160));
+  const check=(ok,message)=>{if(!ok)throw Error(message);};
+  const nativeKey=async name=>{document.title='LeafKey '+name;await pause();};
+  try {
+    document.querySelector('#welcomeNewButton').click();
+    const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');
+    const view=EditorView.findFromDOM(document.querySelector('#editor .cm-content'));
+    const {setResourceReader}=await import('/src/resources.js');
+    setResourceReader(async()=>Array.from(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="#607b68"/></svg>')));
+    const source='Plain synthetic text.\n\n| Name | Value |\n| --- | --- |\n| sample | 12 |\n\n![sample](sample.assets/zoom.svg)';
+    view.dispatch({changes:{from:0,to:view.state.doc.length,insert:source},selection:{anchor:0,head:5}});view.focus();await pause();
+    await nativeKey('CmdShiftEquals');
+    check(document.querySelector('#zoomLevel').textContent==='110%','native zoom-in missing');
+    check(view.state.doc.toString()===source,'zoom changed/highlighted source');
+    check(view.state.selection.main.from===0&&view.state.selection.main.to===5,'selection lost');
+    await nativeKey('CmdEquals');
+    check(view.state.doc.toString().startsWith('==Plain=='),'native highlight shortcut regressed');
+    document.querySelector('#undoButton').click();check(view.state.doc.toString()===source,'undo includes zoom');view.focus();
+    await nativeKey('CmdShiftMinus');check(document.querySelector('#zoomLevel').textContent==='100%','native zoom-out missing');
+    await nativeKey('CmdShiftEquals');await nativeKey('CmdShift0');
+    check(document.querySelector('#zoomLevel').textContent==='100%','native reset missing');
+    for(const level of [50,75,90,100,110,125,150,200]) {
+      document.querySelector('#zoomLevel').click();document.querySelector(`#zoomPopover [role=menuitemradio][data-zoom="${level}"]`).click();await pause();
+      check(Math.abs(view.scaleY-level/100)<.02,'WKWebView scale measurement wrong at '+level+' measured='+view.scaleY+' css='+getComputedStyle(view.dom).zoom+' content='+view.contentDOM.getBoundingClientRect().height+'/'+view.contentDOM.offsetHeight+' percent='+document.querySelector('#zoomLevel').textContent);
+      const area=document.querySelector('.document-area').getBoundingClientRect();
+      check(Math.abs(view.dom.getBoundingClientRect().height-area.height)<2,'viewport overflow at '+level);
+      const position=8;view.dispatch({selection:{anchor:position},scrollIntoView:true});view.focus();await pause();
+      const r=view.coordsAtPos(position);check(view.posAtCoords({x:r.left,y:(r.top+r.bottom)/2})===position,'coordinate mismatch at '+level);
+      check(view.state.doc.toString()===source,'source changed at '+level);
+    }
+    const mode=async name=>{document.querySelector('#readingToggle').click();document.querySelector(`[data-mode="${name}"]`).click();await pause();};
+    await mode('source');check(document.querySelector('#zoomLevel').textContent==='200%','source lost zoom');
+    await mode('reading');check(getComputedStyle(document.querySelector('.reading-zoom-canvas')).transform.startsWith('matrix(2,'),'reading lost zoom');
+    await mode('edit');
+    document.querySelector('#zoomLevel').click();document.querySelector('#zoomPopover [role=menuitem][data-zoom="100"]').click();await pause();
+    check(document.querySelector('#zoomLevel').textContent==='100%','menu reset missing');
+    document.title='LeafTest PASS WKWebView body zoom, eight presets, native Shift keys, highlight, undo, coordinate mapping and modes';
+  } catch(error) {document.title='LeafTest FAIL '+error.message;}
+};
+document.title='LeafSource';
+</script></html>

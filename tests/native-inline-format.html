@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Loading</title></head>
+<body><div id="editor"></div><script type="module">
+import { createLeafEditor } from '/src/editor.js';
+import '/src/style.css';
+const check = (ok, message) => { if (!ok) throw Error(message); };
+const pause = () => new Promise(resolve => setTimeout(resolve, 60));
+window.startTest = async () => {
+  try {
+    const editor = createLeafEditor({ parent: document.querySelector('#editor'), doc: '正文' });
+    const view = editor.view;
+    for (const [type, marker, selector, property, value] of [
+      ['italic', '*', '.tok-emphasis', 'fontStyle', 'italic'],
+      ['bold', '**', '.tok-strong', 'fontWeight', '600'],
+      ['strike', '~~', '.tok-strike', 'textDecorationLine', 'line-through'],
+    ]) {
+      const source = '前文“重点。”后文\r\n\r\n下一段。';
+      editor.setValue(source);
+      view.dispatch({ selection: { anchor: 2, head: 7 } });
+      editor.format(type);
+      const expected = `前文 ${marker}“重点。”${marker} 后文\r\n\r\n下一段。`;
+      check(editor.getValue() === expected, type + ' source/CRLF');
+      view.dispatch({ selection: { anchor: view.state.doc.length } }); await pause();
+      const span = document.querySelector('#editor ' + selector);
+      check(span?.textContent === '“重点。”', type + ' rendered content');
+      check(getComputedStyle(span)[property] === value, type + ' computed style');
+      editor.undo(); check(editor.getValue() === source, type + ' one undo');
+      editor.redo(); check(editor.getValue() === expected, type + ' redo');
+    }
+    editor.setValue('a`b\n\n末尾');
+    view.dispatch({ selection: { anchor: 0, head: 3 } }); editor.format('code');
+    check(editor.getValue() === '``a`b``\n\n末尾', 'code delimiters');
+    editor.setValue('[^sample]: “重点。”后文');
+    view.dispatch({ selection: { anchor: 11, head: 16 } }); editor.format('bold');
+    check(editor.getValue() === '[^sample]: **“重点。”** 后文', 'footnote formatting');
+    document.title = 'LeafTest PASS WKWebView inline format source, styles, CRLF, footnotes, code and undo/redo';
+  } catch (error) { document.title = 'LeafTest FAIL ' + error.message; }
+};
+document.title = 'LeafSource';
+</script></body></html>
