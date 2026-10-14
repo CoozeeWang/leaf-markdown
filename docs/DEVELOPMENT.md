@@ -15,6 +15,10 @@ npm run test:browser
 
 The runner owns its Vite server on port 41732 and fails if that port is occupied. It runs pinned Chromium by default. Screenshots are written to ignored `test-results/`. Browser platform emulation does not replace native Windows testing.
 
+行内格式生成由 `inline-format.test.js` 检查真实 Markdown 解析、标点外侧补空格、首尾空白、CRLF、段落、结构保护、脚注及反引号。`inline-format-browser.mjs` 检查格式按钮、Mac／Windows 快捷键路径、实际字形样式、取消格式及一次撤销／重做；`LEAF_INLINE_ENGINE=webkit` 可检查 WebKit。平台模拟不等于 Windows 安装版实测。
+
+macOS 原生格式检查使用开发服务器，在 `src-tauri` 运行 `cargo run --locked --example native-table-keys -- ../tests/native-inline-format.html http://127.0.0.1:41732/tests/native-inline-format.html`。夹具检查实际 WKWebView 中的共享格式入口、字形、CRLF、脚注、行内代码和撤销；不代替安装版操作、原生快捷键或 Windows 实测。
+
 选区合成回归同时运行 Chromium 与 WebKit；两者都需要安装。它覆盖重复色块、编辑器原生选区透明范围和结构化输入框的选区，不代替 macOS WKWebView 真机验收。
 
 Rust 测试在 `src-tauri` 中运行：
