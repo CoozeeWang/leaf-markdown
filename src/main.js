@@ -14,7 +14,7 @@ import './style.css';
 import { renderPrintDocument } from './print-document.js';
 import { frontmatter } from './markdown-model.js';
 import './reading.css';
-import { desktop, desktopRevealDocument, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
+import { desktop, desktopRevealDocument, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopAiApplied, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
 import { invoke } from '@tauri-apps/api/core';
 import { listen as listenNative } from '@tauri-apps/api/event';
 import { shortcutText, renderShortcutText, renderTooltipText } from './platform-shortcuts.js';
@@ -2180,6 +2180,7 @@ if (desktop) {
     assertMutationCurrent:context=>editor.assertMutationCurrent(context),
     menuCurrent:binding=>binding&&mcpBinding&&['document_id','session_id','authorization_epoch','mutation_generation'].every(key=>binding[key]===mcpBinding[key]),
     content: () => state.content,
+    saveContext:()=>mcpBinding ? {...mcpBinding,...editor.mcpSnapshot()} : null,
     loadedImages: () => loadedLocalImagePaths(),
     retryMissingImages: () => retryMissingImages(),
     dirty: () => state.content !== state.savedContent,
@@ -2237,6 +2238,7 @@ if (desktop) {
           const realClock=Date.now;
           if(testMode && args.test_clock!==undefined) Date.now=()=>Number(args.test_clock);
           try {result=await editor.applyMcpBatch(args);}finally{Date.now=realClock;}
+          desktopAiApplied(result);
           if(testMode && ['drop-ack','unknown-receipt'].includes(args.test_fault)) {
             if(args.test_fault==='unknown-receipt')hiddenTestMutations.add(args.mutation_id);
             // Receipt is already committed. Drop only this production IPC ack.

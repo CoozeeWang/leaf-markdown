@@ -851,13 +851,25 @@ fn export_bundle(window:tauri::WebviewWindow,docs:tauri::State<Documents>,direct
     resources::export_bundle_localized(&source,std::path::Path::new(&directory),&content,&resources,&window.app_handle().state::<i18n::Language>().current()).map(|p|p.to_string_lossy().into_owned())
 }
 #[tauri::command(async)]
-async fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<'_,Documents>, anchors: tauri::State<'_,DocumentAnchors>, recovery: tauri::State<'_,RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>) -> Result<ResourceWrite, String> {
+async fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<'_,Documents>, anchors: tauri::State<'_,DocumentAnchors>, recovery: tauri::State<'_,RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>, save_binding: Option<serde_json::Value>) -> Result<ResourceWrite, String> {
     let broker=app.state::<mcp::LeafMcpBroker>();let _serial=broker.inner.queue.lock().await;
+    let bound=if let Some(binding)=save_binding {
+        let d=broker.window_binding(window.label()).filter(|d|binding["session_id"]==d.session_id && binding["document_id"]==d.document_id).ok_or("stale_save_session")?;
+        let snapshot=broker.bridge(&app,window.label(),"snapshot",serde_json::json!({})).await?;
+        if binding["revision"]!=snapshot["revision"] || snapshot["content"].as_str()!=Some(content.replace("\r\n","\n").as_str()) {return Err("stale_save_snapshot".into());}
+        Some((d.session_id,binding["revision"].as_u64().ok_or("save_revision")?))
+    }else{None};
     let target=fs::canonicalize(&path).unwrap_or_else(|_|PathBuf::from(&path));
     let changed=docs.0.lock().unwrap().get(window.label()).cloned().flatten().as_ref()!=Some(&target);
     if changed {broker.identity_boundary(&app,window.label()).await?;}
     let result=write_document_io(app.clone(),window.clone(),docs,anchors,recovery,path,content,expected,resources);
-    if result.is_ok(){broker.saved_anchor(&app,window.label());}result
+    if let Ok(saved)=&result {
+        broker.saved_anchor(&app,window.label());
+        if let Some((session,revision))=&bound {broker.disk_result(session,*revision,Some(&mcp::source_digest(&saved.content.replace("\r\n","\n"))),false,true)?;}
+    }else if let Some((session,revision))=&bound {
+        broker.disk_result(session,*revision,None,true,true)?;
+        if let Some(mut d)=broker.window_binding(window.label()){broker.finalize(&app,&mut d).await?;}
+    }result
 }
 
 fn write_document_io(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>) -> Result<ResourceWrite, String> {
@@ -1159,7 +1171,7 @@ fn main() {
             let production: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, show_comment_context, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open]);
             move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
                 if invoke.message.command().starts_with("mcp_") && !invoke.message.command().starts_with("mcp_test_") {
-                    let mcp: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp::mcp_register, mcp::mcp_authorize, mcp::mcp_renderer_reply, mcp::mcp_profiles, mcp::mcp_configure_client, mcp::mcp_enable_client, mcp::mcp_revoke_client, mcp::mcp_set_enabled, mcp::mcp_export_stdio, mcp::mcp_stop_edit]);
+                    let mcp: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp::mcp_register, mcp::mcp_authorize, mcp::mcp_renderer_reply, mcp::mcp_profiles, mcp::mcp_configure_client, mcp::mcp_enable_client, mcp::mcp_revoke_client, mcp::mcp_set_enabled, mcp::mcp_export_stdio, mcp::mcp_stop_edit, mcp::mcp_save_result]);
                     return mcp(invoke);
                 }
                 #[cfg(feature = "native-smoke")]

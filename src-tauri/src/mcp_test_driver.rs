@@ -441,7 +441,7 @@ async fn history_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafM
         }
         if reason=="save-failed" {
             let path=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap()).join("missing-folder/Synthetic.md");
-            let saved=super::write_document(app.clone(),app.get_webview_window(label).unwrap(),app.state::<super::Documents>(),app.state::<super::DocumentAnchors>(),app.state::<super::RecoveryState>(),path.to_string_lossy().into_owned(),final_text.into(),None,vec![]).await;
+            let saved=super::write_document(app.clone(),app.get_webview_window(label).unwrap(),app.state::<super::Documents>(),app.state::<super::DocumentAnchors>(),app.state::<super::RecoveryState>(),path.to_string_lossy().into_owned(),final_text.into(),None,vec![],None).await;
             ensure(saved.is_err(),"native save failure injected without disk overwrite")?;
         }
         let mut end=binding.clone();end["task_id"]=task["task_id"].clone();end["reason"]=json!(reason);

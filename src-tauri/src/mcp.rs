@@ -14,6 +14,7 @@ static IDS:AtomicU64=AtomicU64::new(1);
 fn id(prefix:&str)->String { format!("{prefix}-{}-{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),IDS.fetch_add(1,Ordering::Relaxed)) }
 pub fn digest(value:&Value)->String { format!("{:x}",Sha256::digest(serde_json::to_vec(value).unwrap())) }
 fn text_digest(value:&str)->String {format!("{:x}",Sha256::digest(value.as_bytes()))}
+pub(crate) fn source_digest(value:&str)->String {text_digest(value)}
 fn required<'a>(v:&'a Value,key:&str)->Result<&'a str,String> { v[key].as_str().filter(|v|!v.is_empty()).ok_or_else(||format!("missing_{key}")) }
 
 // Request ACKs, adapter health, model progress and the absolute safety limit
@@ -114,6 +115,24 @@ impl LeafMcpBroker {
             let mut registry=self.inner.registry.lock().unwrap();
             if let Some(d)=registry.documents.values_mut().find(|d|d.label==label){d.logical_identity=identity;}
         }
+    }
+    pub(crate) fn disk_result(&self,session:&str,revision:u64,saved_digest:Option<&str>,failed:bool,checkpoint:bool)->Result<(),String>{
+        let records=self.inner.ledger.records.lock().unwrap().iter().filter(|(_,r)|r.session_id==session && r.result.is_some()).map(|(key,r)|(key.clone(),r.clone())).collect::<Vec<_>>();
+        for (key,mut record) in records {
+            let receipt=record.result.as_mut().unwrap();
+            let applied=receipt["applied_revision"].as_u64().ok_or("ledger_revision")?;
+            if applied>revision || receipt["changed"]!=true {continue;}
+            if checkpoint {receipt["checkpoint"]=json!({"state":"protected"});}
+            if let Some(saved_digest)=saved_digest {
+                let exact=applied==revision && receipt["result_digest"]==saved_digest;
+                receipt["diskResult"]=json!({"state":if exact{"saved"}else{"superseded"},"revision":revision,"digest":saved_digest});
+                receipt["disk_status"]=json!(if exact{"saved"}else{"superseded"});
+            }else if failed {
+                // A later failure cannot erase proof of an earlier exact save.
+                if receipt["diskResult"]["state"]!="saved" {receipt["diskResult"]=json!({"state":"failed","revision":revision});receipt["disk_status"]=json!("failed");}
+            }
+            self.inner.ledger.save(record,key)?;
+        }Ok(())
     }
     fn start_watchdog(&self,app:tauri::AppHandle){
         if self.inner.watchdog_started.swap(true,Ordering::SeqCst){return;}
@@ -358,11 +377,12 @@ impl LeafMcpBroker {
                 let from=scope["from"].as_u64().unwrap() as usize;let to=scope["to"].as_u64().unwrap() as usize;
                 if to>units.len(){return Err("stale_scope".into());}
                 snapshot["content"]=json!(String::from_utf16(&units[from..to]).map_err(|_|"invalid_unicode_boundary")?);
-                Ok(json!({"task":d.task,"snapshot":snapshot}))
+                let saves=self.inner.ledger.records.lock().unwrap().values().filter(|r|r.session_id==d.session_id).filter_map(|r|r.result.clone()).collect::<Vec<_>>();
+                Ok(json!({"task":d.task,"snapshot":snapshot,"saveResults":saves}))
             },
             "finish_edit"|"stop_edit"=>{
                 if let Some(task)=&d.task {if task["task_id"]!=args["task_id"] {return Err("stale_task".into());}}
-                self.finalize(app,&mut d).await?;Ok(json!({"state":"finished","disk_status":"unsaved"}))
+                self.finalize(app,&mut d).await?;Ok(json!({"state":"finished"}))
             },
             _=>Err("unknown_tool".into()),
         }
@@ -376,7 +396,11 @@ impl LeafMcpBroker {
             d.task=None;d.authorization_epoch+=1;d.client=None;d.scope=None;self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d.clone());
             persist?;return Err("mutation_outcome_unknown".into());
         }
-        let receipt=receipt.unwrap();record.result=Some(receipt.clone());record.state="APPLIED".into();record.transitions.push("APPLIED".into());
+        let mut receipt=receipt.unwrap();
+        receipt["bufferResult"]=json!({"state":"applied","revision":receipt["applied_revision"],"changed":receipt["changed"]});
+        receipt["diskResult"]=json!({"state":if receipt["changed"]==true{"pending"}else{"unchanged"},"revision":null});
+        receipt["checkpoint"]=json!({"state":if receipt["changed"]==true{"pending"}else{"unchanged"}});
+        record.result=Some(receipt.clone());record.state="APPLIED".into();record.transitions.push("APPLIED".into());
         if let Err(error)=self.inner.ledger.save(record.clone(),key.into()) {
             let _=self.finalize(app,d).await;d.authorization_epoch+=1;d.client=None;d.scope=None;self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d.clone());return Err(error);
         }
@@ -469,7 +493,7 @@ fn tool_definition(name:&str)->Tool {
             properties.insert("operations".into(),json!({"type":"array","minItems":1,"maxItems":256,"items":{"oneOf":[property,markdown,footnote,table]}}));
             "Atomically apply changes and/or property, markdown, footnote and table operations in original UTF-16 coordinates. Footnotes expand linked positions without cleaning existing orphans; no new dangling references or duplicate definitions. Tables use GFM parse, preserve inline Markdown, and validate header/alignment/rectangular rows. Mixed raw and structure changes share one final integrity preflight, dispatch and task history. Property operations reject unsupported complex YAML; Markdown operations reject changes to untouched structures. Every expected source must match. Omit changes only with operations. Max 256 operations/expanded patches and 4 Mi UTF-16 source/operation characters. Retry identical requests to query outcomes; never replay unknown mutations. Buffer revision and disk status are separate."
         },
-        "finish_edit"|"stop_edit"=>{properties.insert("task_id".into(),json!({"type":"string","minLength":1}));required.push("task_id");"End the current edit task, preserving already applied batches as one undo event. Repeated ending is harmless; it does not save disk."},
+        "finish_edit"|"stop_edit"=>{properties.insert("task_id".into(),json!({"type":"string","minLength":1}));required.push("task_id");"End the current edit task, preserving already applied batches as one undo event. Repeated ending is harmless. Query task_status or reconcile_request for independent disk/checkpoint results."},
         "reconcile_request"=>{properties.insert("request_id".into(),json!({"type":"string","minLength":1}));required.push("request_id");"Query and reconcile the durable outcome of a prior request. Unknown outcomes fail closed; this never redispatches an edit."},
         _=>"Read current task ownership, authorized buffer revision and disk status without mutating.",
     };
@@ -592,6 +616,14 @@ pub async fn mcp_authorize(app:tauri::AppHandle,window:tauri::WebviewWindow,brok
 #[tauri::command]
 pub async fn mcp_stop_edit(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,task_id:String)->Result<Value,String>{broker.stop_from_leaf(&app,window.label(),&task_id).await}
 
+#[tauri::command]
+pub async fn mcp_save_result(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,session_id:String,revision:u64,checkpoint:bool,failed:bool)->Result<(),String>{
+    let _serial=broker.inner.queue.lock().await;
+    let mut d=broker.window_binding(window.label()).filter(|d|d.session_id==session_id).ok_or("stale_session")?;
+    broker.disk_result(&session_id,revision,None,failed,checkpoint)?;
+    if failed {broker.finalize(&app,&mut d).await?;}Ok(())
+}
+
 #[cfg(test)]
 mod authenticated_lease_tests {
     use super::*;
@@ -606,6 +638,26 @@ mod authenticated_lease_tests {
         assert_eq!(registered.task,document.task,"registration must not discard an active capability");
         broker.unregister("document-test");
         assert_ne!(broker.register("document-test").session_id,document.session_id,"close/reopen retires the session");
+    }
+    #[test]
+    fn disk_receipts_bind_exact_saved_revision_and_do_not_relabel_prior_buffers() {
+        let broker=LeafMcpBroker::default();let directory=tempfile::tempdir().unwrap();
+        broker.inner.ledger.initialize(directory.path().join("ledger.json")).unwrap();
+        for revision in [1,2] {
+            let receipt=json!({"changed":true,"applied_revision":revision,"result_digest":format!("digest-{revision}"),"bufferResult":{"revision":revision,"state":"applied"},"diskResult":{"state":"pending"}});
+            let record=MutationRecord{mutation_id:format!("m-{revision}"),request_digest:"request".into(),changes_digest:"changes".into(),source_digest:"source".into(),session_id:"session".into(),task_id:"task".into(),request_id:format!("r-{revision}"),authorization_epoch:1,source_revision:revision-1,state:"FINALIZED".into(),transitions:vec![],result:Some(receipt)};
+            broker.inner.ledger.save(record,format!("r-{revision}")).unwrap();
+        }
+        broker.disk_result("session",2,Some("digest-2"),false,true).unwrap();
+        let records=broker.inner.ledger.records.lock().unwrap();
+        assert_eq!(records["r-1"].result.as_ref().unwrap()["diskResult"]["state"],"superseded");
+        assert_eq!(records["r-1"].result.as_ref().unwrap()["bufferResult"]["revision"],1);
+        assert_eq!(records["r-2"].result.as_ref().unwrap()["diskResult"]["state"],"saved");
+        drop(records);
+        broker.disk_result("session",2,None,true,true).unwrap();
+        assert_eq!(broker.inner.ledger.records.lock().unwrap()["r-2"].result.as_ref().unwrap()["diskResult"]["state"],"saved","a later failure preserves prior exact save proof");
+        let persisted:Value=serde_json::from_slice(&std::fs::read(directory.path().join("ledger.json")).unwrap()).unwrap();
+        assert_eq!(persisted["r-2"]["result"]["checkpoint"]["state"],"protected");
     }
     #[test]
     fn authenticated_lease_long_model_silence_and_request_deadline(){

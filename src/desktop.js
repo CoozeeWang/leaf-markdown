@@ -41,6 +41,7 @@ export async function desktopNew() {
 export function desktopSave(as = false, manual = true) {
   return session?.save({ as, manual }) ?? Promise.resolve(false);
 }
+export function desktopAiApplied(receipt) { session?.aiApplied(receipt); }
 export function desktopRename(name) { return session.rename(name); }
 export function desktopRelocate() { return session?.relocate() ?? Promise.resolve(false); }
 export function desktopRun(action) { return session.run(action); }
@@ -107,6 +108,10 @@ export async function initDesktop(callbacks) {
   session = createDocumentSession({
     localizedMessages: true,
     content: hooks.content, status: hooks.status,
+    saveContext:hooks.saveContext,
+    aiSaveResult:async result=>{
+      if(result.saveContext?.session_id && result.diskResult.state!=='saved')await invoke('mcp_save_result',{sessionId:result.saveContext.session_id,revision:result.saveContext.revision,checkpoint:result.checkpoint.state==='protected',failed:result.diskResult.state==='failed'});
+    },
     load: (content, source) => hooks.load(content, source ? fileNameFromPath(source) : t("desktop.untitled_md"), source),
     restore:content=>hooks.restore(content,restoreContext),
     select: path => save({ defaultPath: path || t("desktop.untitled_md"), filters }),
@@ -126,7 +131,7 @@ export async function initDesktop(callbacks) {
     followed(content,path,previous,movedImages) {
       hooks.followed?.(content,fileNameFromPath(path),path,movedImages);
     },
-    write: (path, content, expected) => invoke('write_document', { path, content, expected, resources: localResourcePaths(content) }),
+    write: (path, content, expected,saveBinding) => invoke('write_document', { path, content, expected,saveBinding:saveBinding ? {session_id:saveBinding.session_id,document_id:saveBinding.document_id,revision:saveBinding.revision} : null, resources: localResourcePaths(content) }),
     checkpoint: (content, preserve = false) => invoke('recovery_checkpoint', { content, preserve }),
     saved(content, path) { hooks.saved(content, fileNameFromPath(path), path); },
   });
