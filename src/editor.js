@@ -1079,6 +1079,13 @@ export function planMcpChanges(source, changes, scope) {
   return planned.filter(change=>source.slice(change.from,change.to)!==change.insert);
 }
 
+class AiTaskHistory {
+  constructor(task) {
+    this.id=task.task_id;this.session=task.session_id;this.epoch=task.authorization_epoch;this.scope=task.scope;
+    this.historyTime=null;this.batches=0;
+  }
+}
+
 export function createLeafEditor(options) {
   const historyCompartment = new Compartment();
   const aiTaskAnnotation = Annotation.define();
@@ -1230,7 +1237,8 @@ export function createLeafEditor(options) {
     selection: {anchor: bodyStart(initialDoc)},
     extensions: [
       lineNumberCompartment.of(options.showLineNumbers ? leafLineNumbers() : []),
-      historyCompartment.of(history()),
+      historyCompartment.of(history({joinToEvent:(tr,adjacent)=>tr.annotation(aiTaskAnnotation)!==undefined || adjacent})),
+      EditorState.transactionExtender.of(tr=>aiTask && !tr.docChanged ? {annotations:Transaction.addToHistory.of(false)} : null),
       lineEnding,
       invertedEffects.of(tr => tr.effects.some(effect => effect.is(setLineEnding)) ? [setLineEnding.of(tr.startState.field(lineEnding))] : []),
       drawSelection(),
@@ -1379,7 +1387,7 @@ export function createLeafEditor(options) {
     },
     beginAiTask(task) {
       if (!task?.task_id || aiTask && aiTask.id!==task.task_id) throw new Error('document_locked');
-      if (!aiTask) aiTask={id:task.task_id,session:task.session_id,epoch:task.authorization_epoch,scope:task.scope};
+      if (!aiTask) aiTask=new AiTaskHistory(task);
       return {task_id:aiTask.id,...this.mcpSnapshot()};
     },
     async applyMcpBatch(batch) {
@@ -1387,12 +1395,19 @@ export function createLeafEditor(options) {
       if(batch.revision!==bufferRevision) throw new Error('stale_revision');
       const changes=planMcpChanges(view.state.doc.toString(),batch.changes,aiTask.scope);
       const before=view.state.doc.toString();
-      if(changes.length) view.dispatch({changes,filter:false,userEvent:'input.ai',annotations:[aiTaskAnnotation.of(aiTask.id),isolateHistory.of('full')]});
+      if(changes.length) {
+        aiTask.historyTime ??= Date.now();
+        const annotations=[aiTaskAnnotation.of(aiTask.id),Transaction.time.of(aiTask.historyTime)];
+        if(!aiTask.batches) annotations.push(isolateHistory.of('before'));
+        view.dispatch({changes,filter:false,userEvent:'input.type.ai',annotations});
+        aiTask.batches++;
+      }
       aiTask.scope={from:aiTask.scope.from,to:aiTask.scope.to+changes.reduce((sum,c)=>sum+c.insert.length-(c.to-c.from),0)};
       return {mutation_id:batch.mutation_id,task_id:batch.task_id,session_id:batch.session_id,request_id:batch.request_id,applied_revision:bufferRevision,source_digest:await mcpDigest(before),result_digest:await mcpDigest(view.state.doc.toString()),changed:changes.length>0,scope:aiTask.scope,disk_status:'unsaved'};
     },
     finishAiTask(task) {
       if(aiTask && task.task_id!==aiTask.id) throw new Error('stale_task');
+      if(aiTask?.batches) view.dispatch({annotations:isolateHistory.of('full')});
       aiTask=null;
       return this.mcpSnapshot();
     },
@@ -1465,7 +1480,7 @@ export function createLeafEditor(options) {
         scrollIntoView: true,
       });
       view.dispatch({ effects: historyCompartment.reconfigure([]) });
-      view.dispatch({ effects: historyCompartment.reconfigure(history()) });
+      view.dispatch({ effects: historyCompartment.reconfigure(history({joinToEvent:(tr,adjacent)=>tr.annotation(aiTaskAnnotation)!==undefined || adjacent})) });
       suppressChanges = false;
       options.onOutlineChange?.(value);
     },

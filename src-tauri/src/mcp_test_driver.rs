@@ -115,8 +115,16 @@ async fn history_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafM
             tokio::time::sleep(std::time::Duration::from_millis(650)).await;
             if reason!="partial-stop" {
                 batch["request_id"]=json!(format!("history-second-{i}"));batch["revision"]=revision;batch["changes"]=json!([{"from":6,"to":11,"expected":"omega","insert":"OMEGA"}]);batch["test_clock"]=json!(1_360_000);
-                tool(client,"apply_edit_batch",batch).await?;final_text="ALPHA OMEGAH";
+                if reason=="renderer-exception" {
+                    batch["changes"][0]["expected"]=json!("stale");
+                    ensure(tool(client,"apply_edit_batch",batch).await.is_err(),"actual renderer rejection")?;
+                } else {tool(client,"apply_edit_batch",batch).await?;final_text="ALPHA OMEGAH";}
             }
+        }
+        if reason=="save-failed" {
+            let path=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap()).join("missing-folder/Synthetic.md");
+            let saved=super::write_document(app.clone(),app.get_webview_window(label).unwrap(),app.state::<super::Documents>(),app.state::<super::DocumentAnchors>(),app.state::<super::RecoveryState>(),path.to_string_lossy().into_owned(),final_text.into(),None,vec![]);
+            ensure(saved.is_err(),"native save failure injected without disk overwrite")?;
         }
         let mut end=binding.clone();end["task_id"]=task["task_id"].clone();end["reason"]=json!(reason);
         tool(client,if reason=="normal"||reason=="zero-edits" {"finish_edit"}else{"stop_edit"},end.clone()).await?;
