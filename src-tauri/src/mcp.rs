@@ -367,6 +367,17 @@ impl LeafMcpBroker {
         let mut d=self.document(app,client,&args)?;
         if d.task.as_ref().is_some_and(|task|self.inner.leases.lock().unwrap().expired(task["task_id"].as_str().unwrap_or(""),lease_now())){self.finalize(app,&mut d).await?;}
         match name {
+            "list_comments"|"read_comment"|"locate_comment"=>{
+                required(&args,"request_id")?;
+                if args["revision"].as_u64().is_none(){return Err("invalid_read_identity".into());}
+                if name!="list_comments"{required(&args,"id")?;}
+                let key=format!("{}:comment:{}",d.session_id,required(&args,"request_id")?);let hash=digest(&args);
+                if let Some((old,result))=self.inner.results.lock().unwrap().get(&key){if old==&hash&&result["query"]==name{return Ok(result.clone());}return Err("request_id_conflict".into());}
+                let mut query=args.clone();query["query"]=json!(name);query["scope"]=d.scope.clone().ok_or("not_authorized")?;
+                let mut result=self.bridge(app,&d.label,"comment_query",query).await?;
+                result["query"]=json!(name);
+                self.inner.results.lock().unwrap().insert(key,(hash,result.clone()));Ok(result)
+            },
             "read_document"=>{
                 let read_identity=if let Some(request)=args["request_id"].as_str() {
                     if request.is_empty()||args["revision"].as_u64().is_none(){return Err("invalid_read_identity".into());}
@@ -514,7 +525,7 @@ impl ServerHandler for LeafMcpHandler {
         serde_json::from_value::<ReadResourceResult>(json!({"contents":[{"uri":p.uri,"mimeType":"text/markdown","text":result["content"]}]})).map(Into::into).map_err(|_|ErrorData::internal_error("resource_encoding",None))
     }
     async fn list_tools(&self,_:Option<PaginatedRequestParams>,_:RequestContext<RoleServer>)->Result<ListToolsResult,ErrorData> {
-        let names=["list_documents","read_document","begin_edit","apply_edit_batch","task_status","finish_edit","stop_edit","reconcile_request"];
+        let names=["list_documents","read_document","list_comments","read_comment","locate_comment","begin_edit","apply_edit_batch","task_status","finish_edit","stop_edit","reconcile_request"];
         let tools=names.into_iter().map(tool_definition).collect();Ok(ListToolsResult{tools,..Default::default()})
     }
     async fn call_tool(&self,params:CallToolRequestParams,_:RequestContext<RoleServer>)->Result<CallToolResponse,ErrorData> {
@@ -533,6 +544,12 @@ fn tool_definition(name:&str)->Tool {
     }
     let description=match name {
         "list_documents"=>"List only explicitly authorized open Leaf sessions, including unsaved documents. This does not grant access or open paths.",
+        "list_comments"|"read_comment"|"locate_comment"=>{
+            properties.insert("request_id".into(),json!({"type":"string","minLength":1}));required.push("request_id");
+            properties.insert("revision".into(),json!({"type":"integer","minimum":0}));required.push("revision");
+            if name!="list_comments"{properties.insert("id".into(),json!({"type":"string","minLength":1,"description":"Exact opaque ID returned by list_comments at this revision"}));required.push("id");}
+            "Query ordinary range/point and supported hidden comments in the authorized live buffer at a fixed revision. Returns UTF-16 half-open source/anchor ranges, exact source and source fingerprint. Unknown IDs return null. Repeated request IDs return the original fixed-revision result; changed arguments fail. No disk reads or cursor mutation."
+        },
         "read_document"=>{
             properties.insert("request_id".into(),json!({"type":"string","minLength":1,"description":"Optional idempotent fixed-revision read identity; requires revision and rejects different arguments under the same ID"}));
             properties.insert("revision".into(),json!({"type":"integer","minimum":0,"description":"Bind pagination to a fixed returned buffer revision; stale revisions fail"}));

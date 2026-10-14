@@ -8,7 +8,8 @@ installMenuInteraction();
 import { setupWriting } from './writing-tools.js';
 import { loadedLocalImagePaths, refreshImages, retryMissingImages, setMovedMissingImages } from './resources.js';
 import { showRecovery, setupWelcomeRecovery } from './recovery-dialog.js';
-import { createLeafEditor, createLeafNoteEditor } from './editor.js';
+import { createLeafEditor, createLeafNoteEditor, mcpDigest } from './editor.js';
+import {listAiComments,readAiComment,locateAiComment} from './ai-comment-operations.js';
 import { setupSidebarResize } from './outline-resize.js';
 import './style.css';
 import { renderPrintDocument } from './print-document.js';
@@ -29,6 +30,21 @@ import { uiIcon, uiIconPaths } from './ui-icons.js';
 import {readingFolding} from './outline-folding.js';
 import { BODY_ZOOM_LEVELS, stepBodyZoom, bodyZoomShortcut } from './body-zoom.js';
 import { setupBodyFontSettings } from './body-font-settings.js';
+
+// Read only the live authorized buffer, then recheck after asynchronous hashing.
+async function handleMcpCommentQuery(args) {
+  const valid=()=>mcpBinding?.document_id===args.document_id&&mcpBinding?.session_id===args.session_id&&mcpBinding?.authorization_epoch===args.authorization_epoch;
+  if(!valid())throw new Error('not_authorized');
+  const snapshot=editor.mcpSnapshot();
+  if(snapshot.revision!==args.revision)throw new Error('stale_revision');
+  const source_fingerprint=await mcpDigest(snapshot.content);
+  const current=editor.mcpSnapshot();
+  if(!valid()||current.revision!==snapshot.revision||current.content!==snapshot.content)throw new Error('stale_revision');
+  const context={...args,source_fingerprint};
+  const query={list_comments:listAiComments,read_comment:readAiComment,locate_comment:locateAiComment}[args.query];
+  if(!query)throw new Error('unknown_comment_query');
+  return query(snapshot.content,context,args.id);
+}
 
 const welcome = t("main.leaf_a_lightweight_markdown_editor");
 const leafDev = typeof __LEAF_DESKTOP_DEV__ !== 'undefined' && __LEAF_DESKTOP_DEV__ && desktop;
@@ -2499,6 +2515,7 @@ if (desktop) {
         let result;
         if(['binding','begin','finish'].includes(operation)&&mcpBinding?.session_id===args.session_id&&args.authorization_epoch<mcpBinding.authorization_epoch)throw new Error('stale_projection');
         if(operation==='snapshot')result=editor.mcpSnapshot();
+        else if(operation==='comment_query')result=await handleMcpCommentQuery(args);
         else if(operation==='binding'){mcpBinding=args;mutationGeneration++;result=editor.mcpSnapshot();}
         else if(operation==='begin'){if(desktopFileState()?.paused)throw new Error('document_conflict_pending');result=editor.beginAiTask(args);mcpBinding=args;}
         else if(operation==='apply') {

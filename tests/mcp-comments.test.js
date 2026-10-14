@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
+import vm from 'node:vm';
 
 let api={};
 try {api=await import('../src/ai-comment-operations.js');} catch(error) {if(error.code!=='ERR_MODULE_NOT_FOUND')throw error;}
@@ -31,7 +32,17 @@ test('fixed revision comment queries distinguish adjacent repeated quotes, point
 test('comment query route uses the authorized live renderer bridge and fixed revision',async()=>{
   const main=await readFile(new URL('../src/main.js',import.meta.url),'utf8');
   const rust=await readFile(new URL('../src-tauri/src/mcp.rs',import.meta.url),'utf8');
-  assert.match(main,/handleMcpCommentQuery/,'production renderer must serve comment queries');
+  assert.ok(main.includes('handleMcpCommentQuery'),'production renderer must serve comment queries');
   for(const name of ['list_comments','read_comment','locate_comment'])assert.ok(rust.includes(`"${name}"`),`${name} must be discoverable through the broker`);
-  assert.match(rust,/"comment_query"/,'query must reach existing Tauri bridge');
+  assert.ok(rust.includes('"comment_query"'),'query must reach existing Tauri bridge');
+  const handler=main.slice(main.indexOf('async function handleMcpCommentQuery'),main.indexOf('\nconst welcome'));
+  const source='Unsaved {>>live😀<<}',ctx=context(source);
+  const runtime={editor:{mcpSnapshot:()=>({content:source,revision:7})},mcpBinding:ctx,mcpDigest:async text=>fingerprint(text),...api};
+  const serve=vm.runInNewContext(`${handler};handleMcpCommentQuery`,runtime);
+  const args={...ctx,query:'list_comments'};
+  const reply=await serve(args);assert.equal(reply.comments[0].text,'live😀');
+  await assert.rejects(serve({...args,revision:6}),/stale_revision/);
+  await assert.rejects(serve({...args,session_id:'retired'}),/not_authorized/);
+  runtime.mcpDigest=async text=>{runtime.mcpBinding={...ctx,authorization_epoch:3};return fingerprint(text);};
+  await assert.rejects(serve(args),/stale_revision/);
 });
