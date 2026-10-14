@@ -13,13 +13,13 @@ export function setupCommentPanel({editor,getMode,open,status,locate}) {
  commentsTab.onclick=()=>{finish();selectTab('comments');render();};notesTab.onclick=()=>{finish();selectTab('notes');};
  for(const button of [commentsTab,notesTab])button.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();(button===commentsTab?notesTab:commentsTab).click();(tab==='comments'?commentsTab:notesTab).focus();});
  function finish(){if(!editing)return;editing=null;editor.view.dispatch({annotations:isolateHistory.of('full')});render();}
- function edit(id){if(getMode()==='reading')return;editing=id;current=id;editor.view.dispatch({annotations:isolateHistory.of('full')});render();list.querySelector(`[data-comment-id="${id}"] textarea`)?.focus();}
+ function edit(id){if(getMode()==='reading'||!editor.mutationAllowed())return;editing=id;current=id;editor.view.dispatch({annotations:isolateHistory.of('full')});render();list.querySelector(`[data-comment-id="${id}"] textarea`)?.focus();}
  function reveal(id,{edit:newEntry=false}={}){open();selectTab('comments');current=id;editor.activateComment(id);render();list.querySelector(`[data-comment-id="${id}"]`)?.scrollIntoView({block:'nearest'});if(newEntry)edit(id);}
  function render(){
   if(rendering)return;rendering=true;
   try{
    const notes=editor.comments().notes,reading=getMode()==='reading';
-   document.querySelector('#commentInsert').disabled=reading;
+   document.querySelector('#commentInsert').disabled=reading||!editor.mutationAllowed();
    document.querySelector('#commentsCount').textContent=notes.length?String(notes.length):'';
    if(!chosen)selectTab(!notes.length&&document.querySelector('#notesCount').textContent?'notes':'comments',false);
    const ids=new Set(notes.map(n=>n.id));for(const card of list.querySelectorAll('.comment-card'))if(!ids.has(card.dataset.commentId))card.remove();list.querySelector('.empty-hint')?.remove();
@@ -41,7 +41,7 @@ export function setupCommentPanel({editor,getMode,open,status,locate}) {
     if(editing===note.id&&!reading){
      if(!input){
       const area=document.createElement('textarea');area.value=note.text;area.rows=2;setAttr(area,'aria-label',()=>t('comments.body'));body.replaceChildren(area);
-      area.addEventListener('input',()=>{if(!editor.setCommentBody(card.dataset.commentId,area.value)){area.value=card._comment.text;status(translatedMessage('comments.terminator'),'error');}});
+      area.addEventListener('input',()=>{if(!editor.mutationAllowed())return;if(!editor.setCommentBody(card.dataset.commentId,area.value)){area.value=card._comment.text;status(translatedMessage('comments.terminator'),'error');}});
       area.addEventListener('keydown',e=>{const action=documentHistoryShortcut(e);if(action){e.preventDefault();e.stopPropagation();editor[action]();return;}if(e.key==='Escape'&&!e.isComposing){e.preventDefault();finish();card.querySelector('.comment-quote').focus();}});
       area.addEventListener('blur',()=>{if(editing===card.dataset.commentId&&!area._composing)finish();});area.addEventListener('compositionstart',()=>area._composing=true);area.addEventListener('compositionend',()=>{area._composing=false;render();});
      }else if(!input._composing&&input.value!==note.text){const pos=input.selectionStart;input.value=note.text;input.setSelectionRange(Math.min(pos,note.text.length),Math.min(pos,note.text.length));}
@@ -52,7 +52,7 @@ export function setupCommentPanel({editor,getMode,open,status,locate}) {
    });
   }finally{rendering=false;}
  }
- function add(){if(getMode()==='reading'||document.querySelector('.shell.welcome-state'))return;const result=editor.addComment();if(result.error){status(translatedMessage(result.error==='overlap'?'comments.overlap':result.error==='position'?'comments.position_invalid':'comments.selection'),'error');return;}if(result.note)reveal(result.note.id,{edit:true});}
+ function add(){if(!editor.mutationAllowed()||getMode()==='reading'||document.querySelector('.shell.welcome-state'))return;const result=editor.addComment();if(result.error){status(translatedMessage(result.error==='overlap'?'comments.overlap':result.error==='position'?'comments.position_invalid':'comments.selection'),'error');return;}if(result.note)reveal(result.note.id,{edit:true});}
  const button=document.querySelector('#commentInsert');setAttr(button,'data-tooltip',()=>t('comments.add_shortcut',{shortcut:commentShortcuts()}));button.onclick=add;button.addEventListener('mousedown',e=>e.preventDefault());
  window.addEventListener('keydown',e=>{if(!isCommentShortcut(e)||document.querySelector('.shell.welcome-state')||document.activeElement?.closest('.comment-card textarea, #paletteInput, .search-panel, .properties-panel')||document.querySelector('#palette:not([hidden]), #appearancePopover:not([hidden])')||editor.view.compositionStarted)return;e.preventDefault();add();},true);
  document.querySelector('#readingPane').addEventListener('click',e=>{const id=e.target.closest('.leaf-comment-bubble[data-comment-id]')?.dataset.commentId;if(id){e.preventDefault();reveal(id);}});

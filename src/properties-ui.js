@@ -65,6 +65,11 @@ function valueControl(type,value,label,save,choices=[],live=false) {
   return n;
 }
 export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=()=>{},removeField=()=>{}) {
+  const drafts=new Set();
+  body.hasPendingDraft=()=>[...drafts].some(node=>node.isConnected&&node.value!==node._leafCommittedValue);
+  body._trackDraft=event=>{if(event.target.matches('input:not([type=checkbox]),textarea'))drafts.add(event.target);};
+  if(!body._draftTracking){body._draftTracking=true;body.addEventListener('input',event=>body._trackDraft(event),true);body.addEventListener('focusin',event=>{if('value' in event.target)event.target._leafCommittedValue=event.target.value;},true);}
+  const apply=commit;commit=(...args)=>{if(body.closest('.cm-editor')?.assertDocumentMutationAllowed?.()===false)return;apply(...args);for(const node of drafts)node._leafCommittedValue=node.value;drafts.clear();};
   body.replaceChildren();const block=getBlock();
   if(!block.valid){body.append(localizedElement('p', 'leaf-property-unsupported', () => t("properties_ui.edit_this_yaml_structure_in_source_mode")));return;}
   const error=el('div','leaf-property-error');error.setAttribute('role','status');

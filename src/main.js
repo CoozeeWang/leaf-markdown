@@ -591,7 +591,7 @@ function renderOutline(markdown = state.content) {
       else editor.goToLine(item.line);
     });
     button.addEventListener('dblclick', () => {
-      if(state.reading)return;
+      if(state.reading||!editor.mutationAllowed())return;
       const original=editor.view.state.doc.line(item.line).text;
       const input=document.createElement('input');
       input.className='outline-rename';input.value=item.text;
@@ -761,6 +761,7 @@ function noteCard(row, measure) {
     renderPrintDocument(body, row.body, {fallbackTitle:false, footnotes:{map:new Map(),link:false,seen:new Map()}});
   } else {
     card._noteEditor = createLeafNoteEditor({parent:body,doc:row.body,source:state.source,
+      mutationAllowed:()=>editor.mutationAllowed(),
       label:t('main.content_of_footnote',{note:row.number??row.label}),
       onChange: value => {
         card._noteUpdating=true;

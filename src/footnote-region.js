@@ -45,6 +45,7 @@ class FootnoteRegion extends WidgetType {
         const body=document.createElement('div');body.className='leaf-footnote-body';
         card.append(number,body);root._notes.set(key,card);root.append(card);
         card._editor=this.createEditor({parent:body,doc:row.body,multiline:true,locked:true,
+          mutationAllowed:()=>view.assertDocumentMutationAllowed?.() ?? true,
           onActivate:()=>card._editor.setEditing(true),
           onBlur:()=>card._editor.setEditing(false),
           onEditingChange:enabled=>card.classList.toggle('is-editing',enabled),

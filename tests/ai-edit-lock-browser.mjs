@@ -7,7 +7,7 @@ try {
   await page.goto('http://127.0.0.1:41732/');
   await page.locator('#welcomeNewButton').waitFor();
   const results=await page.evaluate(async()=>{
-    const {createLeafEditor}=await import('/src/editor.js');
+    const {createLeafEditor,createLeafNoteEditor}=await import('/src/editor.js');
     const parent=document.createElement('div');document.body.append(parent);
     const otherParent=document.createElement('div');document.body.append(otherParent);
     const source='---\ntitle: Synthetic\n---\n\n# Heading\n\nBody[^1] {==quote==}{>>note<<}\n\n| A | B |\n| --- | --- |\n| one | two |\n\n[^1]: Footnote\n';
@@ -35,6 +35,10 @@ try {
       'spoofed AI event':()=>editor.view.dispatch({changes:{from:30,insert:'spoof'},filter:false,userEvent:'input.type.ai'}),
     };
     for(const [name,run]of Object.entries(entrances))check(name,()=>{run();ensure(editor.getValue()===source,'locked content changed');ensure(editor.mcpSnapshot().revision===start.revision,'rejected write advanced revision');});
+    check('table and property controls really read-only',()=>{for(const input of parent.querySelectorAll('.leaf-table textarea,.leaf-property-body input'))ensure(input.readOnly||input.disabled,'structure input still editable');});
+    const noteParent=document.createElement('div');parent.append(noteParent);
+    const note=createLeafNoteEditor({parent:noteParent,doc:'Footnote',label:'Synthetic note',mutationAllowed:()=>editor.mutationAllowed(),onChange:value=>editor.setFootnoteBody('1',value),onUndo:()=>editor.undo(),onRedo:()=>editor.redo(),onLeave:()=>{}});
+    check('nested note cannot bypass filter',()=>{note.view.dispatch({changes:{from:0,insert:'bad'},filter:false});ensure(note.value()==='Footnote','nested draft changed behind lock');});
     check('independent document stays editable',()=>{other.restoreValue('Other edited');ensure(other.getValue()==='Other edited','other document blocked');});
     check('selection and view remain available',()=>{editor.view.dispatch({selection:{anchor:35}});editor.setSource(true);editor.setSource(false);editor.setReading(true);editor.setReading(false);ensure(editor.getValue()===source,'view mutated content');});
     await editor.applyMcpBatch({...task,mutation_id:'synthetic-mutation',request_id:'synthetic-request',changes:[{from:35,to:35,expected:'',insert:'AI'}]});
@@ -43,6 +47,9 @@ try {
     check('repeat unlock is benign and human edit resumes',()=>{editor.restoreValue('Human resumed');ensure(editor.getValue()==='Human resumed','unlock failed');});
     await editor.applyMcpBatch({...task,mutation_id:'late-mutation',request_id:'late-request',revision:editor.mcpSnapshot().revision,changes:[]}).then(()=>rows.push({name:'late AI rejected',pass:false,error:'late batch accepted'}),()=>rows.push({name:'late AI rejected',pass:true}));
     check('IME acquisition preserves pending candidate',()=>{editor.view.contentDOM.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'拼'}));let refused=false;try{editor.beginAiTask({...task,task_id:'ime-task'});}catch(e){refused=e.message==='composition_pending';}ensure(refused,'must refuse lock until composition ends');editor.view.contentDOM.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'拼'}));});
+    const draftParent=document.createElement('div');document.body.append(draftParent);const draftEditor=createLeafEditor({parent:draftParent,doc:source});
+    await new Promise(requestAnimationFrame);
+    check('unsubmitted property draft prevents acquisition and survives',()=>{const input=draftParent.querySelector('.leaf-property-row input:not([type=checkbox])');ensure(input,'property control missing');input.focus();const before=input.value;input.value=before+' draft';input.dispatchEvent(new InputEvent('input',{bubbles:true}));let refused=false;try{draftEditor.beginAiTask({...task,task_id:'draft-task'});}catch(e){refused=e.message==='structural_draft_pending';}ensure(refused,'must refuse lock with structural draft');ensure(input.value===before+' draft'&&draftEditor.aiTask()===null,'draft was dropped or lock leaked');});
     return rows;
   });
   console.log('TAP version 13');
