@@ -205,6 +205,23 @@ fn refresh_document_menu(app:&tauri::AppHandle) {
 fn dispatch_document_menu(app:&tauri::AppHandle,label:&str,command:&str)->Result<bool,String> {
     let broker=app.state::<mcp::LeafMcpBroker>();
     if MUTATING_MENU_IDS.contains(&command)&&broker.window_locked(label){return Ok(false);}
+    #[cfg(target_os="macos")]
+    if command=="cut"||command=="paste" {
+        let window=app.get_webview_window(label).ok_or("menu_window_unavailable")?;
+        let handle=app.clone();let target=label.to_owned();let paste=command=="paste";
+        app.run_on_main_thread(move||{
+            if handle.state::<mcp::LeafMcpBroker>().window_locked(&target){return;}
+            if let Ok(native)=window.ns_window(){unsafe{
+                use objc2::{class,msg_send,sel,runtime::AnyObject};
+                let native=native as *mut AnyObject;
+                let responder:*mut AnyObject=msg_send![native,firstResponder];
+                let application:*mut AnyObject=msg_send![class!(NSApplication),sharedApplication];
+                let action=if paste{sel!(paste:)}else{sel!(cut:)};
+                let _:bool=msg_send![application,sendAction:action,to:responder,from:std::ptr::null::<AnyObject>()];
+            }}
+        }).map_err(|_|"native_clipboard_unavailable")?;
+        return Ok(true);
+    }
     let binding=broker.window_binding(label);
     app.emit_to(label,"leaf-menu",serde_json::json!({"command":command,"binding":binding})).map_err(|_|"menu_event_unavailable")?;
     Ok(true)
@@ -468,7 +485,11 @@ fn create_document(app: tauri::AppHandle, path: Option<String>, recovered: Optio
         let docs = app.state::<Documents>();
         let docs = docs.0.lock().unwrap();
         for (label, existing) in docs.iter() {
-            if existing.as_ref() == Some(target) {
+            #[cfg(any(target_os="macos",target_os="windows"))]
+            let same_identity=anchor.as_ref().is_some_and(|candidate|app.state::<DocumentAnchors>().0.lock().unwrap().get(label).is_some_and(|existing|existing.token()==candidate.token()));
+            #[cfg(not(any(target_os="macos",target_os="windows")))]
+            let same_identity=false;
+            if existing.as_ref() == Some(target) || same_identity {
                 if let Some(window) = app.get_webview_window(label) {
                     window.unminimize().map_err(|e| e.to_string())?;
                     window.set_focus().map_err(|e| e.to_string())?;

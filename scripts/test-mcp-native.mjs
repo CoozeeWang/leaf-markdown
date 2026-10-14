@@ -1,5 +1,5 @@
 import {spawn} from 'node:child_process';
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir, homedir} from 'node:os';
 import {join, resolve} from 'node:path';
 import assert from 'node:assert/strict';
@@ -15,6 +15,9 @@ let app, server;
 function start(command,args,options={}) { return spawn(command,args,{cwd:root,env,stdio:['ignore','pipe','pipe'],...options}); }
 function completed(child) { return new Promise((res,rej)=>{ child.on('error',rej);child.on('exit',code=>code===0?res():rej(new Error(`process exited ${code}`))); }); }
 try {
+  await writeFile(join(directory,'synthetic.md'),'Synthetic saved draft');
+  await writeFile(join(directory,'different.md'),'Different saved draft');
+  await writeFile(join(directory,'synthetic.txt'),'Public synthetic attachment');
   const build=start('node',['node_modules/@tauri-apps/cli/tauri.js','build','--debug','--no-bundle','--features','native-smoke','--config','src-tauri/tauri.mcp-test.conf.json']);
   build.stdout.pipe(process.stdout);build.stderr.pipe(process.stderr);await completed(build);
   server=start('node',['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','41731','--strictPort']);

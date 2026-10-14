@@ -902,6 +902,7 @@ function updateHeadingControl(level) {
 }
 
 let commentPanel=null;
+let mutationGeneration=0,mcpBinding=null,nativeTestMode=null,nativeTestDelay=null,nativeTestPending=null,nativeTestRecovery=null;
 const editor = createLeafEditor({
   parent: document.querySelector('#editor'),
   doc: welcome,
@@ -910,6 +911,7 @@ const editor = createLeafEditor({
   showFileNameTitle: state.showFileNameTitle,
   showHeadingNumbers: state.showHeadingNumbers,
   onAiTaskChange(task){
+    mutationGeneration++;
     const client=({'chatgpt':'ChatGPT','claude-desktop':'Claude Desktop','workbuddy':'WorkBuddy'})[task?.client] ?? task?.client ?? 'AI';
     // Presentation/localized resources are reconciled by the settings UI slice.
     const taskCopy=()=>document.documentElement.lang.startsWith('en')?`${client} is editing with AI assistance. This document is temporarily read-only; you can browse and find.`:document.documentElement.lang.startsWith('zh-Hant')?`${client} 正在輔助編輯，此文件暫時唯讀，可瀏覽、尋找。`:`${client} 正在辅助编辑，此文档暂时只读，可浏览、查找。`;
@@ -944,6 +946,24 @@ const editor = createLeafEditor({
   onOpen: () => openFile(),
   onCommandPalette: () => openPalette(),
 });
+editor.captureMutation=()=>({generation:mutationGeneration,document_id:mcpBinding?.document_id,session_id:mcpBinding?.session_id,authorization_epoch:mcpBinding?.authorization_epoch,native_generation:mcpBinding?.mutation_generation,...editor.mcpSnapshot()});
+editor.assertMutationCurrent=token=>{
+  const now=editor.captureMutation();
+  if(!editor.mutationAllowed()||!token||['generation','document_id','session_id','authorization_epoch','native_generation','revision','content'].some(key=>token[key]!==now[key]))throw new Error('stale_mutation_context');
+};
+function showDocumentRecovery(options={}) {
+  const context=editor.captureMutation();
+  const restore=content=>desktopRestore(content,context);
+  const pending=showRecovery({...options,restore});
+  const observer=new MutationObserver(()=>{
+    const dialog=document.querySelector('.recovery-dialog');
+    if(!dialog){observer.disconnect();return;}
+    let current=true;try{editor.assertMutationCurrent(context);}catch{current=false;}
+    const apply=dialog.querySelector('[data-apply]');if(!current&&apply&&!apply.disabled){apply.disabled=true;apply.setAttribute('aria-description','AI editing');}
+  });
+  observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['disabled','aria-readonly']});
+  return pending;
+}
 let readingCommentFlashTimer;
 commentPanel=setupCommentPanel({editor,getMode:()=>state.reading?'reading':state.source?'source':'edit',open:()=>setNotesDrawer(true),status:setStatus,locate:note=>{
   if(!state.reading){editor.goToComment(note.id);return;}
@@ -961,7 +981,10 @@ setupCommentContext({editor,add:()=>commentPanel.add(),desktop,invoke,editable:(
 
 updateHeadingControl(editor.headingLevel());
 
-const writing = setupWriting({ editor, desktop, invoke, icon, status: setStatus,
+const writing = setupWriting({ editor, desktop, invoke:async(command,args)=>{
+  if(nativeTestMode && command==='import_attachment' && nativeTestDelay){nativeTestDelay.started=true;await nativeTestDelay.promise;}
+  return invoke(command,args);
+}, icon, status: setStatus,
   choose: chooseAttachments, save: () => desktopHasPath() ? Promise.resolve(true) : desktopSave(),
   serialized: desktopRun,
   editable: () => !shell.classList.contains('welcome-state') && !state.reading,
@@ -1508,7 +1531,7 @@ const commands = [
   { id: 'main.bulleted_list_ui0232', get name() { return t('main.bulleted_list_ui0232'); }, shortcut: '⇧⌘8', action: () => editor.format('bullet') },
   { id: 'main.insert_table_ui0233', get name() { return t('main.insert_table_ui0233'); }, action: () => editor.format('table') },
   ...(desktop ? [
-    { id: 'main.versions_drafts_ui0234', get name() { return t('main.versions_drafts_ui0234'); }, action: () => showRecovery({ invoke, restore: desktopRestore }) },
+    { id: 'main.versions_drafts_ui0234', get name() { return t('main.versions_drafts_ui0234'); }, action: () => showDocumentRecovery({ invoke }) },
     { id: 'main.recover_unsaved_drafts', get name() { return t('main.recover_unsaved_drafts'); }, action: () => showRecovery({ invoke, drafts: true }) },
   ] : [{
     id: 'main.restore_version_before_last_save_ui0236', get name() { return t('main.restore_version_before_last_save_ui0236'); },
@@ -1734,7 +1757,7 @@ for (const button of appearancePopover.querySelectorAll('[data-settings-tab]')) 
 document.querySelector('#markerEditMode').onclick = () => setMode('edit');
 function openRecoveryRecords(current = false) {
   closePopovers();
-  if (desktop) return showRecovery({invoke, restore:desktopRestore, drafts:!current});
+  if (desktop) return showDocumentRecovery({invoke, drafts:!current});
   commands.find(c => c.name === t("main.restore_version_before_last_save_ui0244"))?.action();
 }
 document.querySelector('#settingsRecovery').onclick = () => openRecoveryRecords();
@@ -1874,7 +1897,7 @@ recentPopover.addEventListener('keydown', event => {
 });
 
 document.querySelector('#recentButton').addEventListener('click', toggleRecentFiles);
-document.querySelector('#recoveryNotice').addEventListener('click', () => showRecovery({ invoke, restore: desktopRestore, drafts: false }));
+document.querySelector('#recoveryNotice').addEventListener('click', () => showDocumentRecovery({ invoke, drafts: false }));
 document.querySelector('#welcomeOpenButton').addEventListener('click', openFile);
 document.querySelector('#welcomeRecentButton').addEventListener('click', toggleRecentFiles);
 document.querySelector('#welcomeNewButton').addEventListener('click', () => {
@@ -2153,6 +2176,9 @@ if (desktop) {
   editor.setReading(true);
   initDesktop({
     mutationAllowed:()=>editor.mutationAllowed(),
+    captureMutation:()=>editor.captureMutation(),
+    assertMutationCurrent:context=>editor.assertMutationCurrent(context),
+    menuCurrent:binding=>binding&&mcpBinding&&['document_id','session_id','authorization_epoch','mutation_generation'].every(key=>binding[key]===mcpBinding[key]),
     content: () => state.content,
     loadedImages: () => loadedLocalImagePaths(),
     retryMissingImages: () => retryMissingImages(),
@@ -2160,8 +2186,8 @@ if (desktop) {
     status: setStatus,
     recoveryAvailable: statusNotices.recoveryAvailable,
     load: (content, name, path) => { state.resourcePath = path; return setDocument(content, name); },
-    recovery: () => showRecovery({ invoke, restore: desktopRestore, drafts: !welcomeScreen.hidden }),
-    restore: content => { if(!editor.mutationAllowed())throw new Error('document_locked');clearTimeout(state.saveTimer); editor.restoreValue(content); if (state.reading) renderReading(); },
+    recovery: () => showDocumentRecovery({ invoke, drafts: !welcomeScreen.hidden }),
+    restore: (content,context) => { if(context)editor.assertMutationCurrent(context);if(!editor.mutationAllowed())throw new Error('document_locked');clearTimeout(state.saveTimer); editor.restoreValue(content); if (state.reading) renderReading(); },
     find: openDocumentSearch,
     exportPdf,
     cycleMode,
@@ -2196,6 +2222,7 @@ if (desktop) {
     editor.setReading(state.reading);
     if (welcomeScreen.hidden && !state.reading) editor.focus();
     const testMode=await invoke('mcp_test_mode').catch(()=>null);
+    nativeTestMode=testMode;
     const hiddenTestMutations=new Set();
     await listenNative('leaf-mcp-editor',async ({payload})=>{
       let reply;
@@ -2203,7 +2230,8 @@ if (desktop) {
         const {operation,args}=payload;
         let result;
         if(operation==='snapshot')result=editor.mcpSnapshot();
-        else if(operation==='begin')result=editor.beginAiTask(args);
+        else if(operation==='binding'){mcpBinding=args;mutationGeneration++;result=editor.mcpSnapshot();}
+        else if(operation==='begin'){result=editor.beginAiTask(args);mcpBinding=args;}
         else if(operation==='apply') {
           if(testMode && args.test_fault==='before-dispatch')throw new Error('test_before_dispatch');
           const realClock=Date.now;
@@ -2215,7 +2243,7 @@ if (desktop) {
             return;
           }
         }
-        else if(operation==='finish')result=editor.finishAiTask(args);
+        else if(operation==='finish'){result=editor.finishAiTask(args);mcpBinding={...mcpBinding,mutation_generation:args.mutation_generation};}
         else if(operation==='query_renderer_mutation')result=hiddenTestMutations.has(args.mutation_id)?null:editor.queryRendererMutation(args.mutation_id);
         else if(operation==='test' && testMode) {
           if(args.clock!==undefined) {
@@ -2229,6 +2257,16 @@ if (desktop) {
           else if(args.action==='redo') editor.redo();
           else if(args.action==='human') editor.restoreValue(args.content);
           else if(args.action==='selection') editor.view.dispatch({selection:{anchor:args.anchor}});
+          else if(args.action==='delay-attachment') {
+            let release;const promise=new Promise(resolve=>{release=resolve;});
+            nativeTestDelay={promise,release,started:false};
+            nativeTestPending=writing.attachments(args.files,false);
+            nativeTestRecovery=editor.captureMutation();
+          }
+          else if(args.action==='delay-status')result={started:nativeTestDelay?.started===true};
+          else if(args.action==='release-attachment'){nativeTestDelay.release();await nativeTestPending;nativeTestDelay=null;}
+          else if(args.action==='late-recovery')await desktopRestore('forbidden late recovery',nativeTestRecovery);
+          else if(args.action==='native-stop'){await invoke('mcp_stop_edit',{taskId:args.task_id});}
           else if(args.action==='entrance') {
             const before=editor.mcpSnapshot();
             if(args.entrance==='body')editor.view.dispatch({changes:{from:0,insert:'forbidden'},userEvent:'input.type'});
@@ -2242,7 +2280,7 @@ if (desktop) {
             else if(args.entrance==='attachment')await writing.attachments(args.files,false);
             else throw new Error('unknown_test_entrance');
           }
-          result={...editor.mcpSnapshot(),history:editor.historyDepth(),task_api:typeof editor.beginAiTask==='function'};
+          result ??= {...editor.mcpSnapshot(),history:editor.historyDepth(),task_api:typeof editor.beginAiTask==='function'};
         } else throw new Error('unknown_bridge_operation');
         reply={result};
       } catch(error) {
@@ -2251,7 +2289,7 @@ if (desktop) {
       }
       await invoke('mcp_renderer_reply',{callId:payload.call_id,reply}).catch(()=>{});
     });
-    if(welcomeScreen.hidden) await invoke('mcp_register');
+    if(welcomeScreen.hidden) mcpBinding=await invoke('mcp_register');
     if(testMode && testMode!=='passive') {
       const report=await invoke('mcp_test_run',{mode:testMode}).catch(()=>({pass:false,failure:'native driver failure'}));
       await invoke('mcp_test_report',{report});

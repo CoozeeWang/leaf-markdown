@@ -1,5 +1,5 @@
 //! Test driver exists only in explicitly isolated native-smoke builds.
-use tauri::Manager;
+use tauri::{Manager,Emitter};
 use serde_json::{json, Value};
 
 pub fn enabled(app: &tauri::AppHandle) -> bool {
@@ -127,9 +127,58 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     if mode=="task-history-gate" {history_gate(app,label,broker,&client).await?;}
     if mode=="renderer-ack-loss" {ack_loss_gate(app,label,broker,&client).await?;edge_gate(app,label,broker,&client).await?;}
     if mode=="all-write-entrances" {entrances_gate(app,label,broker,&client).await?;}
+    if mode=="stop-late-second-window" {stop_late_gate(app,broker,&client).await?;}
     broker.unregister(label);
     ensure(tool(&client,"read_document",binding).await.is_err(),"closed session must fail")?;
     let _=client.cancel().await;Ok(())
+}
+
+async fn stop_late_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{
+    let root=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
+    let path=root.join("synthetic.md");
+    let previous=broker.inner.registry.lock().unwrap().documents.values().map(|d|d.label.clone()).collect::<Vec<_>>();
+    super::create_document(app.clone(),Some(path.to_string_lossy().into_owned()),None,None)?;
+    let label=wait_document(app,broker,&previous).await?;
+    broker.bridge(app,&label,"test",json!({"action":"human","content":"Synthetic saved draft with human history"})).await?;
+    let original=broker.bridge(app,&label,"snapshot",json!({})).await?;
+    broker.bridge(app,&label,"test",json!({"action":"delay-attachment","files":[root.join("synthetic.txt")]})).await?;
+    for _ in 0..100 {if broker.bridge(app,&label,"test",json!({"action":"delay-status"})).await?["started"]==true{break;}tokio::time::sleep(std::time::Duration::from_millis(10)).await;}
+    ensure(broker.bridge(app,&label,"test",json!({"action":"delay-status"})).await?["started"]==true,"real production attachment import is delayed")?;
+    let d=broker.window_binding(&label).ok_or("saved document registration")?;
+    let d=broker.authorize(app,&label,&d.session_id,"synthetic-client",json!({"from":0,"to":original["content"].as_str().unwrap().len()})).await?;
+    let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+    let queued_menu_binding=broker.window_binding(&label).ok_or("menu binding absent")?;
+    let mut begin=binding.clone();begin["request_id"]=json!("late-begin");begin["revision"]=original["revision"].clone();
+    let task=tool(client,"begin_edit",begin).await?;
+    let before_count=app.state::<super::Documents>().0.lock().unwrap().len();
+    let alias=root.join("alias.md");std::fs::hard_link(&path,&alias).map_err(|_|"synthetic hardlink")?;
+    super::create_document(app.clone(),Some(alias.to_string_lossy().into_owned()),None,None)?;
+    ensure(app.state::<super::Documents>().0.lock().unwrap().len()==before_count,"hardlink alias cannot open second writer window")?;
+    let moved=root.join("renamed.md");std::fs::rename(&path,&moved).map_err(|_|"synthetic rename")?;
+    super::create_document(app.clone(),Some(moved.to_string_lossy().into_owned()),None,None)?;
+    ensure(app.state::<super::Documents>().0.lock().unwrap().len()==before_count,"renamed alias focuses same logical document")?;
+    let second_previous=broker.inner.registry.lock().unwrap().documents.values().map(|d|d.label.clone()).collect::<Vec<_>>();
+    super::create_document(app.clone(),Some(root.join("different.md").to_string_lossy().into_owned()),None,None)?;
+    let other=wait_document(app,broker,&second_previous).await?;
+    broker.bridge(app,&other,"test",json!({"action":"human","content":"Independent human edit"})).await?;
+    ensure(broker.bridge(app,&other,"snapshot",json!({})).await?["content"]=="Independent human edit","other real native window remains editable")?;
+    broker.bridge(app,&label,"test",json!({"action":"native-stop","task_id":task["task_id"]})).await?;
+    let status=tool(client,"task_status",binding.clone()).await?;
+    ensure(status["task"].is_null(),"native stop completes actual renderer finalization")?;
+    app.emit_to(&label,"leaf-menu",json!({"command":"undo","binding":queued_menu_binding})).map_err(|_|"late production menu event")?;
+    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+    ensure(broker.bridge(app,&label,"snapshot",json!({})).await?==original,"pre-lock queued native menu cannot undo after stop")?;
+    broker.bridge(app,&label,"test",json!({"action":"release-attachment"})).await?;
+    let recovered=broker.bridge(app,&label,"test",json!({"action":"late-recovery"})).await;
+    ensure(matches!(recovered,Err(ref error) if error=="stale_mutation_context"),"late recovery refuses stopped context before session restore")?;
+    ensure(broker.bridge(app,&label,"snapshot",json!({})).await?==original,"late attachment and recovery never advance stopped revision")?;
+    let mut late=binding.clone();late["task_id"]=task["task_id"].clone();late["request_id"]=json!("late-batch");late["revision"]=original["revision"].clone();late["changes"]=json!([{"from":0,"to":0,"expected":"","insert":"forbidden"}]);
+    ensure(tool(client,"apply_edit_batch",late.clone()).await.is_err(),"late AI batch fails after native stop")?;
+    late["session_id"]=json!("retired-session");ensure(tool(client,"apply_edit_batch",late.clone()).await.is_err(),"retired native session is rejected")?;
+    late["session_id"]=binding["session_id"].clone();late["authorization_epoch"]=json!(0);ensure(tool(client,"apply_edit_batch",late).await.is_err(),"retired native epoch is rejected")?;
+    broker.bridge(app,&label,"test",json!({"action":"human","content":"Human resumed after actual stop"})).await?;
+    ensure(broker.bridge(app,&label,"snapshot",json!({})).await?["content"]=="Human resumed after actual stop","manual edits resume after finalization")?;
+    Ok(())
 }
 
 async fn wait_document(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBroker,previous:&[String])->Result<String,String>{

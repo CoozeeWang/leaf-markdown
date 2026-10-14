@@ -19,8 +19,16 @@ const IMAGE_CLIPBOARD_TYPE = 'application/x-leaf-markdown-images';
 export function setupWriting({ editor, desktop, invoke, save, choose, serialized, editable, status, icon, }) {
   const view = editor.view, bookmarks = new Set();
   const canWrite=()=>editable() && editor.mutationAllowed();
+  let lockGeneration=0,locked=!editor.mutationAllowed();
+  const capture=()=>editor.captureMutation?.() ?? {generation:lockGeneration,...editor.mcpSnapshot()};
+  const validate=token=>{
+    if(editor.assertMutationCurrent)return editor.assertMutationCurrent(token);
+    const now=editor.mcpSnapshot();
+    if(!canWrite()||token.generation!==lockGeneration||token.revision!==now.revision||token.content!==now.content)throw new Error('stale_mutation_context');
+  };
   let insertionFollow=null;
   view.dispatch({ effects: StateEffect.appendConfig.of(EditorView.updateListener.of(update => {
+    const next=!editor.mutationAllowed();if(next!==locked){locked=next;lockGeneration++;}
     if (update.docChanged) for (const b of bookmarks) { b.from=update.changes.mapPos(b.from,1); b.to=update.changes.mapPos(b.to,-1); if(b.to<b.from)b.to=b.from; }
     if(insertionFollow&&(update.docChanged||update.selectionSet||(update.focusChanged&&!view.hasFocus)))insertionFollow.stop();
   })) });
@@ -28,8 +36,9 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     setResourceReader(relative => invoke('read_resource', { relative }));
     setResourceRevealer(relative => invoke('reveal_resource', { relative }));
   }
-  const remember = range => { const selection=range||view.state.selection.main; const b={from:selection.from,to:selection.to}; bookmarks.add(b); return b; };
+  const remember = range => { const selection=range||view.state.selection.main; const b={from:selection.from,to:selection.to,context:capture()}; bookmarks.add(b); return b; };
   function insert(text, b, anchor=b.from+text.length, scrollIntoView=false) {
+    validate(b.context);
     view.dispatch({changes:{from:b.from,to:b.to,insert:text},selection:{anchor},scrollIntoView,userEvent:'input',annotations:isolateHistory.of('full')}); view.focus();
   }
   function followImageLoad(anchor, resources) {
@@ -88,13 +97,17 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     const b=remember(target?{from:target.pos,to:target.pos}:null);
     try {
       if(!files){const paths=await choose(image);if(!paths)return;files=Array.isArray(paths)?paths:[paths];}
+      validate(b.context);
       if(!files.length)return;
       if(!await save())return;
+      validate(b.context);
       await serialized(async()=>{
+        validate(b.context);
         const links=[],images=[];
         for(const file of files){
           const name=typeof file==='string'?file.split(/[\\/]/).pop():file.name||'screenshot.png';
           const source=typeof file==='string'?{source:file}:{data:Array.from(new Uint8Array(await file.arrayBuffer()))};
+          validate(b.context);
           const relative=await invoke('import_attachment',{name,...source});
           // HEIC and HEIF are iPhone photos and only some platforms decode them;
           // SVG is text with no magic bytes. Both arrive as pictures everywhere
@@ -149,7 +162,9 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
         void (async()=>{
           try {
             if (!await save()) return;
+            validate(b.context);
             await serialized(async()=>{
+              validate(b.context);
               const mappings=await invoke('copy_pasted_images',{sourceLabel:copied.sourceLabel,references});
               const text=rewriteResourcePaths(copied.content,mappings);
               const floor=bodyStart(view.state.doc.toString());

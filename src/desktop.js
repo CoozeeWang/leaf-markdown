@@ -16,6 +16,7 @@ let session;
 let draftTimer;
 let closing = false;
 let hooks;
+let restoreQueue=Promise.resolve(),restoreContext=null;
 
 export async function desktopOpen() {
   const selected = await open({ multiple: true, filters });
@@ -60,9 +61,13 @@ export function desktopEdited() {
   clearTimeout(draftTimer);
   draftTimer = setTimeout(() => session?.checkpoint().catch(error => hooks.status(translatedMessage("desktop.could_not_protect_the_draft", {"error": error}), 'error')), 250);
 }
-export function desktopRestore(content) {
+export function desktopRestore(content,context=hooks.captureMutation()) {
   if (!hooks.mutationAllowed()) return Promise.reject(new Error('document_locked'));
-  return session.restore(content);
+  const operation=restoreQueue.catch(()=>{}).then(async()=>{
+    hooks.assertMutationCurrent(context);restoreContext=context;
+    try {return await session.restore(content);}finally{restoreContext=null;}
+  });
+  restoreQueue=operation;return operation;
 }
 
 async function closeDocument() {
@@ -103,7 +108,7 @@ export async function initDesktop(callbacks) {
     localizedMessages: true,
     content: hooks.content, status: hooks.status,
     load: (content, source) => hooks.load(content, source ? fileNameFromPath(source) : t("desktop.untitled_md"), source),
-    restore: hooks.restore,
+    restore:content=>hooks.restore(content,restoreContext),
     select: path => save({ defaultPath: path || t("desktop.untitled_md"), filters }),
     selectExisting: () => open({ multiple: false, filters, title: t("desktop.locate_original_file") }),
     relocate: (path, expected) => invoke('relocate_document', { path, expected, loadedImages: hooks.loadedImages?.() ?? [] }),
@@ -131,6 +136,7 @@ export async function initDesktop(callbacks) {
   await window.listen('leaf-native-rename',({payload})=>hooks.renameNative?.(payload));
   await window.listen('leaf-menu', async ({ payload }) => {
     const command=typeof payload==='string'?payload:payload.command;
+    if (['cut','paste','paste-plain','add-comment','undo','redo','recovery'].includes(command) && typeof payload!=='string' && !hooks.menuCurrent(payload.binding))return;
     if (['cut','paste','paste-plain','add-comment','undo','redo','recovery'].includes(command) && !hooks.mutationAllowed()) return;
     payload=command;
     if (payload === 'new') {

@@ -28,10 +28,12 @@ window.runLateTest=async()=>{
   let release;
   const waiting=new Promise(resolve=>{release=resolve;});
   let importing=false;
-  const writing=setupWriting({editor,desktop:true,invoke:async()=>{importing=true;return waiting;},save:async()=>true,choose:async()=>['synthetic.txt'],serialized:action=>action(),editable:()=>true,status(){},icon:()=>''});
+  let importError='';
+  const writing=setupWriting({editor,desktop:true,invoke:async()=>{importing=true;return waiting;},save:async()=>true,choose:async()=>['synthetic.txt'],serialized:action=>action(),editable:()=>true,status:message=>{importError=String(message);},icon:()=>''});
   const original=editor.mcpSnapshot();
   const pending=writing.attachments(['synthetic.txt'],false);
-  while(!importing)await new Promise(resolve=>setTimeout(resolve,1));
+  for(let i=0;i<1000&&!importing;i++)await new Promise(resolve=>setTimeout(resolve,1));
+  assert(importing,'attachment delay must start: '+importError);
   editor.beginAiTask({task_id:'late-task',session_id:'synthetic-session',authorization_epoch:2,revision:original.revision,scope:{from:0,to:original.content.length}});
   editor.finishAiTask({task_id:'late-task'});
   release('.assets/synthetic.txt');await pending;

@@ -34,7 +34,7 @@ impl AuthenticatedLeaseManager {
 }
 
 #[derive(Clone,Serialize,Deserialize)]
-pub struct OpenedDocument {pub document_id:String,pub session_id:String,pub label:String,pub authorization_epoch:u64,pub client:Option<String>,pub scope:Option<Value>,pub task:Option<Value>}
+pub struct OpenedDocument {pub document_id:String,pub session_id:String,pub label:String,#[serde(skip)] pub logical_identity:String,pub mutation_generation:u64,pub authorization_epoch:u64,pub client:Option<String>,pub scope:Option<Value>,pub task:Option<Value>}
 #[derive(Default)]
 pub struct OpenedDocumentRegistry {pub documents:HashMap<String,OpenedDocument>}
 type Pending=(String,oneshot::Sender<Value>);
@@ -72,16 +72,25 @@ impl Default for LeafMcpBroker {
     fn default()->Self {Self{inner:Arc::new(BrokerState{registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default(),leases:Mutex::new(AuthenticatedLeaseManager::default()),pending_finishes:Mutex::new(HashMap::new()),watchdog_started:std::sync::atomic::AtomicBool::new(false)})}}
 }
 impl LeafMcpBroker {
+    pub fn register_window(&self,app:&tauri::AppHandle,label:&str)->OpenedDocument {
+        let identity=app.state::<super::DocumentAnchors>().0.lock().unwrap().get(label).map(|anchor|format!("file:{:?}",anchor.token())).unwrap_or_else(||format!("window:{label}"));
+        let mut d=self.register(label);
+        let mut registry=self.inner.registry.lock().unwrap();
+        if let Some(other)=registry.documents.values().find(|other|other.label!=label&&other.logical_identity==identity){d.document_id=other.document_id.clone();}
+        d.logical_identity=identity;registry.documents.insert(d.session_id.clone(),d.clone());d
+    }
     pub fn window_binding(&self,label:&str)->Option<OpenedDocument>{self.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).cloned()}
     pub fn window_locked(&self,label:&str)->bool{self.window_binding(label).is_some_and(|d|d.task.is_some())||self.inner.pending_finishes.lock().unwrap().contains_key(label)}
     // Caller owns the native queue. Invalidate first, then close renderer history;
     // retries cannot resurrect a capability or discard any applied draft.
     async fn finalize(&self,app:&tauri::AppHandle,d:&mut OpenedDocument)->Result<(),String>{
         if let Some(task)=d.task.take(){
+            d.mutation_generation+=1;
             self.inner.leases.lock().unwrap().finish(task["task_id"].as_str().unwrap_or(""));
             self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d.clone());
-            self.inner.pending_finishes.lock().unwrap().insert(d.label.clone(),task.clone());
-            self.bridge(app,&d.label,"finish",task).await?;
+            let mut finish=task;finish["mutation_generation"]=json!(d.mutation_generation);
+            self.inner.pending_finishes.lock().unwrap().insert(d.label.clone(),finish.clone());
+            self.bridge(app,&d.label,"finish",finish).await?;
             self.inner.pending_finishes.lock().unwrap().remove(&d.label);
             super::refresh_document_menu(app);
         }Ok(())
@@ -94,7 +103,7 @@ impl LeafMcpBroker {
             let docs:Vec<_>=broker.inner.registry.lock().unwrap().documents.values().cloned().collect();
             for mut d in docs {if d.task.as_ref().is_some_and(|task|broker.inner.leases.lock().unwrap().expired(task["task_id"].as_str().unwrap_or(""),lease_now())){let _=broker.finalize(&app,&mut d).await;}}
             let pending:Vec<_>=broker.inner.pending_finishes.lock().unwrap().iter().map(|(label,task)|(label.clone(),task.clone())).collect();
-            for(label,task)in pending {if app.get_webview_window(&label).is_none()||broker.bridge(&app,&label,"finish",task).await.is_ok(){broker.inner.pending_finishes.lock().unwrap().remove(&label);}}
+            for(label,task)in pending {if app.get_webview_window(&label).is_none()||broker.bridge(&app,&label,"finish",task).await.is_ok(){broker.inner.pending_finishes.lock().unwrap().remove(&label);super::refresh_document_menu(&app);}}
         }});
     }
     async fn health(&self,client:&str,bearer:&str)->Result<(),String>{
@@ -200,7 +209,7 @@ impl LeafMcpBroker {
     pub fn register(&self,label:&str)->OpenedDocument {
         let mut registry=self.inner.registry.lock().unwrap();
         registry.documents.retain(|_,d|d.label!=label);
-        let d=OpenedDocument{document_id:id("document"),session_id:id("session"),label:label.into(),authorization_epoch:0,client:None,scope:None,task:None};
+        let d=OpenedDocument{document_id:id("document"),session_id:id("session"),label:label.into(),logical_identity:format!("window:{label}"),mutation_generation:0,authorization_epoch:0,client:None,scope:None,task:None};
         registry.documents.insert(d.session_id.clone(),d.clone());d
     }
     pub fn unregister(&self,label:&str) {
@@ -228,6 +237,7 @@ impl LeafMcpBroker {
         let from=scope["from"].as_u64().ok_or("invalid_scope")?;let to=scope["to"].as_u64().ok_or("invalid_scope")?;
         if from>to||to>length {return Err("invalid_scope".into());}
         d.authorization_epoch+=1;d.client=Some(client.into());d.scope=Some(scope);
+        self.bridge(app,label,"binding",json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch,"mutation_generation":d.mutation_generation})).await?;
         self.inner.registry.lock().unwrap().documents.insert(session.into(),d.clone());Ok(d)
     }
     fn document(&self,app:&tauri::AppHandle,client:&str,args:&Value)->Result<OpenedDocument,String> {
@@ -280,10 +290,12 @@ impl LeafMcpBroker {
                 let key=format!("{}:begin:{request}",d.session_id);let hash=digest(&args);
                 if let Some((old,result))=self.inner.results.lock().unwrap().get(&key){if old==&hash{return if d.task.as_ref().is_some_and(|task|task["task_id"]==result["task_id"]){Ok(result.clone())}else{Err("task_stopped".into())};}return Err("request_id_conflict".into());}
                 if d.task.is_some() {return Err("document_locked".into());}
+                if self.inner.registry.lock().unwrap().documents.values().any(|other|other.label!=d.label&&other.logical_identity==d.logical_identity){return Err("document_buffer_conflict".into());}
                 if self.inner.pending_finishes.lock().unwrap().contains_key(&d.label){return Err("task_finalizing".into());}
                 let snapshot=self.bridge(app,&d.label,"snapshot",json!({})).await?;
                 if args["revision"]!=snapshot["revision"] {return Err("stale_revision".into());}
-                let task=json!({"task_id":id("task"),"request_id":request,"session_id":d.session_id,"document_id":d.document_id,"client":client,"authorization_epoch":d.authorization_epoch,"scope":d.scope,"revision":snapshot["revision"]});
+                d.mutation_generation+=1;
+                let task=json!({"task_id":id("task"),"request_id":request,"session_id":d.session_id,"document_id":d.document_id,"client":client,"authorization_epoch":d.authorization_epoch,"mutation_generation":d.mutation_generation,"scope":d.scope,"revision":snapshot["revision"]});
                 if let Err(error)=self.bridge(app,&d.label,"begin",task.clone()).await{
                     // Explicit prepare refusals have no lock. An uncertain ACK
                     // may have locked the renderer; schedule its idempotent close.
@@ -538,7 +550,7 @@ async fn wait_test_signal(root:&std::path::Path,name:&str)->Result<(),String> {
 
 #[tauri::command]
 pub fn mcp_register(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<LeafMcpBroker>)->Result<OpenedDocument,String> {
-    if !app.state::<super::Documents>().0.lock().unwrap().contains_key(window.label()) {return Err("not_document_window".into());}Ok(broker.register(window.label()))
+    if !app.state::<super::Documents>().0.lock().unwrap().contains_key(window.label()) {return Err("not_document_window".into());}Ok(broker.register_window(&app,window.label()))
 }
 #[tauri::command]
 pub fn mcp_renderer_reply(window:tauri::WebviewWindow,broker:tauri::State<LeafMcpBroker>,call_id:String,reply:Value)->Result<(),String> {
