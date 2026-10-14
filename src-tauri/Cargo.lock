@@ -2282,6 +2282,7 @@ dependencies = [
  "objc2",
  "objc2-foundation",
  "rmcp",
+ "security-framework",
  "serde",
  "serde_json",
  "sha2 0.10.9",

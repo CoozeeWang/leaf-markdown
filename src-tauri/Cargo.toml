@@ -5,6 +5,14 @@ edition = "2021"
 license = "MIT"
 default-run = "leaf"
 
+[[bin]]
+name = "leaf"
+path = "src/main.rs"
+
+[[bin]]
+name = "leaf-mcp-adapter"
+path = "src/bin/leaf-mcp-adapter.rs"
+
 [features]
 # Enables a local CDP connection only in native CI probe builds.
 native-smoke = ["tauri/devtools"]
@@ -30,6 +38,7 @@ keyring = { version = "=4.2.0", default-features = false, features = ["v1"] }
 getrandom = "=0.3.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "=3.7.0"
 objc2 = "0.6"
 block2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSString", "NSURL"] }

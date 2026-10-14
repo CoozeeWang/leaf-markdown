@@ -97,11 +97,52 @@ impl LeafMcpBroker {
     }
     pub async fn set_enabled(&self,app:&tauri::AppHandle,enabled:bool)->Result<(),String> {
         let _serial=self.inner.queue.lock().await;
+        if *self.inner.enabled.lock().unwrap()==enabled {return Ok(());}
         if !enabled {
             *self.inner.enabled.lock().unwrap()=false;
             let clients:Vec<_>=self.inner.credentials.lock().unwrap().keys().cloned().collect();
             for client in clients {self.invalidate_client(app,&client).await;}
-        } else {*self.inner.enabled.lock().unwrap()=true;}Ok(())
+        } else {
+            let broker=self.clone();
+            tauri::async_runtime::spawn_blocking(move||->Result<(),String>{
+                let mut guard=broker.inner.profiles.lock().unwrap();let store=guard.as_mut().ok_or("profiles_unavailable")?;
+                for profile in store.list().into_iter().filter(|p|p.enabled) {
+                    let operation=ai_credentials::random_token()?;
+                    let disabled=store.revoke(&profile.client,false,&format!("off-{operation}"),&OsKeyring)?;
+                    store.enable(&profile.client,&format!("on-{operation}"),disabled.generation,&OsKeyring)?;
+                    broker.inner.credentials.lock().unwrap().insert(profile.client.clone(),store.token(&profile.client,&OsKeyring)?);
+                }Ok(())
+            }).await.map_err(|_|"credential_unavailable")??;
+            *self.inner.enabled.lock().unwrap()=true;
+        }Ok(())
+    }
+    pub async fn publish_descriptor(&self,app:&tauri::AppHandle,client:&str)->Result<PathBuf,String> {
+        let _serial=self.inner.queue.lock().await;
+        let profile=self.inner.profiles.lock().unwrap().as_ref().ok_or("profiles_unavailable")?.status(client)?;
+        if !profile.enabled||!*self.inner.enabled.lock().unwrap() {return Err("connection_disabled".into());}
+        let token=self.inner.credentials.lock().unwrap().get(client).cloned().ok_or("client_disabled")?;
+        let port=self.serve_http(app.clone(),client.into(),token.clone()).await?;
+        let descriptor=ai_credentials::BrokerDescriptor {uri:format!("http://127.0.0.1:{port}/mcp"),client:client.into(),generation:profile.generation,instance:ai_credentials::random_token()?,credential_ref:profile.credential_ref.ok_or("client_unconfigured")?};
+        let entry=descriptor.credential_ref.clone();
+        let uri=descriptor.uri.clone();let instance=descriptor.instance.clone();let generation=descriptor.generation;
+        tauri::async_runtime::spawn_blocking(move||{
+            use ai_credentials::SecretStore;
+            let previous:ai_credentials::BoundCredential=serde_json::from_str(&OsKeyring.get(&entry)?).map_err(|_|"credential_invalid")?;
+            let bound=ai_credentials::BoundCredential{token,uri,instance,generation,external_secret:previous.external_secret};
+            OsKeyring.set(&entry,&serde_json::to_string(&bound).map_err(|_|"credential_encoding")?)
+        }).await.map_err(|_|"credential_unavailable")??;
+        let directory=super::application_data(app).map_err(|_|"descriptor_directory")?.join("mcp");
+        std::fs::create_dir_all(&directory).map_err(|_|"descriptor_write")?;
+        let path=directory.join(format!("{client}.json"));
+        let mut file=tempfile::NamedTempFile::new_in(&directory).map_err(|_|"descriptor_write")?;
+        file.write_all(&serde_json::to_vec(&descriptor).map_err(|_|"descriptor_encoding")?).map_err(|_|"descriptor_write")?;
+        file.as_file().sync_all().map_err(|_|"descriptor_write")?;file.persist(&path).map_err(|_|"descriptor_write")?;Ok(path)
+    }
+    pub fn export_stdio_config(&self,client:&str,helper:PathBuf,descriptor:PathBuf)->Result<Value,String> {
+        let profile=self.inner.profiles.lock().unwrap().as_ref().ok_or("profiles_unavailable")?.status(client)?;
+        if !profile.enabled {return Err("client_disabled".into());}
+        if !helper.is_absolute()||!helper.is_file()||helper.components().any(|p|p.as_os_str()=="target") {return Err("helper_not_installed".into());}
+        Ok(json!({"command":helper,"args":["--descriptor",descriptor]}))
     }
     pub fn register(&self,label:&str)->OpenedDocument {
         let mut registry=self.inner.registry.lock().unwrap();
@@ -140,8 +181,12 @@ impl LeafMcpBroker {
         if !app.state::<super::Documents>().0.lock().unwrap().contains_key(&d.label)||app.get_webview_window(&d.label).is_none(){return Err("stale_session".into());}Ok(d)
     }
     pub async fn call(&self,app:&tauri::AppHandle,client:&str,name:&str,args:Value)->Result<Value,String> {
+        self.call_with_bearer(app,client,None,name,args).await
+    }
+    async fn call_with_bearer(&self,app:&tauri::AppHandle,client:&str,bearer:Option<&str>,name:&str,args:Value)->Result<Value,String> {
         let _serial=self.inner.queue.lock().await;
         if !self.inner.credentials.lock().unwrap().contains_key(client) {return Err("client_disabled".into());}
+        if bearer.is_some_and(|token|self.inner.credentials.lock().unwrap().get(client).is_none_or(|current|current!=token)) {return Err("client_revoked".into());}
         if name=="list_documents" {
             if !*self.inner.enabled.lock().unwrap(){return Err("connection_disabled".into());}
             let mut docs:Vec<_>=self.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(client)).cloned().collect();docs.sort_by(|a,b|a.session_id.cmp(&b.session_id));return Ok(json!({"documents":docs}));
@@ -236,7 +281,9 @@ impl LeafMcpBroker {
     }
     pub async fn serve_http(&self,app:tauri::AppHandle,client:String,token:String)->Result<u16,String> {
         let broker=self.clone();
-        let handler=LeafMcpHandler{broker:broker.clone(),app,client:client.clone()};
+        #[cfg(feature="native-smoke")]
+        let handler_app=app.clone();
+        let handler=LeafMcpHandler{broker:broker.clone(),app,client:client.clone(),bearer:token.clone()};
         let service=StreamableHttpService::new(move||Ok(handler.clone()),Arc::new(LocalSessionManager::default()),StreamableHttpServerConfig::default().with_legacy_session_mode(false).with_json_response(true).enforce_origin_validation());
         let auth=token.clone();let client_key=client.clone();
         let route=axum::Router::new().nest_service("/mcp",service).layer(axum::middleware::from_fn(move |req:axum::extract::Request,next:axum::middleware::Next|{let auth=auth.clone();let client_key=client_key.clone();let broker=broker.clone();async move{
@@ -245,20 +292,40 @@ impl LeafMcpBroker {
         }}));
         use axum::response::IntoResponse;
         let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.map_err(|_|"broker_bind")?;let port=listener.local_addr().map_err(|_|"broker_bind")?.port();
-        tauri::async_runtime::spawn(async move{let _=axum::serve(listener,route).await;});Ok(port)
+        tauri::async_runtime::spawn(async move{let _=axum::serve(listener,route).await;});
+        #[cfg(feature="native-smoke")]
+        if client=="synthetic-client"&&super::mcp_test_driver::enabled(&handler_app)&&std::env::var_os("LEAF_MCP_ADAPTER_TEST").is_some() {
+            let report=Box::pin(self.adapter_native_test(&handler_app)).await;
+            let root=PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
+            let _=std::fs::write(root.join("adapter-result.json"),serde_json::to_vec(&json!({"pass":report.is_ok(),"failure":report.err()})).unwrap());
+            handler_app.exit(0);
+        }
+        Ok(port)
     }
 }
 
 #[derive(Clone)]
-struct LeafMcpHandler {broker:LeafMcpBroker,app:tauri::AppHandle,client:String}
+struct LeafMcpHandler {broker:LeafMcpBroker,app:tauri::AppHandle,client:String,bearer:String}
 impl ServerHandler for LeafMcpHandler {
-    fn get_info(&self)->ServerConfig {let mut info=ServerConfig::default();info.capabilities=ServerCapabilities::builder().enable_tools().build();info}
+    fn get_info(&self)->ServerConfig {let mut info=ServerConfig::default();info.capabilities=ServerCapabilities::builder().enable_tools().enable_resources().build();info}
+    async fn list_resources(&self,_:Option<PaginatedRequestParams>,_:RequestContext<RoleServer>)->Result<ListResourcesResult,ErrorData> {
+        let _serial=self.broker.inner.queue.lock().await;
+        if !*self.broker.inner.enabled.lock().unwrap()||self.broker.inner.credentials.lock().unwrap().get(&self.client)!=Some(&self.bearer) {return Err(ErrorData::invalid_params("client_revoked",None));}
+        let resources=self.broker.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some(&self.client)).map(|d|serde_json::from_value(json!({"uri":format!("leaf://document/{}",d.session_id),"name":d.document_id,"mimeType":"text/markdown"})).unwrap()).collect();
+        Ok(ListResourcesResult{resources,..Default::default()})
+    }
+    async fn read_resource(&self,p:ReadResourceRequestParams,_:RequestContext<RoleServer>)->Result<ReadResourceResponse,ErrorData> {
+        let session=p.uri.strip_prefix("leaf://document/").ok_or_else(||ErrorData::invalid_params("unknown_resource",None))?;
+        let d=self.broker.inner.registry.lock().unwrap().documents.get(session).cloned().ok_or_else(||ErrorData::invalid_params("stale_session",None))?;
+        let result=self.broker.call_with_bearer(&self.app,&self.client,Some(&self.bearer),"read_document",json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch})).await.map_err(|_|ErrorData::invalid_params("resource_not_authorized",None))?;
+        serde_json::from_value::<ReadResourceResult>(json!({"contents":[{"uri":p.uri,"mimeType":"text/markdown","text":result["content"]}]})).map(Into::into).map_err(|_|ErrorData::internal_error("resource_encoding",None))
+    }
     async fn list_tools(&self,_:Option<PaginatedRequestParams>,_:RequestContext<RoleServer>)->Result<ListToolsResult,ErrorData> {
         let names=["list_documents","read_document","begin_edit","apply_edit_batch","task_status","finish_edit","stop_edit","reconcile_request"];
         let tools=names.into_iter().map(tool_definition).collect();Ok(ListToolsResult{tools,..Default::default()})
     }
     async fn call_tool(&self,params:CallToolRequestParams,_:RequestContext<RoleServer>)->Result<CallToolResponse,ErrorData> {
-        let result=self.broker.call(&self.app,&self.client,&params.name,Value::Object(params.arguments.unwrap_or_default())).await;
+        let result=self.broker.call_with_bearer(&self.app,&self.client,Some(&self.bearer),&params.name,Value::Object(params.arguments.unwrap_or_default())).await;
         let (content,error)=match result{Ok(v)=>(v,false),Err(e)=>(json!({"error":e}),true)};
         let result:CallToolResult=serde_json::from_value(json!({"content":[{"type":"text","text":content.to_string()}],"structuredContent":content,"isError":error})).map_err(|_|ErrorData::internal_error("result encoding",None))?;Ok(result.into())
     }
@@ -297,6 +364,55 @@ fn tool_definition(name:&str)->Tool {
     serde_json::from_value(json!({"name":name,"description":description,"inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":false}})).expect("static MCP tool schema")
 }
 
+#[cfg(feature="native-smoke")]
+impl LeafMcpBroker {
+    // Reuses Plan 01's actual ephemeral Tauri window/renderer driver. Only active
+    // in the isolated mcptest namespace, never compiled into production bundles.
+    async fn adapter_native_test(&self,app:&tauri::AppHandle)->Result<(),String> {
+        let result=self.adapter_native_scenario(app).await;
+        for client in ai_credentials::CLIENTS {let _=self.revoke_client(app,client,true,"test-cleanup").await;}
+        result
+    }
+    async fn adapter_native_scenario(&self,app:&tauri::AppHandle)->Result<(),String> {
+        let root=PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
+        let label=self.inner.registry.lock().unwrap().documents.values().next().ok_or("test_document_missing")?.label.clone();
+        self.bridge(app,&label,"test",json!({"action":"reset","content":"synthetic alpha omega"})).await?;
+        for client in ai_credentials::CLIENTS {
+            let profile=self.configure_client(app,client,ai_credentials::random_token()?,"setup",0).await?;
+            self.enable_client(client,"enable",profile.generation).await?;
+        }
+        let a=self.publish_descriptor(app,"claude-desktop").await?;
+        let b=self.publish_descriptor(app,"workbuddy").await?;
+        let session=self.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).unwrap().session_id.clone();
+        let d=self.authorize(app,&label,&session,"claude-desktop",json!({"from":0,"to":21})).await?;
+        let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+        std::fs::write(root.join("adapter-ready.json"),serde_json::to_vec(&json!({"descriptor":a,"other_descriptor":b,"binding":binding})).unwrap()).map_err(|_|"test_evidence")?;
+        wait_test_signal(&root,"race").await?;
+        let snapshot=self.call(app,"claude-desktop","read_document",binding.clone()).await?;
+        let mut begin=binding.clone();begin["request_id"]=json!("race-begin");begin["revision"]=snapshot["revision"].clone();
+        let task=self.call(app,"claude-desktop","begin_edit",begin).await?;
+        let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!("race-batch");batch["revision"]=snapshot["revision"].clone();batch["changes"]=json!([{"from":10,"to":15,"expected":"alpha","insert":"ALPHA"}]);
+        let (applied,revoked)=tokio::join!(self.call(app,"claude-desktop","apply_edit_batch",batch.clone()),self.revoke_client(app,"claude-desktop",true,"race-clear"));
+        revoked?;
+        let final_snapshot=self.bridge(app,&label,"snapshot",json!({})).await?;
+        let content=final_snapshot["content"].as_str().ok_or("test_snapshot")?;
+        if applied.is_ok()&&content!="synthetic ALPHA omega"||applied.is_err()&&content!="synthetic alpha omega" {return Err("revoke_race_partial_mutation".into());}
+        if self.call(app,"claude-desktop","apply_edit_batch",batch).await.is_ok() {return Err("revoked_epoch_accepted".into());}
+        if final_snapshot["task"].is_object() {return Err("revoke_task_busy".into());}
+        if !self.client_profiles()?.iter().find(|p|p.client=="workbuddy").unwrap().enabled {return Err("other_client_revoked".into());}
+        std::fs::write(root.join("adapter-revoked.json"),b"{}").map_err(|_|"test_evidence")?;
+        wait_test_signal(&root,"disabled").await?;
+        self.set_enabled(app,false).await?;
+        std::fs::write(root.join("adapter-disabled.json"),b"{}").map_err(|_|"test_evidence")?;
+        wait_test_signal(&root,"done").await?;Ok(())
+    }
+}
+#[cfg(feature="native-smoke")]
+async fn wait_test_signal(root:&std::path::Path,name:&str)->Result<(),String> {
+    let ticks=if std::env::var_os("LEAF_MCP_ALLOW_INTERACTION").is_some(){6000}else{1200};
+    for _ in 0..ticks {if root.join("abort").exists(){return Err("adapter_test_aborted".into());}if root.join(name).exists(){return Ok(());}tokio::time::sleep(Duration::from_millis(100)).await;}Err("adapter_test_timeout".into())
+}
+
 #[tauri::command]
 pub fn mcp_register(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<LeafMcpBroker>)->Result<OpenedDocument,String> {
     if !app.state::<super::Documents>().0.lock().unwrap().contains_key(window.label()) {return Err("not_document_window".into());}Ok(broker.register(window.label()))
@@ -309,3 +425,32 @@ pub fn mcp_renderer_reply(window:tauri::WebviewWindow,broker:tauri::State<LeafMc
 }
 #[tauri::command]
 pub async fn mcp_authorize(app:tauri::AppHandle,window:tauri::WebviewWindow,broker:tauri::State<'_,LeafMcpBroker>,session_id:String,client:String,scope:Value)->Result<OpenedDocument,String> {broker.authorize(&app,window.label(),&session_id,&client,scope).await}
+
+#[tauri::command]
+pub fn mcp_profiles(broker:tauri::State<LeafMcpBroker>)->Result<Value,String> {Ok(json!({"enabled":*broker.inner.enabled.lock().unwrap(),"clients":broker.client_profiles()?}))}
+#[tauri::command]
+pub async fn mcp_configure_client(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpBroker>,client:String,secret:Option<String>,operation_id:String,generation:u64)->Result<AiClientProfile,String> {
+    let secret=if client=="chatgpt" {secret.ok_or("invalid_credential")?}else{"local-profile".into()};
+    broker.configure_client(&app,&client,secret,&operation_id,generation).await
+}
+#[tauri::command]
+pub async fn mcp_enable_client(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpBroker>,client:String,operation_id:String,generation:u64)->Result<Value,String> {
+    let profile=broker.enable_client(&client,&operation_id,generation).await?;
+    let descriptor=if *broker.inner.enabled.lock().unwrap(){Some(broker.publish_descriptor(&app,&client).await?)}else{None};
+    Ok(json!({"profile":profile,"descriptor":descriptor}))
+}
+#[tauri::command]
+pub async fn mcp_revoke_client(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpBroker>,client:String,clear:bool,operation_id:String)->Result<AiClientProfile,String> {broker.revoke_client(&app,&client,clear,&operation_id).await}
+#[tauri::command]
+pub async fn mcp_set_enabled(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpBroker>,enabled:bool)->Result<Value,String> {
+    broker.set_enabled(&app,enabled).await?;
+    if enabled {for profile in broker.client_profiles()?.into_iter().filter(|p|p.enabled){broker.publish_descriptor(&app,&profile.client).await?;}}
+    Ok(json!({"enabled":enabled,"clients":broker.client_profiles()?}))
+}
+#[tauri::command]
+pub fn mcp_export_stdio(app:tauri::AppHandle,broker:tauri::State<LeafMcpBroker>,client:String)->Result<Value,String> {
+    let parent=std::env::current_exe().map_err(|_|"helper_not_installed")?.parent().ok_or("helper_not_installed")?.to_path_buf();
+    let helper=parent.join(if cfg!(target_os="windows"){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});
+    let descriptor=super::application_data(&app).map_err(|_|"descriptor_directory")?.join("mcp").join(format!("{client}.json"));
+    broker.export_stdio_config(&client,helper,descriptor)
+}
