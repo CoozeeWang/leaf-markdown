@@ -4,6 +4,7 @@ import {uiIcon} from './ui-icons.js';
 import {isolateHistory} from '@codemirror/commands';
 import {commentShortcuts,isCommentShortcut} from './comment-view.js';
 import './comments.css';
+import {commentQuote} from './comments.js';
 
 export function setupCommentPanel({editor,getMode,open,status,locate}) {
  const list=document.querySelector('#commentsList'),commentsTab=document.querySelector('#commentsTab'),notesTab=document.querySelector('#notesTab'),notesList=document.querySelector('#notesList');
@@ -33,7 +34,7 @@ export function setupCommentPanel({editor,getMode,open,status,locate}) {
      const editButton=document.createElement('button');editButton.type='button';editButton.className='comment-edit';editButton.onclick=()=>editing===card.dataset.commentId?finish():edit(card.dataset.commentId);actions.append(editButton);
      const remove=document.createElement('button');remove.type='button';remove.className='comment-delete';remove.innerHTML=uiIcon('trash',14);setAttr(remove,'aria-label',()=>t('comments.delete'));setAttr(remove,'data-tooltip',()=>t('comments.delete'));remove.onclick=()=>{editing=null;editor.deleteComment(card.dataset.commentId);render();};actions.append(remove);card.append(actions);
     }
-    card._comment=note;card.classList.toggle('active',note.id===current);card.querySelector('.comment-quote').textContent=note.quote||t('comments.position');setText(card.querySelector('.comment-actions span'),()=>t('comments.'+note.kind));
+    card._comment=note;card.classList.toggle('active',note.id===current);card.querySelector('.comment-quote').textContent=commentQuote(note.quote)||t('comments.position');setText(card.querySelector('.comment-actions span'),()=>t('comments.'+note.kind));
     const body=card.querySelector('.comment-body'),input=body.querySelector('textarea');
     if(editing===note.id&&!reading){
      if(!input){

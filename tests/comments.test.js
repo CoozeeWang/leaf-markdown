@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {indexComments,planCommentInsertion,planCommentBody,planCommentDeletion,stripComments,maskHiddenComments} from '../src/comments.js';
+import {indexComments,planCommentInsertion,planCommentBody,planCommentDeletion,stripComments,maskHiddenComments,commentQuote} from '../src/comments.js';
 import {parser} from '@lezer/markdown';
 import {leafMarkdownExtensions} from '../src/markdown-extensions.js';
 import {EditorState} from '@codemirror/state';
@@ -43,4 +43,10 @@ test('deleting one adjacent point comment cannot reuse its identity for the next
  let state=EditorState.create({doc:'{>>first<<}{>>second<<}',extensions:[commentIndex]});const before=state.field(commentIndex).notes;
  state=state.update({changes:{from:0,to:before[0].to,insert:''}}).state;
  assert.equal(state.field(commentIndex).notes[0].id,before[1].id);assert.notEqual(state.field(commentIndex).notes[0].id,before[0].id);
+});
+test('complete links can be annotated while URL fragments reject; excerpts are readable',()=>{
+ const source='前 [链接](https://example.com) 后',from=source.indexOf('['),to=source.indexOf(')')+1;
+ assert.ok(planCommentInsertion(source,from,to).change);assert.equal(planCommentInsertion(source,source.indexOf('https'),to-1).error,'selection');
+ assert.equal(commentQuote('**粗体**和[链接](https://example.com)'),'粗体和链接');
+ assert.equal(commentQuote('![图示](https://example.com/image.png)'),'图示');
 });

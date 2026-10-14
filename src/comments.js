@@ -9,7 +9,7 @@ export function indexComments(source) {
   const yaml = /^(?:\uFEFF)?---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)(?=\r?\n|$)/.exec(source);
   if (yaml) { const first=yaml[0].split(/\r?\n/).slice(1,-1).find(line=>line.trim()&&!/^\s*#/.test(line))?.trim()??''; if(!first||/^(?:[^\s:#][^\n]*?:(?:\s|$)|\{)/.test(first))protectedRanges.push({from:0,to:yaml[0].length}); }
   tree.iterate({enter(node) {
-    if (['FencedCode','CodeBlock','InlineCode','HTMLBlock','HTMLComment','URL','LinkReference'].includes(node.name)) {protectedRanges.push({from:node.from,to:node.to});return false;}
+    if (['FencedCode','CodeBlock','InlineCode','HTMLBlock','HTMLComment','URL','LinkReference'].includes(node.name)) {protectedRanges.push({from:node.from,to:node.to,name:node.name});return false;}
     if (['CriticRange','CriticComment','CriticRevision','ObsidianComment'].includes(node.name)) {
       const token = commentToken(source, node.from);
       if (token && token.to === node.to && !protectedRanges.some(r=>r.from<=node.from&&r.to>node.from)) tokens.push(token);
@@ -40,7 +40,10 @@ export function indexComments(source) {
 
 export function planCommentInsertion(source, from, to) {
   const index=indexComments(source), selected=source.slice(from,to);
-  if(index.protectedRanges.some(r=>from<r.to&&to>r.from||from===to&&from>=r.from&&from<r.to))return {error:'selection'};
+  if(index.protectedRanges.some(r=>{
+    if(r.name==='URL'&&from!==to&&index.formats.some(f=>f.from<=r.from&&f.to>=r.to&&from<=f.from&&to>=f.to))return false;
+    return from<r.to&&to>r.from||from===to&&from>=r.from&&from<r.to;
+  }))return {error:'selection'};
   if(index.notes.some(n=>from===to?from>=(n.range?.from??n.from)&&from<n.to:from<n.to&&to>(n.range?.from??n.from)))return {error:'overlap'};
   if(from!==to){
     if(!selected.trim()||selected.includes('==}')||!index.paragraphs.some(p=>from>=p.from&&to<=p.to)||index.ranges.some(r=>from<r.to&&to>r.from)
@@ -71,4 +74,21 @@ export function maskHiddenComments(source) {
   let result=source;
   for(const note of [...indexComments(source).hidden].reverse())result=result.slice(0,note.from)+source.slice(note.from,note.to).replace(/[^\r\n]/g,' ')+result.slice(note.to);
   return result;
+}
+
+// Excerpts are readable text, not another live Markdown/image renderer. Keep
+// review suggestions literal, and never load a quoted image just for its alt.
+export function commentQuote(quote) {
+  const skip=new Set(['HeaderMark','EmphasisMark','StrikethroughMark','LinkMark','CodeMark','CriticMark','URL','CriticComment','ObsidianComment']);
+  function visit(node){
+    if(skip.has(node.name))return '';
+    const raw=quote.slice(node.from,node.to);
+    if(node.name==='Image')return raw.slice(2,raw.indexOf(']'));
+    if(node.name==='Escape')return raw.slice(1);
+    if(!node.firstChild)return raw;
+    let out='',at=node.from;
+    for(let child=node.firstChild;child;child=child.nextSibling){out+=quote.slice(at,child.from)+visit(child);at=child.to;}
+    return out+quote.slice(at,node.to);
+  }
+  return visit(markdown.parse(quote).topNode).replace(/\s+/g,' ').trim();
 }
