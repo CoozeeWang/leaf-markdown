@@ -34,7 +34,8 @@ export function setupCommentPanel({editor,getMode,open,status,locate}) {
      const actions=document.createElement('div');actions.className='comment-actions';actions.append(document.createElement('span'));
      const remove=document.createElement('button');remove.type='button';remove.className='comment-delete';remove.innerHTML=uiIcon('trash',14);setAttr(remove,'aria-label',()=>t('comments.delete'));setAttr(remove,'data-tooltip',()=>t('comments.delete'));remove.onclick=()=>{editing=null;editor.deleteComment(card.dataset.commentId);render();};actions.append(remove);card.append(actions);
     }
-    card._comment=note;card.classList.toggle('active',note.id===current);card.querySelector('.comment-quote').textContent=commentQuote(note.quote)||t('comments.position');setText(card.querySelector('.comment-actions span'),()=>t('comments.'+note.kind));
+    card._comment=note;card.classList.toggle('active',note.id===current);card.querySelector('.comment-quote').textContent=commentQuote(note.quote)||t('comments.position');
+    const kindLabel=card.querySelector('.comment-actions span');kindLabel.hidden=note.kind!=='hidden';setText(kindLabel,()=>note.kind==='hidden'?t('comments.hidden'):'');
     const body=card.querySelector('.comment-body'),input=body.querySelector('textarea');
     body.tabIndex=reading||editing===note.id?-1:0;setAttr(body,'data-tooltip',()=>reading?'':t('comments.edit_hint'));setAttr(body,'aria-description',()=>reading?'':t('comments.edit_hint'));
     if(editing===note.id&&!reading){

@@ -721,8 +721,6 @@
   "comments.collapse": "Collapse Comments and Footnotes",
   "comments.resize": "Resize Comments and Footnotes Sidebar",
   "comments.empty": "No comments in this document",
-  "comments.range": "Range comment",
-  "comments.point": "Point comment",
   "comments.hidden": "Hidden comment",
   "comments.delete": "Delete Comment",
   "comments.body": "Comment text",

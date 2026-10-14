@@ -707,8 +707,6 @@
   "CM0006": "comments.collapse",
   "CM0007": "comments.resize",
   "CM0008": "comments.empty",
-  "CM0009": "comments.range",
-  "CM0010": "comments.point",
   "CM0011": "comments.hidden",
   "CM0014": "comments.delete",
   "CM0015": "comments.body",
