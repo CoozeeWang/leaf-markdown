@@ -90,6 +90,7 @@ try {
     assert.equal(await page.locator('#aiRuntimeKey').inputValue(), '');
     assert.equal(await page.evaluate(()=>document.body.innerHTML.includes('synthetic-private-key-not-for-output')), false);
     assert.equal(await page.evaluate(()=>aiMock.keySeen), true);
+    await page.locator('.appearance-scroll').evaluate(node=>node.scrollTop=0);
     await page.screenshot({path:artifactPath('ai-settings-configured-720.png')});
     await page.locator('#aiStartTunnel').click();
     await page.waitForFunction(()=>document.querySelector('#aiRuntimeStatus').dataset.state==='local-ready');
@@ -189,15 +190,28 @@ try {
         await page.setViewportSize({width,height:720});await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);
         const bounds=await page.evaluate(()=>{const box=id=>document.querySelector(id).getBoundingClientRect().toJSON();return {task:box('#aiTaskNotice'),stop:box('#aiTaskNotice button'),toolbar:box('.format-toolbar'),document:box('.document-area'),scroll:document.documentElement.scrollWidth};});
         assert.ok(bounds.task.top>=bounds.toolbar.bottom-1&&bounds.task.bottom<=bounds.document.top+1);
-        assert.ok(bounds.stop.right<=width&&bounds.stop.bottom<=720,'stop remains in viewport');
+        assert.ok(bounds.stop.right<=width&&bounds.stop.bottom<=720,`stop remains in viewport: ${JSON.stringify({width,language,bounds})}`);
         assert.ok(bounds.scroll<=width,'notices do not widen the window');
         if(width===390) await page.screenshot({path:artifactPath(`ai-notice-${language}-${theme}.png`)});
       }
     }
     await notice.locator('button').focus();assert.equal(await notice.locator('button').evaluate(n=>n===document.activeElement),true);
+    await page.evaluate(()=>aiMock.fail='mcp_stop_edit');
+    await notice.locator('button').click();
+    await page.waitForFunction(()=>!document.querySelector('#aiTaskNotice button').disabled);
+    assert.equal(await page.locator('#aiTaskNotice').getAttribute('aria-busy'),'false');
+    assert.ok(await page.locator('#statusNotice').isVisible(),'stop failure keeps the independent save error');
+    assert.equal(await page.evaluate(()=>aiMock.calls.findLast(c=>c.command==='mcp_stop_edit').args.taskId),'task-ui');
+    await page.evaluate(()=>aiMock.fail=null);
     await page.locator('#dismissStatus').click();assert.ok(await notice.isVisible());
     await page.evaluate(async()=>{await emitNative('leaf-mcp-editor',{call_id:'notice-finish',operation:'finish',args:{task_id:'retired-task',session_id:'session-ui',document_id:'doc-ui',authorization_epoch:1,mutation_generation:0}});});
     assert.ok(await notice.isVisible(),'retired task event cannot clear the current notice');
+    await page.evaluate(()=>document.dispatchEvent(new CustomEvent('leaf-image-reveal-failed',{detail:'Synthetic save failure retained after finish'})));
+    await page.evaluate(async()=>{const {desktopAiApplied}=await import('/src/desktop.js');desktopAiApplied({session_id:'session-ui',mutation_id:'synthetic-pending-save',applied_revision:2,changed:true});});
+    await page.evaluate(async()=>{await emitNative('leaf-mcp-editor',{call_id:'notice-end',operation:'finish',args:{task_id:'task-ui',session_id:'session-ui',document_id:'doc-ui',authorization_epoch:4,mutation_generation:1}});});
+    assert.ok(await notice.isHidden());
+    assert.ok(await page.locator('#statusNotice').isVisible(),'finalization clears only the task slot');
+    assert.match(await page.locator('#statusAnnouncement').textContent(), /not saved yet/);
     await page.close();
   });
 } finally { await browser.close(); }

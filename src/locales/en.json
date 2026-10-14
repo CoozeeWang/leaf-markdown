@@ -799,5 +799,12 @@
   "ai.checking": "Checking the latest official version…",
   "ai.download_missing": "No complete package for this device was found in the latest release. View official downloads.",
   "ai.download_failed": "Could not fetch the latest release. Check again or view official downloads.",
-  "ai.download_file": "Download {{file}}"
+  "ai.download_file": "Download {{file}}",
+  "ai.task_copy": "{{client}} is editing. This document is temporarily read-only; you can browse and find.",
+  "ai.end_editing": "End editing",
+  "ai.task_running": "AI editing in progress",
+  "ai.task_stopping": "Ending editing after the current batch",
+  "ai.task_ended": "Editing ended. Applied changes remain; see the bottom bar for save status",
+  "ai.stop_failed": "Could not end editing. Try again; the document remains read-only",
+  "ai.task_pending_save": "Changes are applied to the document but are not saved yet. Check the save notice."
 }

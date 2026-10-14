@@ -799,5 +799,12 @@
   "ai.checking": "正在檢查官方最新版本…",
   "ai.download_missing": "官方最新版本沒有適合本機的完整套件，請查看官方下載頁。",
   "ai.download_failed": "暫時無法取得最新版本，請重新檢查或開啟官方下載頁。",
-  "ai.download_file": "下載 {{file}}"
+  "ai.download_file": "下載 {{file}}",
+  "ai.task_copy": "{{client}} 正在輔助編輯，此文件暫時唯讀，可瀏覽、尋找。",
+  "ai.end_editing": "結束編輯",
+  "ai.task_running": "AI 輔助編輯進行中",
+  "ai.task_stopping": "正在結束編輯，等待目前批次完成",
+  "ai.task_ended": "輔助編輯已結束，保留已套用的修改；儲存狀態見底列",
+  "ai.stop_failed": "無法結束編輯，請重試；文件仍暫時唯讀",
+  "ai.task_pending_save": "修改已套用至文件，但尚未儲存。請查看儲存提示。"
 }

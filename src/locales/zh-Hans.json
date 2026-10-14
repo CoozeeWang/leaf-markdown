@@ -799,5 +799,12 @@
   "ai.checking": "正在检查官方最新版本…",
   "ai.download_missing": "官方最新版本中未找到适合本机的完整包，请查看官方下载页。",
   "ai.download_failed": "暂时无法获取最新版本，请重新检查或打开官方下载页。",
-  "ai.download_file": "下载 {{file}}"
+  "ai.download_file": "下载 {{file}}",
+  "ai.task_copy": "{{client}} 正在辅助编辑，此文档暂时只读，可浏览、查找。",
+  "ai.end_editing": "结束编辑",
+  "ai.task_running": "AI 辅助编辑进行中",
+  "ai.task_stopping": "正在结束编辑，等待当前批次完成",
+  "ai.task_ended": "辅助编辑已结束，保留已应用的修改；保存状态见底栏",
+  "ai.stop_failed": "未能结束编辑，请重试；文档仍暂时只读",
+  "ai.task_pending_save": "修改已应用到文档，但尚未保存。请查看保存提示。"
 }

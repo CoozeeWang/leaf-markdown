@@ -785,5 +785,12 @@
   "AI0063": "ai.checking",
   "AI0064": "ai.download_missing",
   "AI0065": "ai.download_failed",
-  "AI0066": "ai.download_file"
+  "AI0066": "ai.download_file",
+  "AI0067": "ai.task_copy",
+  "AI0068": "ai.end_editing",
+  "AI0069": "ai.task_running",
+  "AI0070": "ai.task_stopping",
+  "AI0071": "ai.task_ended",
+  "AI0072": "ai.stop_failed",
+  "AI0073": "ai.task_pending_save"
 }

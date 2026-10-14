@@ -71,6 +71,7 @@ const iconPaths = {
   link: '<path d="m10 13 4-4m-6 6-2 2a3 3 0 0 1-4-4l5-5a3 3 0 0 1 4 0m2 8a3 3 0 0 0 4 0l5-5a3 3 0 0 0-4-4l-2 2"/>',
   paste: '<path d="M9 4H5v17h14V4h-4"/><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M8 11h8M8 15h6"/>',
   copy: '<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',
+  lock: '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/>',
   callout: '<path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3H3V6a2 2 0 0 1 2-2Z"/><path d="M12 8v4m0 3h.01"/>',
   edit: '<path d="m16 3 5 5-12 12-6 1 1-6Z M14 5l5 5"/>',
   read: '<path d="M3 4h6a3 3 0 0 1 3 3v14a4 4 0 0 0-4-2H3Zm18 0h-6a3 3 0 0 0-3 3v14a4 4 0 0 1 4-2h5Z"/>',
@@ -924,7 +925,7 @@ function updateHeadingControl(level) {
 }
 
 let commentPanel=null;
-let mutationGeneration=0,mcpBinding=null,nativeTestMode=null,nativeTestDelay=null,nativeTestPending=null,nativeTestRecovery=null;
+let mutationGeneration=0,mcpBinding=null,nativeTestMode=null,nativeTestDelay=null,nativeTestPending=null,nativeTestRecovery=null,aiPresentationTask=null;
 const editor = createLeafEditor({
   parent: document.querySelector('#editor'),
   doc: welcome,
@@ -934,12 +935,38 @@ const editor = createLeafEditor({
   showHeadingNumbers: state.showHeadingNumbers,
   onAiTaskChange(task){
     mutationGeneration++;
+    const previousTask=aiPresentationTask;
+    aiPresentationTask=task;
     const client=({'chatgpt':'ChatGPT','claude-desktop':'Claude Desktop','workbuddy':'WorkBuddy'})[task?.client] ?? task?.client ?? 'AI';
-    // Presentation/localized resources are reconciled by the settings UI slice.
-    const taskCopy=()=>document.documentElement.lang.startsWith('en')?`${client} is editing with AI assistance. This document is temporarily read-only; you can browse and find.`:document.documentElement.lang.startsWith('zh-Hant')?`${client} 正在輔助編輯，此文件暫時唯讀，可瀏覽、尋找。`:`${client} 正在辅助编辑，此文档暂时只读，可浏览、查找。`;
-    statusNotices.setTask(task?{text:taskCopy,stopLabel:()=>document.documentElement.lang.startsWith('en')?'End editing':document.documentElement.lang.startsWith('zh-Hant')?'結束編輯':'结束编辑',stop:async()=>{
-      await invoke('mcp_stop_edit',{taskId:task.task_id}).catch(()=>setStatus(taskCopy(),'error'));
+    const notice=document.querySelector('#aiTaskNotice');
+    const taskCopy=()=>t('ai.task_copy',{client});
+    statusNotices.setTask(task?{text:taskCopy,stopLabel:()=>t('ai.end_editing'),stop:async()=>{
+      const button=notice.querySelector('button');
+      if(button.disabled)return;
+      button.disabled=true;notice.setAttribute('aria-busy','true');notice.dataset.state='stopping';
+      setAttr(notice,'aria-label',()=>t('ai.task_stopping'));
+      try {await invoke('mcp_stop_edit',{taskId:task.task_id});}
+      catch {
+        if(aiPresentationTask?.task_id===task.task_id){
+          button.disabled=false;notice.setAttribute('aria-busy','false');notice.dataset.state='running';
+          setAttr(notice,'aria-label',()=>t('ai.stop_failed'));
+          setText(document.querySelector('#statusAnnouncement'),()=>t('ai.stop_failed'));
+        }
+      }
     }}:null);
+    notice.setAttribute('aria-busy','false');notice.dataset.state=task?'running':'ended';
+    setAttr(notice,'aria-label',()=>t(task?'ai.task_running':'ai.task_ended'));
+    if(!task&&previousTask){
+      const receipt=desktopFileState()?.aiEditResult;
+      const pending=receipt?.bufferResult.changed&&receipt?.diskResult.state!=='saved';
+      notice.dataset.state=pending?'applied-pending-save':'ended';
+      setText(document.querySelector('#statusAnnouncement'),()=>t(pending?'ai.task_pending_save':'ai.task_ended'));
+    }
+    if(task){
+      const text=notice.querySelector('span');text.className='ai-task-copy';
+      if(!notice.querySelector('.ai-task-lock')){const lock=document.createElement('span');lock.className='ai-task-lock';lock.setAttribute('aria-hidden','true');lock.innerHTML=icon('lock',16);notice.prepend(lock);}
+      notice.querySelector('button').disabled=false;
+    }
     updateHistoryControls();
   },
   onChange(content, labels) {
@@ -2470,6 +2497,7 @@ if (desktop) {
       try {
         const {operation,args}=payload;
         let result;
+        if(['binding','begin','finish'].includes(operation)&&mcpBinding?.session_id===args.session_id&&args.authorization_epoch<mcpBinding.authorization_epoch)throw new Error('stale_projection');
         if(operation==='snapshot')result=editor.mcpSnapshot();
         else if(operation==='binding'){mcpBinding=args;mutationGeneration++;result=editor.mcpSnapshot();}
         else if(operation==='begin'){if(desktopFileState()?.paused)throw new Error('document_conflict_pending');result=editor.beginAiTask(args);mcpBinding=args;}
@@ -2509,7 +2537,7 @@ if (desktop) {
             aiConnection.executable=args.executable;
             aiNode('aiTunnelProgram').value='tunnel-client';
             aiNode('aiTunnelId').value=`tunnel_${'a'.repeat(32)}`;
-            aiNode('aiRuntimeKey').value='synthetic-ui-runtime-key-sentinel';
+            aiNode('aiRuntimeKey').value='synthetic-tunnel-key-sentinel';
             renderAiConnections(); aiNode('aiSaveSetup').click();
             while(aiConnection.busy) await new Promise(resolve=>setTimeout(resolve,10));
             if (aiNode('aiConnectionError').textContent) throw new Error(`native_ui_configure_failed: ${aiNode('aiConnectionError').dataset.failure}`);

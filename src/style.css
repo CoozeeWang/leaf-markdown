@@ -97,6 +97,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   --body-zoom: 1;
   height: 100%;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 64px 42px auto minmax(0, 1fr) auto;
   position: relative;
   background: var(--bg);
@@ -850,6 +851,7 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
 .sidebar-rail { flex: 0 0 32px; width: 32px; padding: 14px 0; display: flex; flex-direction: column; align-items: center; border-radius: 0; background: var(--surface); color: var(--muted); }
 .sidebar-rail-left { order: -2; border-right: 1px solid var(--line); }
 .sidebar-rail-right { border-left: 1px solid var(--line); }
+.sidebar-rail-right > button { max-width: 100%; }
 .sidebar-rail:hover { background: var(--surface-strong); color: var(--accent-strong); }
 .sidebar-rail[hidden], .welcome-state .sidebar-rail { display: none; }
 .notes-resizer { right: auto; left: 0; }
@@ -1208,6 +1210,12 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .status-notice[hidden] { display: none; }
 .status-notice .save-status { flex: 1; min-width: 0; max-height: 25vh; overflow: auto; overflow-wrap: anywhere; white-space: normal; }
 .status-notice[data-kind="error"] { color: var(--danger); }
+#aiTaskNotice { gap: 10px; }
+#aiTaskNotice .ai-task-lock { display: inline-flex; flex: none; align-items: center; }
+#aiTaskNotice .ai-task-copy { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+#aiTaskNotice > button { flex: none; min-height: 30px; max-width: 35%; padding: 4px 10px; border: 1px solid var(--danger); border-radius: 6px; color: var(--danger); font: inherit; line-height: 1.5; text-align: start; }
+#aiTaskNotice > button:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
+#aiTaskNotice > button:disabled { opacity: .6; cursor: wait; }
 .status-notice .recovery-notice { flex: 1; min-width: 0; padding: 2px 0; text-align: left; font: inherit; color: inherit; }
 .status-notice .status-actions { display: inline-flex; flex: none; flex-wrap: wrap; gap: 6px; }
 .status-notice .status-actions[hidden] { display: none; }
