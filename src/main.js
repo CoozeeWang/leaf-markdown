@@ -46,6 +46,11 @@ async function handleMcpCommentQuery(args) {
   return query(snapshot.content,context,args.id);
 }
 
+async function planAndApplyMcpCommentBatch(args) {
+  if(mcpBinding?.document_id!==args.document_id||mcpBinding?.session_id!==args.session_id||mcpBinding?.authorization_epoch!==args.authorization_epoch)throw new Error('not_authorized');
+  return editor.applyMcpBatch(args);
+}
+
 const welcome = t("main.leaf_a_lightweight_markdown_editor");
 const leafDev = typeof __LEAF_DESKTOP_DEV__ !== 'undefined' && __LEAF_DESKTOP_DEV__ && desktop;
 const leafName = leafDev ? 'Leaf Dev' : 'Leaf';
@@ -2522,7 +2527,7 @@ if (desktop) {
           if(testMode && args.test_fault==='before-dispatch')throw new Error('test_before_dispatch');
           const realClock=Date.now;
           if(testMode && args.test_clock!==undefined) Date.now=()=>Number(args.test_clock);
-          try {result=await editor.applyMcpBatch(args);}finally{Date.now=realClock;}
+          try {result=args.operations?.some(operation=>operation?.kind==='comment')?await planAndApplyMcpCommentBatch(args):await editor.applyMcpBatch(args);}finally{Date.now=realClock;}
           desktopAiApplied(result);
           if(testMode && ['drop-ack','unknown-receipt'].includes(args.test_fault)) {
             if(args.test_fault==='unknown-receipt')hiddenTestMutations.add(args.mutation_id);
