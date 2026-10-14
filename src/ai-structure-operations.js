@@ -3,6 +3,7 @@ import {propertySourceDocument} from './markdown-model.js';
 import {parseMarkdown} from './markdown-parse.js';
 import {indexComments} from './comments.js';
 import {indexFootnotes} from './footnotes.js';
+import {planFootnoteOperations,verifyFootnoteIntegrity} from './ai-footnote-operations.js';
 
 export function planSourceChanges(source,changes,scope,{keepUnchanged=false}={}) {
   if(typeof source!=='string'||!Array.isArray(changes)||changes.length>256||!scope||!Number.isInteger(scope.from)||!Number.isInteger(scope.to)||scope.from<0||scope.to>source.length||scope.from>scope.to)throw new Error('invalid_batch');
@@ -50,7 +51,7 @@ function syntaxFootprint(source) {
   return ranges;
 }
 function touches(change,range) {
-  return change.from===change.to?change.from>=range.from&&change.from<range.to:change.from<range.to&&change.to>range.from;
+  return change.from===change.to?change.from>=range.from&&change.from<=range.to:change.from<range.to&&change.to>range.from;
 }
 export function verifyMarkdownPreservation(source,changes) {
   changes=changes.filter(change=>source.slice(change.from,change.to)!==change.insert);
@@ -117,9 +118,10 @@ export function planPropertyOperations(source,operations,scope={from:0,to:source
 // until the union of ordinary patches and structural operations is validated.
 export function planStructureOperations(source,operations,scope,options={}) {
   if(!Array.isArray(operations)||!operations.length||operations.length>256)throw new Error('invalid_operations');
-  if(operations.some(operation=>!['property','markdown'].includes(operation?.kind)))throw new Error('unknown_operation');
-  const properties=operations.filter(operation=>operation.kind==='property'),markdown=operations.filter(operation=>operation.kind==='markdown');
-  const planned=planSourceChanges(source,[...(properties.length?planPropertyOperations(source,properties,scope,{keepUnchanged:true}):[]),...(markdown.length?planMarkdownRangeOperations(source,markdown,scope,{keepUnchanged:true}):[])].map(change=>({...change,expected:source.slice(change.from,change.to)})),scope,options);
+  if(operations.some(operation=>!['property','markdown','footnote'].includes(operation?.kind)))throw new Error('unknown_operation');
+  const properties=operations.filter(operation=>operation.kind==='property'),markdown=operations.filter(operation=>operation.kind==='markdown'),footnotes=operations.filter(operation=>operation.kind==='footnote');
+  const planned=planSourceChanges(source,[...(properties.length?planPropertyOperations(source,properties,scope,{keepUnchanged:true}):[]),...(markdown.length?planMarkdownRangeOperations(source,markdown,scope,{keepUnchanged:true}):[]),...(footnotes.length?planFootnoteOperations(source,footnotes,scope,{keepUnchanged:true}):[])].map(change=>({...change,expected:source.slice(change.from,change.to)})),scope,options);
   verifyMarkdownPreservation(source,planned);
+  verifyFootnoteIntegrity(source,resultingSource(source,planned));
   return planned;
 }
