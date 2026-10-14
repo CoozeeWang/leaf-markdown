@@ -720,5 +720,6 @@
   "CM0019": "comments.terminator",
   "CM0020": "comments.add_shortcut",
   "CM0021": "comments.pdf_omit",
-  "CM0022": "comments.pdf_revision"
+  "CM0022": "comments.pdf_revision",
+  "CM0023": "comments.position_invalid"
 }

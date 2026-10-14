@@ -5,7 +5,7 @@ const markdown = parser.configure([GFM, commentMarkdownExtension]);
 let recentSource, recentIndex;
 export function indexComments(source) {
   if (source === recentSource) return recentIndex;
-  const tree = markdown.parse(source), tokens = [], protectedRanges = [], paragraphs = [], formats = [];
+  const tree = markdown.parse(source), tokens = [], protectedRanges = [], paragraphs = [], formats = [], unsafePoints=[];
   const yaml = /^(?:\uFEFF)?---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)(?=\r?\n|$)/.exec(source);
   if (yaml) { const first=yaml[0].split(/\r?\n/).slice(1,-1).find(line=>line.trim()&&!/^\s*#/.test(line))?.trim()??''; if(!first||/^(?:[^\s:#][^\n]*?:(?:\s|$)|\{)/.test(first))protectedRanges.push({from:0,to:yaml[0].length}); }
   tree.iterate({enter(node) {
@@ -17,6 +17,10 @@ export function indexComments(source) {
     }
     if (node.name === 'Paragraph' && node.node.parent?.name === 'Document') paragraphs.push({from:node.from,to:node.to});
     if (['StrongEmphasis','Emphasis','Strikethrough','Link','Image'].includes(node.name)) formats.push({from:node.from,to:node.to});
+    if(['HeaderMark','ListMark','QuoteMark','EmphasisMark','StrikethroughMark','LinkMark','TableDelimiter'].includes(node.name)){
+      const extra=['HeaderMark','ListMark','QuoteMark'].includes(node.name)?/^[ \t]+/.exec(source.slice(node.to))?.[0].length??0:0;
+      unsafePoints.push({from:node.from,to:node.to+extra});
+    }
   }});
   // Obsidian block comments can contain blank lines and Markdown. Scan their
   // closing delimiters before interpreting content, while protecting code/YAML.
@@ -35,15 +39,17 @@ export function indexComments(source) {
     notes.push({...token,kind:range?'range':token.name==='ObsidianComment'?'hidden':'point',range,
       text:token.body,quote:range?range.body:source.slice(Math.max(source.lastIndexOf('\n',token.from-1)+1,token.from-60),token.from).trim()});
   }
-  recentSource=source;recentIndex={notes,ranges,revisions,protectedRanges,paragraphs,formats,hidden};return recentIndex;
+  recentSource=source;recentIndex={notes,ranges,revisions,protectedRanges,paragraphs,formats,hidden,unsafePoints};return recentIndex;
 }
 
 export function planCommentInsertion(source, from, to) {
   const index=indexComments(source), selected=source.slice(from,to);
+  if(from===to&&(index.unsafePoints.some(r=>from>=r.from&&from<r.to)||index.formats.some(r=>['[','!'].includes(source[r.from])&&from>r.from&&from<r.to)||index.revisions.some(r=>from>=r.from&&from<r.to)))return {error:'position'};
+  if(from===to&&index.ranges.some(r=>from>r.from&&from<r.to&&!index.notes.some(n=>n.range?.from===r.from)))return {error:'position'};
   if(index.protectedRanges.some(r=>{
     if(r.name==='URL'&&from!==to&&index.formats.some(f=>f.from<=r.from&&f.to>=r.to&&from<=f.from&&to>=f.to))return false;
     return from<r.to&&to>r.from||from===to&&from>=r.from&&from<r.to;
-  }))return {error:'selection'};
+  }))return {error:from===to?'position':'selection'};
   if(index.notes.some(n=>from===to?from>=(n.range?.from??n.from)&&from<n.to:from<n.to&&to>(n.range?.from??n.from)))return {error:'overlap'};
   if(from!==to){
     if(!selected.trim()||selected.includes('==}')||!index.paragraphs.some(p=>from>=p.from&&to<=p.to)||index.ranges.some(r=>from<r.to&&to>r.from)

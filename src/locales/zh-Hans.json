@@ -734,5 +734,6 @@
   "comments.terminator": "批注内容不能包含结束标记。请分开输入这些符号。",
   "comments.add_shortcut": "添加批注 ({{shortcut}})",
   "comments.pdf_omit": "PDF 不包含批注、隐藏注释及批注标识。",
-  "comments.pdf_revision": "本文包含未处理的修订标记，将按原样导出。"
+  "comments.pdf_revision": "本文包含未处理的修订标记，将按原样导出。",
+  "comments.position_invalid": "请把光标放在正文文字之间，再添加批注。"
 }

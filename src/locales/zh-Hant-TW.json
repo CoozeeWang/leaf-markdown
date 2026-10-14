@@ -734,5 +734,6 @@
   "comments.terminator": "批註內容不能包含結束標記。請分開輸入這些符號。",
   "comments.add_shortcut": "新增批註 ({{shortcut}})",
   "comments.pdf_omit": "PDF 不包含批註、隱藏註解及批註標記。",
-  "comments.pdf_revision": "本文包含未處理的修訂標記，將按原樣匯出。"
+  "comments.pdf_revision": "本文包含未處理的修訂標記，將按原樣匯出。",
+  "comments.position_invalid": "請將游標放在正文文字之間，再新增批註。"
 }

@@ -50,7 +50,7 @@ export function setupCommentPanel({editor,getMode,open,status,locate}) {
    });
   }finally{rendering=false;}
  }
- function add(){if(getMode()==='reading'||document.querySelector('.shell.welcome-state'))return;const result=editor.addComment();if(result.error){status(translatedMessage(result.error==='overlap'?'comments.overlap':'comments.selection'),'error');return;}if(result.note)reveal(result.note.id,{edit:true});}
+ function add(){if(getMode()==='reading'||document.querySelector('.shell.welcome-state'))return;const result=editor.addComment();if(result.error){status(translatedMessage(result.error==='overlap'?'comments.overlap':result.error==='position'?'comments.position_invalid':'comments.selection'),'error');return;}if(result.note)reveal(result.note.id,{edit:true});}
  const button=document.querySelector('#commentInsert');setAttr(button,'data-tooltip',()=>t('comments.add_shortcut',{shortcut:commentShortcuts()}));button.onclick=add;button.addEventListener('mousedown',e=>e.preventDefault());
  window.addEventListener('keydown',e=>{if(!isCommentShortcut(e)||document.querySelector('.shell.welcome-state')||document.activeElement?.closest('.comment-card textarea, #paletteInput, .search-panel, .properties-panel')||document.querySelector('#palette:not([hidden]), #appearancePopover:not([hidden])')||editor.view.compositionStarted)return;e.preventDefault();add();},true);
  document.querySelector('#readingPane').addEventListener('click',e=>{const id=e.target.closest('[data-comment-id]')?.dataset.commentId;if(id){e.preventDefault();reveal(id);}});

@@ -49,4 +49,7 @@ test('complete links can be annotated while URL fragments reject; excerpts are r
  assert.ok(planCommentInsertion(source,from,to).change);assert.equal(planCommentInsertion(source,source.indexOf('https'),to-1).error,'selection');
  assert.equal(commentQuote('**粗体**和[链接](https://example.com)'),'粗体和链接');
  assert.equal(commentQuote('![图示](https://example.com/image.png)'),'图示');
+ assert.equal(planCommentInsertion('# 标题',0,0).error,'position');assert.equal(planCommentInsertion('# 标题',1,1).error,'position');assert.ok(planCommentInsertion('# 标题',2,2).change);
+ assert.equal(planCommentInsertion(source,from+2,from+2).error,'position');
+ assert.equal(planCommentInsertion('{==已有高亮==}',5,5).error,'position');assert.ok(planCommentInsertion('{==已有高亮==}',10,10).change);
 });
