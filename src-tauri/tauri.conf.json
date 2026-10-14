@@ -4,9 +4,9 @@
   "version": "0.4.0-beta.3",
   "identifier": "studio.leaf.editor",
   "build": {
-    "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --port 41731 --strictPort",
+    "beforeDevCommand": "node scripts/build-mcp-adapter.mjs --stage-only --debug && npm run dev -- --host 127.0.0.1 --port 41731 --strictPort",
     "devUrl": "http://127.0.0.1:41731",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "node scripts/build-mcp-adapter.mjs --stage-only && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -15,6 +15,7 @@
   },
   "bundle": {
     "active": true,
+    "externalBin": ["binaries/leaf-mcp-adapter"],
     "icon": ["icons/icon.png", "icons/icon.icns"],
     "targets": ["app"],
     "fileAssociations": [{ "ext": ["md", "markdown", "mdown"], "name": "Markdown document", "role": "Editor", "mimeType": "text/markdown" }],

@@ -21,6 +21,7 @@ coverage/
 *.key
 src-tauri/target/
 src-tauri/gen/
+src-tauri/binaries/leaf-mcp-adapter-*
 src-tauri/icons/*
 !src-tauri/icons/icon.png
 !src-tauri/icons/icon.icns
