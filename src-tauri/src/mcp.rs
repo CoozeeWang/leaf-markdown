@@ -788,6 +788,8 @@ pub async fn mcp_set_enabled(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcp
 #[tauri::command]
 pub fn mcp_tunnel_status(broker:tauri::State<LeafMcpBroker>)->Result<Value,String>{broker.tunnel_status()}
 #[tauri::command]
+pub fn mcp_connection_platform()->Value{json!({"os":std::env::consts::OS,"arch":std::env::consts::ARCH})}
+#[tauri::command]
 pub async fn mcp_configure_tunnel(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpBroker>,tunnel_id:String,executable:String,runtime_key:Option<String>,operation_id:String,generation:u64)->Result<Value,String>{broker.configure_tunnel(&app,tunnel_id,PathBuf::from(executable),runtime_key.unwrap_or_default(),operation_id,generation).await}
 #[tauri::command]
 pub async fn mcp_start_tunnel(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpBroker>)->Result<Value,String>{broker.start_tunnel(&app).await}

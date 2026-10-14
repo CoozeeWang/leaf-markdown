@@ -1178,6 +1178,10 @@ fn main() {
             move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
                 if invoke.message.command().starts_with("mcp_") && !invoke.message.command().starts_with("mcp_test_") {
                     let mcp: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp::mcp_register, mcp::mcp_authorize, mcp::mcp_renderer_reply, mcp::mcp_profiles, mcp::mcp_configure_client, mcp::mcp_enable_client, mcp::mcp_revoke_client, mcp::mcp_set_enabled, mcp::mcp_export_stdio, mcp::mcp_stop_edit, mcp::mcp_save_result, mcp::mcp_document_boundary,mcp::mcp_tunnel_status,mcp::mcp_configure_tunnel,mcp::mcp_start_tunnel,mcp::mcp_stop_tunnel]);
+                    if invoke.message.command()=="mcp_connection_platform" {
+                        let platform: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp::mcp_connection_platform]);
+                        return platform(invoke);
+                    }
                     return mcp(invoke);
                 }
                 #[cfg(feature = "native-smoke")]

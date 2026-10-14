@@ -15,7 +15,7 @@ test('language matching honors explicit script before region and falls back to E
   assert.equal(normalizePreference('zh-Hant-TW'), 'zh-Hant-TW');
 });
 test('every approved copy ID has all languages and matching interpolation variables', () => {
-  assert.equal(Object.keys(copyKeys).length, 721);
+  assert.equal(Object.keys(copyKeys).length, 787);
   const extract = value => [...value.matchAll(/\{\{([^}]+)\}\}/g)].map(match => match[1]).sort();
   for (const [id, key] of Object.entries(copyKeys)) {
     const translations = Object.values(resources).map(locale => locale[key]);

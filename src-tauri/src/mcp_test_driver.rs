@@ -77,6 +77,7 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     ensure(original.client.is_none(),"default authorization must be closed")?;
     if mode=="chatgpt-tunnel-tracer" {return tunnel_tracer(app,label,broker,mode).await;}
     if mode=="chatgpt-tunnel-dev-bundle" {return tunnel_lifecycle(app,label,broker).await;}
+    if mode=="chatgpt-tunnel-ui" {return connections_ui(app,label,broker).await;}
     let token=super::mcp::digest(&json!(std::env::var("LEAF_MCP_TEST_DIR").unwrap()));
     broker.inner.credentials.lock().unwrap().insert("synthetic-client".into(),token.clone());
     *broker.inner.enabled.lock().unwrap()=true;
@@ -185,6 +186,29 @@ async fn tunnel_tracer(app:&tauri::AppHandle,label:&str,broker:&super::mcp::Leaf
     let stopped=broker.inner.tunnel.lock().unwrap().stop();
     let _=tauri::async_runtime::spawn_blocking(move||OsKeyring.delete(&reference)).await;
     outcome?;stopped?;Ok(())
+}
+
+async fn connections_ui(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker)->Result<(),String>{
+    let root=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
+    let exe=std::env::current_exe().map_err(|_|"UI executable")?;
+    let fixture=root.join("connector-fixture/tunnel-client");
+    std::fs::create_dir_all(fixture.parent().unwrap()).map_err(|_|"UI fixture directory")?;
+    std::fs::copy(&exe,&fixture).map_err(|_|"UI fixture copy")?;
+    #[cfg(unix)]{use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(&fixture,std::fs::Permissions::from_mode(0o700)).map_err(|_|"UI fixture permissions")?;}
+    let outcome:Result<(),String>=async {
+        let state=broker.bridge(app,label,"test",json!({"action":"ai-settings-configure","executable":fixture})).await?;
+        ensure(state["key_empty"]==true&&state["master"]==true,"actual settings submit clears input and enables master after IPC")?;
+        ensure(broker.client_profiles()?.iter().all(|p|p.configured&&p.has_runtime_key==(p.client=="chatgpt")),"actual UI configures three independent native profiles")?;
+        ensure(state["state"]=="stopped"&&state["configured_badges"]==3,"saved native Tunnel config does not claim connected")?;
+        let cleared=broker.bridge(app,label,"test",json!({"action":"ai-settings-clear"})).await?;
+        let profiles=broker.client_profiles()?;
+        ensure(!profiles[0].configured&&profiles[1].configured&&profiles[2].configured,"actual UI clear keeps other native clients")?;
+        ensure(cleared["focus"]=="aiClient"&&cleared["key_empty"]==true,"actual native confirmation restores usable focus and no secret")?;
+        Ok(())
+    }.await;
+    for client in ["chatgpt","claude-desktop","workbuddy"] {let _=broker.revoke_client(app,client,true,&format!("ui-cleanup-{client}")).await;}
+    let _=broker.set_enabled(app,false).await;
+    outcome
 }
 
 async fn tunnel_lifecycle(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker)->Result<(),String>{

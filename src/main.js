@@ -17,6 +17,7 @@ import './reading.css';
 import { desktop, desktopRevealDocument, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopAiApplied, desktopFileState, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
 import { invoke } from '@tauri-apps/api/core';
 import { listen as listenNative } from '@tauri-apps/api/event';
+import { open as pickNativeFile } from '@tauri-apps/plugin-dialog';
 import { shortcutText, renderShortcutText, renderTooltipText } from './platform-shortcuts.js';
 import { labels as calloutLabels } from './callout.js';
 import { indexFootnotes, notePanelRows } from './footnotes.js';
@@ -220,6 +221,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <div class="settings-tabs" role="tablist" aria-label="${t("main.settings_categories")}" data-i18n-aria-label="main.settings_categories">
         <button id="settingsTab-appearance" role="tab" data-settings-tab="appearance" aria-controls="settingsPanel-appearance">${h("main.appearance_typography")}</button>
         <button id="settingsTab-recovery" role="tab" data-settings-tab="recovery" aria-controls="settingsPanel-recovery">${h("main.saving_recovery")}</button>
+        <button id="settingsTab-ai" role="tab" data-settings-tab="ai" aria-controls="settingsPanel-ai">${h('ai.settings')}</button>
       </div>
       <div class="appearance-scroll" tabindex="-1">
       <section id="settingsPanel-appearance" role="tabpanel" aria-labelledby="settingsTab-appearance" data-settings-panel="appearance">
@@ -244,6 +246,26 @@ document.querySelector('#app').innerHTML = shortcutText(`
       ${desktop ? `<fieldset class="appearance-group" aria-label="${t("main.recovery_records")}" data-i18n-aria-label="main.recovery_records"><label class="setting-row"><span>${h("main.version_draft_retention")}</span><span class="ui-select"><select id="recoveryRetentionSelect" aria-label="${t("main.version_draft_retention")}" data-i18n-aria-label="main.version_draft_retention" disabled><option value="7" data-i18n="main.7_days">${t("main.7_days")}</option><option value="30" selected data-i18n="main.30_days">${t("main.30_days")}</option><option value="90" data-i18n="main.90_days">${t("main.90_days")}</option></select>${icon('chevron',16)}</span></label></fieldset>` : ''}
       <div class="settings-recovery-action"><button id="settingsRecovery" class="settings-action">${h(desktop ? "main.view_recoverable_drafts" : "main.restore_version_before_last_save")}</button></div>
       ${desktop ? '' : `<p class="setting-hint">${h("main.restoring_replaces_the_current_editor_content_and")}</p>`}
+      </section>
+      <section id="settingsPanel-ai" role="tabpanel" aria-labelledby="settingsTab-ai" data-settings-panel="ai" hidden>
+        <h3 class="mcp-heading">${h('ai.heading')}</h3>
+        <label class="setting-check ai-master"><input id="mcpEnabled" type="checkbox" disabled>${h('ai.master')}</label>
+        <p class="setting-hint">${h('ai.access_boundary')}</p>
+        <label class="setting-row ai-client-row"><span>${h('ai.client')}</span><span class="ui-select"><select id="aiClient"><option value="chatgpt">ChatGPT</option><option value="claude-desktop">Claude Desktop</option><option value="workbuddy">WorkBuddy</option></select>${icon('chevron',16)}</span></label>
+        <div class="ai-actions"><span id="aiConfigured" class="ai-badge" role="status"></span><button id="aiClear" class="ai-button ai-danger" disabled></button></div>
+        <p id="aiConnectionError" class="setting-hint ai-error" role="alert"></p>
+        <div id="aiLocalSetup" hidden><p id="aiLocalInstructions" class="setting-hint"></p><div class="ai-actions"><button id="aiLocalConfigure" class="ai-button">${h('ai.prepare')}</button><button id="aiCopyConfig" class="ai-button" disabled>${h('ai.copy_config')}</button></div><pre id="aiExported" hidden></pre></div>
+        <div id="aiChatGPTSetup" class="ai-guided-card">
+          <h4>${h('ai.guided_title')}</h4><p id="aiSavedStatus" class="setting-hint" role="status"></p>
+          <ol class="ai-guided-steps">
+            <li><label for="aiTunnelId">${h('ai.tunnel_id')}</label><p class="setting-hint">${h('ai.tunnel_help')} <a href="https://platform.openai.com/settings/organization/tunnels" data-ai-link>${h('ai.tunnel_link')}</a></p><input id="aiTunnelId" autocomplete="off" spellcheck="false" data-i18n-placeholder="ai.tunnel_placeholder" placeholder="${t('ai.tunnel_placeholder')}" disabled></li>
+            <li><label for="aiTunnelProgram">${h('ai.program')}</label><div class="ai-input-row"><input id="aiTunnelProgram" readonly data-i18n-placeholder="ai.program_placeholder" placeholder="${t('ai.program_placeholder')}"><button id="aiPickProgram" class="ai-button" disabled>${h('ai.choose_program')}</button></div><div class="ai-device-row"><span id="aiDevice" class="setting-hint"></span><button id="aiRefreshDownload" class="ai-text-button">${h('ai.recheck')}</button></div><p id="aiDownloadStatus" class="setting-hint" role="status"></p><a id="aiDownload" href="https://github.com/openai/tunnel-client/releases/latest" data-ai-link>${h('ai.downloads')}</a><p class="setting-hint">${h('ai.program_help')}</p><details id="aiMacHelp" open><summary>${h('ai.mac_title')}</summary><p class="setting-hint">${h('ai.mac_help')}</p></details></li>
+            <li><label for="aiRuntimeKey">${h('ai.runtime_key')}</label><input id="aiRuntimeKey" type="password" autocomplete="off" spellcheck="false" disabled><p class="setting-hint">${h('ai.key_help')} <a href="https://platform.openai.com/settings/organization/api-keys" data-ai-link>${h('ai.key_link')}</a></p><p id="aiKeepKey" class="setting-hint" hidden>${h('ai.keep_key')}</p><div class="ai-actions"><button id="aiSaveSetup" class="ai-button" disabled>${h('ai.save_setup')}</button><button id="aiEditSetup" class="ai-button" hidden>${h('ai.edit_setup')}</button><button id="aiCancelSetup" class="ai-button" hidden>${h('ai.cancel')}</button></div></li>
+            <li><span class="ai-step-title">${h('ai.add_title')}</span><p class="setting-hint">${h('ai.add_help')}</p><div class="ai-actions"><button id="aiStartTunnel" class="ai-button" disabled>${h('ai.start')}</button><button id="aiStopTunnel" class="ai-button" disabled>${h('ai.stop_connection')}</button></div><p id="aiRuntimeStatus" class="setting-hint" role="status"></p><div class="ai-actions"><button id="aiAddChatGPT" class="ai-button" disabled>${h('ai.add_title')}</button><button id="aiCopyTunnel" class="ai-button" disabled>${h('ai.copy_tunnel')}</button></div><p class="setting-hint">${h('ai.host_boundary')}</p></li>
+          </ol>
+        </div>
+        <details id="aiSetupHelp" class="ai-setup-help"><summary>${h('ai.help_title')}</summary><p class="setting-hint">${h('ai.help_hint')}</p><p class="setting-hint ai-setup-prompt">${h('ai.help_prompt')}</p><button id="aiCopyPrompt" class="ai-button">${h('ai.copy_prompt')}</button></details>
+        <p id="aiActionStatus" class="setting-hint" role="status"></p>
       </section>
       </div>
       <div class="appearance-scroll-hint" hidden aria-hidden="true">${h("main.scroll_down_for_more")}</div>
@@ -1723,7 +1745,7 @@ let settingsReturnFocus;
 function selectSettingsTab(tab) {
   // The display switches moved out to the toolbar's 显示 control, so the editing
   // tab is gone; a stored 'editing' falls back to the first tab.
-  if (!['appearance', 'recovery'].includes(tab)) tab = 'appearance';
+  if (!['appearance', 'recovery', 'ai'].includes(tab)) tab = 'appearance';
   localStorage.setItem('leaf-settings-tab', tab);
   for (const button of appearancePopover.querySelectorAll('[data-settings-tab]')) {
     const active = button.dataset.settingsTab === tab;
@@ -1732,6 +1754,7 @@ function selectSettingsTab(tab) {
   for (const panel of appearancePopover.querySelectorAll('[data-settings-panel]')) panel.hidden = panel.dataset.settingsPanel !== tab;
   appearanceScroll.scrollTop = 0;
   requestAnimationFrame(updateAppearanceScrollHint);
+  if (tab === 'ai') void refreshAiConnections();
 }
 function openSettings(tab) {
   settingsReturnFocus = welcomeScreen.hidden ? document.querySelector('#appearanceButton') : document.querySelector('#welcomeSettings');
@@ -1744,6 +1767,223 @@ function openSettings(tab) {
 function closeSettings() { closePopovers(); settingsReturnFocus?.focus(); }
 for (const id of ['appearanceButton', 'welcomeSettings']) document.getElementById(id).onclick = () => appearancePopover.hidden ? openSettings() : closeSettings();
 document.querySelector('#settingsClose').onclick = closeSettings;
+const aiClients = ['chatgpt', 'claude-desktop', 'workbuddy'];
+const aiClientNames = {'chatgpt':'ChatGPT','claude-desktop':'Claude Desktop','workbuddy':'WorkBuddy'};
+const aiNode = id => document.getElementById(id);
+const aiConnection = {profiles:null, tunnel:null, selected:'chatgpt', editing:true, executable:'', busy:false, read:0, exported:null, platform:null};
+const aiOperation = () => crypto.randomUUID();
+function acceptAiProfile(profile) {
+  if (!profile || !aiClients.includes(profile.client) || !Number.isSafeInteger(profile.generation)) return;
+  const old = aiConnection.profiles?.clients.find(p => p.client === profile.client);
+  if (old && profile.generation < old.generation) return;
+  if (aiConnection.profiles) aiConnection.profiles.clients = aiConnection.profiles.clients.map(p => p.client === profile.client ? profile : p);
+}
+function acceptAiTunnel(value) {
+  if (!value?.profile || !value.runtime) return;
+  const old = aiConnection.tunnel;
+  const known = aiConnection.profiles?.clients.find(p => p.client === 'chatgpt');
+  if (known && value.profile.generation < known.generation) return;
+  if (old && (value.profile.generation < old.profile.generation || value.runtime.epoch < old.runtime.epoch)) return;
+  aiConnection.tunnel = value;
+  acceptAiProfile(value.profile);
+}
+function renderAiConnections() {
+  const value = aiConnection, profiles = value.profiles;
+  const profile = profiles?.clients.find(p => p.client === value.selected);
+  const chatgpt = value.tunnel?.profile, runtime = value.tunnel?.runtime;
+  aiNode('mcpEnabled').checked = !!profiles?.enabled;
+  aiNode('mcpEnabled').disabled = !desktop || !profiles || value.busy;
+  aiNode('aiClient').disabled = value.busy;
+  for (const option of aiNode('aiClient').options) {
+    const item = profiles?.clients.find(p => p.client === option.value);
+    option.textContent = `${aiClientNames[option.value]} · ${t(item ? item.configured ? 'ai.configured' : 'ai.unconfigured' : 'ai.unknown')}`;
+  }
+  aiNode('aiConfigured').textContent = t(profile ? profile.configured ? 'ai.configured' : 'ai.unconfigured' : 'ai.unknown');
+  aiNode('aiClear').textContent = t('ai.clear', {client:aiClientNames[value.selected]});
+  aiNode('aiClear').disabled = value.busy || !profile?.configured;
+  aiNode('aiChatGPTSetup').hidden = value.selected !== 'chatgpt';
+  aiNode('aiSetupHelp').hidden = value.selected !== 'chatgpt';
+  aiNode('aiLocalSetup').hidden = value.selected === 'chatgpt';
+  aiNode('aiLocalInstructions').textContent = t('ai.local_help', {client:aiClientNames[value.selected]});
+  aiNode('aiLocalConfigure').disabled = !desktop || !profile || value.busy;
+  aiNode('aiCopyConfig').disabled = value.busy || !value.exported;
+  aiNode('aiExported').hidden = !value.exported;
+  aiNode('aiExported').textContent = value.exported ? JSON.stringify(value.exported, null, 2) : '';
+  aiNode('aiSavedStatus').textContent = t(runtime?.saved_config ? 'ai.saved' : 'ai.not_saved');
+  aiNode('aiRuntimeStatus').textContent = t(runtime?.host_verified ? 'ai.host_verified' : runtime?.local_ready ? 'ai.local_ready' : runtime?.process ? 'ai.starting' : 'ai.stopped');
+  aiNode('aiRuntimeStatus').dataset.state = runtime?.host_verified ? 'host-verified' : runtime?.local_ready ? 'local-ready' : runtime?.process ? 'starting' : 'stopped';
+  if (runtime?.last_error) showAiError(runtime.last_error);
+  for (const id of ['aiTunnelId','aiRuntimeKey']) {
+    aiNode(id).disabled = !desktop || !chatgpt || value.busy;
+    aiNode(id).readOnly = !value.editing;
+  }
+  aiNode('aiPickProgram').disabled = !desktop || !chatgpt || !value.editing || value.busy;
+  aiNode('aiPickProgram').hidden = !value.editing;
+  aiNode('aiRuntimeKey').placeholder = t(chatgpt?.has_runtime_key ? 'ai.key_saved' : 'ai.key_placeholder');
+  aiNode('aiKeepKey').hidden = !chatgpt?.has_runtime_key || !value.editing;
+  aiNode('aiSaveSetup').hidden = !value.editing;
+  aiNode('aiSaveSetup').disabled = !desktop || !chatgpt || value.busy || !value.executable || !aiNode('aiTunnelId').value.trim() || (!chatgpt?.has_runtime_key && !aiNode('aiRuntimeKey').value.trim());
+  aiNode('aiEditSetup').hidden = value.editing;
+  aiNode('aiEditSetup').disabled = value.busy;
+  aiNode('aiCancelSetup').hidden = !value.editing || !runtime?.saved_config;
+  aiNode('aiCancelSetup').disabled = value.busy;
+  aiNode('aiStartTunnel').disabled = value.busy || !profiles?.enabled || !runtime?.saved_config || value.editing;
+  aiNode('aiStopTunnel').disabled = value.busy || !runtime?.process;
+  aiNode('aiAddChatGPT').disabled = value.busy || !runtime?.local_ready || value.editing;
+  aiNode('aiCopyTunnel').disabled = value.busy || !chatgpt?.tunnel?.tunnel_id || value.editing;
+  aiNode('aiMacHelp').hidden = value.platform && value.platform.os !== 'macos';
+  requestAnimationFrame(updateAppearanceScrollHint);
+}
+function restoreAiFields() {
+  const config = aiConnection.tunnel?.profile.tunnel;
+  aiNode('aiTunnelId').value = config?.tunnel_id || '';
+  aiConnection.executable = config?.executable || '';
+  aiNode('aiTunnelProgram').value = aiConnection.executable.split(/[\\/]/).at(-1) || '';
+  aiNode('aiRuntimeKey').value = '';
+}
+function showAiError(error) {
+  // Native failures may contain arbitrary OS/user text. Never echo credential
+  // input or opaque diagnostics into DOM; the recoverable action is stable.
+  const codes = new Set(['invalid_tunnel_id','invalid_tunnel_executable','invalid_runtime_key','tunnel_unconfigured','tunnel_executable_missing','tunnel_cli_failed','tunnel_cli_rejected','tunnel_cli_timeout','tunnel_cli_contract_changed','tunnel_profile_changed','tunnel_profile_reconfigure_required','tunnel_profile_unavailable','tunnel_profile_write','tunnel_spawn_failed','tunnel_start_timeout','tunnel_exited','stale_configuration','credential_unavailable','runtime_key_unavailable','runtime_key_required','runtime_gui_only','invalid_runtime_reference','connection_disabled','helper_not_installed']);
+  const code = codes.has(String(error)) ? String(error) : 'connection_failed';
+  aiNode('aiConnectionError').dataset.failure = String(error).startsWith('invalid args') ? 'ipc_invalid_args' : /(?:not found|unknown command|Unknown IPC)/.test(String(error)) ? 'ipc_missing' : code;
+  aiNode('aiConnectionError').textContent = t('ai.error', {code});
+}
+async function refreshAiConnections() {
+  if (!desktop) {aiNode('aiConnectionError').textContent = t('ai.desktop_required'); renderAiConnections(); return;}
+  if (aiConnection.busy) return;
+  const serial = ++aiConnection.read;
+  try {
+    const [profiles, tunnel] = await Promise.all([invoke('mcp_profiles'), invoke('mcp_tunnel_status')]);
+    if (serial !== aiConnection.read || aiConnection.busy) return;
+    if (!profiles?.clients || profiles.clients.length !== 3) throw new Error('profiles_unavailable');
+    const initial = !aiConnection.profiles;
+    if (initial) aiConnection.profiles = profiles;
+    else {aiConnection.profiles.enabled = profiles.enabled; for (const profile of profiles.clients) acceptAiProfile(profile);}
+    acceptAiTunnel(tunnel);
+    if (initial) {aiConnection.editing = !tunnel.runtime.saved_config; restoreAiFields();}
+    renderAiConnections();
+  } catch (error) {if (serial === aiConnection.read) {showAiError(error); renderAiConnections();}}
+}
+async function runAiAction(action) {
+  if (aiConnection.busy || !desktop) return false;
+  aiConnection.busy = true; ++aiConnection.read;
+  aiNode('aiConnectionError').textContent = ''; aiNode('aiActionStatus').textContent = t('ai.working'); renderAiConnections();
+  try {await action(); aiNode('aiActionStatus').textContent = t('ai.done'); return true;}
+  catch (error) {showAiError(error); aiNode('aiActionStatus').textContent = ''; return false;}
+  finally {aiConnection.busy = false; renderAiConnections();}
+}
+aiNode('aiClient').addEventListener('change', () => {
+  aiConnection.selected = aiNode('aiClient').value; aiConnection.exported = null;
+  aiNode('aiRuntimeKey').value = ''; aiNode('aiConnectionError').textContent = ''; aiNode('aiActionStatus').textContent = ''; renderAiConnections();
+});
+aiNode('mcpEnabled').addEventListener('change', () => {
+  const desired = aiNode('mcpEnabled').checked;
+  aiNode('mcpEnabled').checked = !!aiConnection.profiles?.enabled;
+  void runAiAction(async () => {
+    aiConnection.profiles = await invoke('mcp_set_enabled', {enabled:desired});
+    acceptAiTunnel(await invoke('mcp_tunnel_status'));
+  });
+});
+aiNode('aiPickProgram').onclick = () => {void runAiAction(async () => {
+  const path = await pickNativeFile({multiple:false, title:t('ai.choose_program')});
+  if (typeof path === 'string') {aiConnection.executable = path; aiNode('aiTunnelProgram').value = path.split(/[\\/]/).at(-1);}
+});};
+for (const id of ['aiTunnelId','aiRuntimeKey']) aiNode(id).addEventListener('input', renderAiConnections);
+aiNode('aiSaveSetup').onclick = () => {
+  const runtimeKey = aiNode('aiRuntimeKey').value;
+  aiNode('aiRuntimeKey').value = ''; // Input is ephemeral, including failures.
+  void runAiAction(async () => {
+    const value = await invoke('mcp_configure_tunnel', {tunnelId:aiNode('aiTunnelId').value.trim(), executable:aiConnection.executable, runtimeKey, operationId:aiOperation(), generation:aiConnection.tunnel.profile.generation});
+    acceptAiTunnel(value); aiConnection.editing = false; restoreAiFields();
+  });
+};
+aiNode('aiEditSetup').onclick = () => {aiConnection.editing = true; renderAiConnections(); aiNode('aiTunnelId').focus();};
+aiNode('aiCancelSetup').onclick = () => {aiConnection.editing = false; restoreAiFields(); renderAiConnections(); aiNode('aiEditSetup').focus();};
+aiNode('aiStartTunnel').onclick = () => {void runAiAction(async () => {
+  const profile = aiConnection.tunnel.profile;
+  const result = await invoke('mcp_enable_client', {client:'chatgpt', operationId:aiOperation(), generation:profile.generation});
+  acceptAiProfile(result.profile);
+  acceptAiTunnel(await invoke('mcp_start_tunnel'));
+});};
+aiNode('aiStopTunnel').onclick = () => {void runAiAction(async () => acceptAiTunnel(await invoke('mcp_stop_tunnel')));};
+aiNode('aiLocalConfigure').onclick = () => {const client = aiConnection.selected; void runAiAction(async () => {
+  let profile = aiConnection.profiles.clients.find(p => p.client === client);
+  if (!profile.configured) {profile = await invoke('mcp_configure_client', {client, operationId:aiOperation(), generation:profile.generation}); acceptAiProfile(profile);}
+  const value = await invoke('mcp_enable_client', {client, operationId:aiOperation(), generation:profile.generation}); acceptAiProfile(value.profile);
+  aiConnection.exported = await invoke('mcp_export_stdio', {client});
+});};
+async function copyAiText(text) {
+  try {await navigator.clipboard.writeText(text); aiNode('aiActionStatus').textContent = t('ai.copied');}
+  catch {aiNode('aiConnectionError').textContent = t('ai.copy_failed');}
+}
+aiNode('aiCopyConfig').onclick = () => {if (aiConnection.exported) void copyAiText(JSON.stringify({mcpServers:{Leaf:aiConnection.exported}}, null, 2));};
+aiNode('aiCopyTunnel').onclick = () => {void copyAiText(aiConnection.tunnel.profile.tunnel.tunnel_id);};
+aiNode('aiCopyPrompt').onclick = () => {void copyAiText(t('ai.help_prompt'));};
+function validAiSetupLink(url) {
+  return ['https://platform.openai.com/settings/organization/tunnels','https://platform.openai.com/settings/organization/api-keys','https://github.com/openai/tunnel-client/releases/latest','https://chatgpt.com/plugins'].includes(url) || /^https:\/\/github\.com\/openai\/tunnel-client\/releases\/download\/v[\w.+-]+\/tunnel-client-v[\w.+-]+-(darwin|windows|linux)-(arm64|amd64)\.zip$/.test(url);
+}
+async function openAiSetupLink(url) {
+  if (!validAiSetupLink(url)) return;
+  if (!desktop) {window.open(url, '_blank', 'noopener,noreferrer'); return;}
+  try {await invoke('open_link', {target:url});} catch {aiNode('aiConnectionError').textContent = t('ai.open_failed', {url});}
+}
+for (const link of document.querySelectorAll('[data-ai-link]')) link.onclick = event => {event.preventDefault(); void openAiSetupLink(link.href);};
+aiNode('aiAddChatGPT').onclick = () => {void openAiSetupLink('https://chatgpt.com/plugins');};
+let aiDownloadRead = 0;
+async function refreshAiDownload() {
+  const serial = ++aiDownloadRead;
+  aiNode('aiRefreshDownload').disabled = true; aiNode('aiDownload').href = 'https://github.com/openai/tunnel-client/releases/latest';
+  aiNode('aiDownload').textContent = t('ai.downloads'); aiNode('aiDownloadStatus').textContent = t('ai.checking');
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const platform = desktop ? await invoke('mcp_connection_platform') : null;
+    aiConnection.platform = platform;
+    aiNode('aiDevice').textContent = t('ai.device', {device:platform ? `${platform.os} · ${platform.arch}` : t('ai.device_unknown')});
+    const response = await fetch('https://api.github.com/repos/openai/tunnel-client/releases/latest', {credentials:'omit',cache:'no-store',signal:controller.signal,headers:{Accept:'application/vnd.github+json'}});
+    if (!response.ok) throw new Error('release_unavailable');
+    const release = await response.json();
+    if (serial !== aiDownloadRead) return;
+    const os = platform?.os === 'macos' ? 'darwin' : platform?.os;
+    const arch = platform?.arch === 'aarch64' ? 'arm64' : platform?.arch === 'x86_64' ? 'amd64' : platform?.arch;
+    const name = `tunnel-client-${release.tag_name}-${os}-${arch}.zip`;
+    const matches = Array.isArray(release.assets) ? release.assets.filter(a => a.name === name && a.state === 'uploaded' && validAiSetupLink(a.browser_download_url)) : [];
+    if (release.draft !== false || release.prerelease !== false || matches.length !== 1) {aiNode('aiDownloadStatus').textContent = t('ai.download_missing'); return;}
+    aiNode('aiDownload').href = matches[0].browser_download_url; aiNode('aiDownload').textContent = t('ai.download_file', {file:name}); aiNode('aiDownloadStatus').textContent = '';
+  } catch {if (serial === aiDownloadRead) aiNode('aiDownloadStatus').textContent = t('ai.download_failed');}
+  finally {clearTimeout(timeout); if (serial === aiDownloadRead) {aiNode('aiRefreshDownload').disabled = false; renderAiConnections();}}
+}
+aiNode('aiRefreshDownload').onclick = () => {void refreshAiDownload();};
+let aiDownloadStarted = false;
+aiNode('settingsTab-ai').addEventListener('click', () => {if (!aiDownloadStarted) {aiDownloadStarted = true; void refreshAiDownload();}});
+setInterval(() => {if (!appearancePopover.hidden && !aiNode('settingsPanel-ai').hidden) void refreshAiConnections();}, 4000);
+window.addEventListener('focus', () => {if (!appearancePopover.hidden && !aiNode('settingsPanel-ai').hidden) void refreshAiConnections();});
+onLanguageChange(renderAiConnections);
+aiNode('aiClear').onclick = () => {
+  const client = aiConnection.selected, opener = aiNode('aiClear');
+  const dialog = document.createElement('dialog'); dialog.className = 'ai-clear-dialog close-document-dialog';
+  dialog.setAttribute('aria-labelledby', 'aiClearTitle'); dialog.setAttribute('aria-describedby','aiClearDescription');
+  dialog.innerHTML = `<h2 id="aiClearTitle">${h('ai.clear', {client:aiClientNames[client]})}</h2><p id="aiClearDescription">${h('ai.clear_help', {client:aiClientNames[client]})}</p><p>${h('ai.clear_remote')}</p><p id="aiClearError" class="ai-error" role="alert"></p><footer><button class="ai-button" data-ai-cancel>${h('ai.cancel')}</button><button class="ai-button ai-danger" data-ai-confirm>${h('ai.clear', {client:aiClientNames[client]})}</button></footer>`;
+  document.body.append(dialog); dialog.showModal(); dialog.querySelector('[data-ai-cancel]').focus();
+  dialog.addEventListener('pointerdown', event => event.stopPropagation());
+  dialog.addEventListener('mousedown', event => event.stopPropagation());
+  dialog.addEventListener('click', event => event.stopPropagation());
+  let deleting = false;
+  const close = () => {dialog.close(); dialog.remove(); (opener.isConnected && !opener.disabled ? opener : aiNode('aiClient')).focus();};
+  dialog.addEventListener('cancel', event => {event.preventDefault(); if (!deleting) close();});
+  dialog.querySelector('[data-ai-cancel]').onclick = close;
+  dialog.querySelector('[data-ai-confirm]').onclick = async () => {
+    if (deleting) return; deleting = true;
+    for (const button of dialog.querySelectorAll('button')) button.disabled = true;
+    const success = await runAiAction(async () => {
+      acceptAiProfile(await invoke('mcp_revoke_client', {client, clear:true, operationId:aiOperation()}));
+      if (client === 'chatgpt') {acceptAiTunnel(await invoke('mcp_tunnel_status')); aiConnection.editing = true; restoreAiFields();}
+      aiConnection.exported = null;
+    });
+    deleting = false;
+    if (success) close(); else {dialog.querySelector('#aiClearError').textContent = t('ai.clear_failed'); for (const button of dialog.querySelectorAll('button')) button.disabled = false; dialog.querySelector('[data-ai-cancel]').focus();}
+  };
+};
 for (const button of appearancePopover.querySelectorAll('[data-settings-tab]')) {
   button.onclick = () => selectSettingsTab(button.dataset.settingsTab);
   button.onkeydown = event => {
@@ -1811,7 +2051,7 @@ for (const [panel, trigger] of [[appearancePopover, document.querySelector('#app
   panel.addEventListener('keydown', event => {
     if (event.key !== 'Tab') return;
     requestAnimationFrame(() => {
-    if (panel.hidden || panel.contains(document.activeElement)) return;
+    if (panel.hidden || panel.contains(document.activeElement) || (panel === appearancePopover && document.querySelector('.ai-clear-dialog[open]'))) return;
     panel.hidden = true;
     trigger.setAttribute('aria-expanded', 'false');
     });
@@ -2261,6 +2501,32 @@ if (desktop) {
           else if(args.action==='undo') editor.undo();
           else if(args.action==='redo') editor.redo();
           else if(args.action==='human') editor.restoreValue(args.content);
+          else if(args.action==='ai-settings-configure') {
+            openSettings('ai'); await refreshAiConnections();
+            if (!aiConnection.profiles) throw new Error('native_ui_profiles_missing');
+            aiNode('mcpEnabled').click();
+            while(aiConnection.busy) await new Promise(resolve=>setTimeout(resolve,10));
+            aiConnection.executable=args.executable;
+            aiNode('aiTunnelProgram').value='tunnel-client';
+            aiNode('aiTunnelId').value=`tunnel_${'a'.repeat(32)}`;
+            aiNode('aiRuntimeKey').value='synthetic-ui-runtime-key-sentinel';
+            renderAiConnections(); aiNode('aiSaveSetup').click();
+            while(aiConnection.busy) await new Promise(resolve=>setTimeout(resolve,10));
+            if (aiNode('aiConnectionError').textContent) throw new Error(`native_ui_configure_failed: ${aiNode('aiConnectionError').dataset.failure}`);
+            for(const client of ['claude-desktop','workbuddy']) {
+              aiNode('aiClient').value=client; aiNode('aiClient').dispatchEvent(new Event('change'));
+              aiNode('aiLocalConfigure').click();
+              while(aiConnection.busy) await new Promise(resolve=>setTimeout(resolve,10));
+              if(aiNode('aiConnectionError').textContent) throw new Error('native_ui_local_configure_failed');
+            }
+            aiNode('aiClient').value='chatgpt'; aiNode('aiClient').dispatchEvent(new Event('change'));
+            result={key_empty:aiNode('aiRuntimeKey').value==='',master:aiNode('mcpEnabled').checked,state:aiNode('aiRuntimeStatus').dataset.state,configured_badges:[...aiNode('aiClient').options].filter(option=>option.textContent.endsWith(t('ai.configured'))).length};
+          }
+          else if(args.action==='ai-settings-clear') {
+            aiNode('aiClear').click();document.querySelector('[data-ai-confirm]').click();
+            while(aiConnection.busy) await new Promise(resolve=>setTimeout(resolve,10));
+            result={key_empty:aiNode('aiRuntimeKey').value==='',focus:document.activeElement.id};
+          }
           else if(args.action==='selection') editor.view.dispatch({selection:{anchor:args.anchor}});
           else if(args.action==='delay-attachment') {
             let release;const promise=new Promise(resolve=>{release=resolve;});
