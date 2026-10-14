@@ -6,6 +6,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 const mode=process.argv[2] || 'tracer';
+if (mode==='chatgpt-tunnel-contract') {
+  await test('Tunnel tracer owns a native process manager before expansion', async()=>{
+    const source=await readFile(new URL('../src-tauri/src/main.rs',import.meta.url),'utf8');
+    assert(source.includes('mod chatgpt_tunnel;'),'native Tunnel manager must be registered');
+  });
+} else {
 assert(['tracer','task-history-gate','renderer-ack-loss','all-write-entrances','stop-late-second-window','properties-markdown','footnotes-tables','file-identity-conflict'].includes(mode));
 const root=resolve(import.meta.dirname,'..');
 const directory=await mkdtemp(join(tmpdir(),'leaf-mcp-native-'));
@@ -35,4 +41,5 @@ try {
   }
 } finally {
   app?.kill('SIGTERM');server?.kill('SIGTERM');await rm(directory,{recursive:true,force:true});
+}
 }
