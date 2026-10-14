@@ -11,6 +11,12 @@ npm run check
 npm run test:browser
 ```
 
+正文字体回归为 `body-fonts.test.js`、`body-fonts-browser.mjs`：检查东亚／西文独立选择、实际字体家族去重、名称字形及列表键盘操作、旧偏好迁移、本机字体真实加载、缺失回退、粗斜体字形、跨窗口保存同步、三语及窄窗布局，并核对正文与撤销记录不变。Chromium 额外检查实际用于字形的字体；WebKit 独立运行行为检查。相关设置与阅读回归仍需运行。候选字体依本机安装情况而异，测试不下载字体。
+
+并行开发时，字体、阅读和设置专项可通过 `LEAF_TEST_BASE_URL=http://127.0.0.1:41741` 使用预先启动的独立 Vite 服务，直接运行对应测试文件；默认浏览器总入口仍使用 41732。其他专项是否支持自定义地址，应先核对对应脚本。
+
+macOS 原生字体检查使用独立 WKWebView：在 `src-tauri` 运行 `cargo run --locked --example native-table-keys -- ../tests/native-body-fonts.html http://127.0.0.1:41732/tests/native-body-fonts.html`。它检查本机 Palatino、Georgia、宋体、真实斜体、视图边界、偏好与撤销；不启动或更新日用 Leaf，不代替 macOS／Windows 安装版人工验收。
+
 `npm run test:browser:all` 运行全部浏览器回归，包含公开合成的长表格样例。`npm run test:browser -- footnote-regressions-browser.mjs` 运行指定用例。入口自行管理 Vite，截图存放在忽略提交的 `test-results/`。可设置 `LEAF_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，默认使用锁定的 Chromium。不能将浏览器平台模拟算作原生 Windows 验收。
 
 The runner owns its Vite server on port 41732 and fails if that port is occupied. It runs pinned Chromium by default. Screenshots are written to ignored `test-results/`. Browser platform emulation does not replace native Windows testing.

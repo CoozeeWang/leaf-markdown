@@ -216,6 +216,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .shell[data-font="serif"] .cm-scroller { font-family: Georgia, "Songti SC", "Noto Serif CJK SC", serif; }
 .shell[data-font="sans"] .cm-scroller { font-family: var(--ui-font); }
 .shell[data-font="mono"] .cm-scroller { font-family: var(--ui-mono); }
+.shell[data-body-fonts] .cm-scroller { font-family: var(--body-font); }
 .cm-content {
   flex: 0 0 auto !important;
   width: min(calc(100% - 64px), var(--content-width));
@@ -415,6 +416,7 @@ button.leaf-list-marker { cursor:pointer; }
 .leaf-property-add input { min-width: 90px; width: 30%; border: 1px solid var(--line); background: var(--canvas); color: var(--text); padding: 6px 8px; border-radius: 5px; font: inherit; }
 .leaf-table-scroll { overflow-x: auto; }
 .leaf-table { font-size: calc(var(--editor-font-size) * .92); }
+.shell[data-body-fonts] :is(.leaf-table, .leaf-callout-widget) { font-family: var(--body-font); }
 .leaf-table table { border-collapse: collapse; table-layout: fixed; width: 100%; }
 .leaf-table th, .leaf-table td { border: 1px solid var(--line); padding: 7px 9px; vertical-align: top; }
 .leaf-table th { background: var(--accent-soft); }
@@ -1029,6 +1031,22 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
 .close-document-dialog h2 { font-size: var(--ui-dialog-title); }
 .close-document-dialog button { border-radius: var(--ui-radius); min-height: var(--ui-control); }
 .footnote-box textarea, .note-body { font: 400 var(--ui-note-size)/1.7 var(--ui-font); }
+.shell[data-body-fonts] :is(.note-body, .footnote-box textarea) { font-family: var(--body-font); }
+.shell:has(.cm-source-mode) :is(.note-body, .footnote-box textarea) { font-family: var(--ui-mono); }
+.body-font-row .ui-select { width: 100%; min-width: 0; }
+.body-font-row > span:first-child { flex-shrink: 0; }
+.body-font-status { margin: 4px 7px 8px; overflow-wrap: anywhere; }
+.body-font-row .ui-select { position: relative; }
+.body-font-row select[hidden] { display: none; }
+.body-font-trigger { appearance: none; -webkit-appearance: none; box-shadow: none; background-image: none; width: 100%; min-height: 36px; padding: 6px 30px 6px 10px; border: 1px solid var(--line); border-radius: var(--ui-radius); font-size: var(--ui-size); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--surface-strong); }
+.body-font-trigger:focus-visible { outline: none; border-color: var(--accent); }
+.body-font-trigger[aria-expanded="true"] { border-color: var(--accent); }
+.body-font-list { position: fixed; z-index: 1200; box-sizing: border-box; padding: 4px; max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--ui-radius); background: var(--surface-strong); box-shadow: var(--shadow); }
+.body-font-list[hidden] { display: none; }
+.body-font-list [role="option"] { display: flex; gap: 8px; align-items: center; min-height: 34px; padding: 5px 8px; font-size: var(--ui-size); border-radius: var(--ui-radius-menu-item); cursor: pointer; overflow-wrap: anywhere; }
+.body-font-list [role="option"]::after { content: ''; width: 1em; flex: none; margin-left: auto; font-family: var(--ui-font); }
+.body-font-list [aria-selected="true"]::after { content: '✓'; }
+.body-font-list .candidate { background: var(--accent-soft); color: var(--accent-strong); }
 .empty-hint, .note-hint { color: var(--muted); }
 input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, .note-body::placeholder { color: var(--muted); opacity: 1; }
 .note-card.active .note-hint { color: var(--accent-strong); }
