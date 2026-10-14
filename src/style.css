@@ -1038,7 +1038,7 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
 .body-font-status { margin: 4px 7px 8px; overflow-wrap: anywhere; }
 .body-font-row .ui-select { position: relative; }
 .body-font-row select[hidden] { display: none; }
-.body-font-trigger { width: 100%; min-height: 36px; padding: 6px 30px 6px 10px; border: 1px solid var(--line); border-radius: var(--ui-radius); font-size: var(--ui-size); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--surface-strong); }
+.body-font-trigger { appearance: none; -webkit-appearance: none; box-shadow: none; background-image: none; width: 100%; min-height: 36px; padding: 6px 30px 6px 10px; border: 1px solid var(--line); border-radius: var(--ui-radius); font-size: var(--ui-size); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--surface-strong); }
 .body-font-trigger:focus-visible { outline: none; border-color: var(--accent); }
 .body-font-trigger[aria-expanded="true"] { border-color: var(--accent); }
 .body-font-list { position: fixed; z-index: 1200; box-sizing: border-box; padding: 4px; max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--ui-radius); background: var(--surface-strong); box-shadow: var(--shadow); }

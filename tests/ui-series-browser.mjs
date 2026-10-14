@@ -33,7 +33,8 @@ try {
    assert.equal(Number(await input.inputValue()),before+step);
    await input.press('ArrowLeft'); assert.equal(Number(await input.inputValue()),before);
  }
- for (const selector of ['#themeSelect', '#englishFontSelect']) {
+ for (const selector of ['#themeSelect', '#englishFontSelectButton', '#chineseFontSelectButton']) {
+   assert.equal(await page.locator(selector).isVisible(),true,'Control specification applies to the visible picker');
    const look=await page.locator(selector).evaluate(el=>{const s=getComputedStyle(el);return {appearance:s.webkitAppearance,shadow:s.boxShadow,image:s.backgroundImage,height:s.height};});
    assert.deepEqual(look,{appearance:'none',shadow:'none',image:'none',height:'36px'});
  }
