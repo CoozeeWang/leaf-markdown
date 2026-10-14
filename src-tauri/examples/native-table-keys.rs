@@ -54,20 +54,23 @@ pub fn run(){
     let _:()=msg_send![&*web,evaluateJavaScript:&*script,completionHandler:std::ptr::null::<AnyObject>()];
    } else if title.starts_with("LeafKey ") {
     let shift_tab=title=="LeafKey ShiftTab";
+    let enter=title.starts_with("LeafKey Enter");
     let command_a=title=="LeafKey CmdA";
+    let command_z=title=="LeafKey CmdZ";
+    let command_shift_z=title=="LeafKey CmdShiftZ";
     let command_equals=title=="LeafKey CmdEquals";
     let command_option_c=title=="LeafKey CmdOptionC";
     let zoom_in=title=="LeafKey CmdShiftEquals";
     let zoom_out=title=="LeafKey CmdShiftMinus";
     let zoom_reset=title=="LeafKey CmdShift0";
     let zoom=zoom_in||zoom_out||zoom_reset;
-    let chars=NSString::from_str(if zoom_in{"+"}else if zoom_out{"_"}else if zoom_reset{")"}else if command_a{"a"}else if command_equals{"="}else if command_option_c{"ç"}else if shift_tab{"\u{19}"}else{"\u{7f}"});
-    let plain=NSString::from_str(if zoom_in{"="}else if zoom_out{"-"}else if zoom_reset{"0"}else if command_a{"a"}else if command_equals{"="}else if command_option_c{"c"}else if shift_tab{"\t"}else{"\u{7f}"});
+    let chars=NSString::from_str(if enter{"\r"}else if command_shift_z{"Z"}else if command_z{"z"}else if zoom_in{"+"}else if zoom_out{"_"}else if zoom_reset{")"}else if command_a{"a"}else if command_equals{"="}else if command_option_c{"ç"}else if shift_tab{"\u{19}"}else{"\u{7f}"});
+    let plain=NSString::from_str(if enter{"\r"}else if command_z||command_shift_z{"z"}else if zoom_in{"="}else if zoom_out{"-"}else if zoom_reset{"0"}else if command_a{"a"}else if command_equals{"="}else if command_option_c{"c"}else if shift_tab{"\t"}else{"\u{7f}"});
     let number:isize=msg_send![&*window,windowNumber];
     let event:Retained<AnyObject>=msg_send![class!(NSEvent),keyEventWithType:10usize,
-     location:NSPoint::new(0.,0.),modifierFlags:if zoom{(1usize<<20)|(1usize<<17)}else if command_option_c{(1usize<<20)|(1usize<<19)}else if command_a||command_equals{1usize<<20}else if shift_tab{1usize<<17}else{0usize},timestamp:0f64,windowNumber:number,
+     location:NSPoint::new(0.,0.),modifierFlags:if zoom||command_shift_z{(1usize<<20)|(1usize<<17)}else if command_option_c{(1usize<<20)|(1usize<<19)}else if command_a||command_equals||command_z{1usize<<20}else if shift_tab{1usize<<17}else{0usize},timestamp:0f64,windowNumber:number,
      context:std::ptr::null::<AnyObject>(),characters:&*chars,charactersIgnoringModifiers:&*plain,
-     isARepeat:false,keyCode:if zoom_in||command_equals{24u16}else if zoom_out{27u16}else if zoom_reset{29u16}else if command_a{0u16}else if command_option_c{8u16}else if shift_tab{48u16}else{51u16}];
+     isARepeat:false,keyCode:if enter{36u16}else if command_z||command_shift_z{6u16}else if zoom_in||command_equals{24u16}else if zoom_out{27u16}else if zoom_reset{29u16}else if command_a{0u16}else if command_option_c{8u16}else if shift_tab{48u16}else{51u16}];
     let responder:Retained<AnyObject>=msg_send![&*window,firstResponder];
     let _:()=msg_send![&*responder,keyDown:&*event];
    } else if title.starts_with("LeafTest ") {

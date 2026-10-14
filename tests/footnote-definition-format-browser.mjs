@@ -41,9 +41,11 @@ for (const engine of process.env.LEAF_FOOTNOTE_ENGINE ? [process.env.LEAF_FOOTNO
     }
     assert.equal(await page.evaluate(() => v.state.doc.toString()), source, 'rendering never writes the source');
     await page.screenshot({ path: artifactPath(`footnote-definition-format-${engine}.png`) });
-    const position = source.indexOf('**粗体**', source.indexOf('[^sample]:')) + 2;
-    await page.evaluate(position => { v.dispatch({ selection: { anchor: position } }); v.focus(); }, position);
-    await page.waitForFunction(() => document.querySelector('#editor .cm-content').textContent.includes('[^sample]: **粗体**'));
+    await page.locator('.leaf-endnote .cm-content').dblclick();
+    await page.evaluate(() => {
+      const note=document.querySelector('.leaf-endnote')._editor.view;
+      note.dispatch({selection:{anchor:2}});note.focus();
+    });
     await page.keyboard.insertText('新');
     assert.ok((await page.evaluate(() => v.state.doc.toString())).includes('**新粗体**'));
     await page.click('#undoButton'); assert.equal(await page.evaluate(() => v.state.doc.toString()), source);

@@ -37,9 +37,8 @@ try {
   await button.click();
   assert.equal(await doc(),'甲[^1][^2] 乙[^3]\n\n[^1]:\n[^2]: A\n[^3]: B\n','标号要重排成与页面一致，新定义要落在两条定义中间');
   assert.equal(await caret(),5,'光标要停在标记后面，不再跑到文末');
-  const readback=await lines();
-  assert.equal(readback[2].startsWith('[1]'),true,'新定义要排在第一条定义的位置上');
-  assert.equal(readback[3],'[2] A','原来第一条定义被推到后面，编号跟着变');
+  assert.deepEqual(await page.locator('.leaf-endnote-number').allTextContents(),['1','2','3'],'脚注区按引用编号排列');
+  assert.equal(await page.locator('.leaf-endnote').nth(1).evaluate(card=>card._editor.value()),'A','原有第一条内容保持');
 
   // 2. The note is written where it is read: a box under the marker, focused and
   //    empty, instead of a caret parked in the definition at the end of the file.
@@ -92,7 +91,8 @@ try {
   //    floating box is for the note being written; one that is already written is
   //    read, and corrected, in the panel.
   await putCaret({anchor:1});
-  assert.deepEqual(await lines(),['正文。1','','[1] 一号注释'],'光标离开后，定义行读作编号加正文');
+  assert.equal(await page.locator('.leaf-endnote-number').textContent(),'1');
+  assert.equal(await page.locator('.leaf-endnote').evaluate(card=>card._editor.value()),'一号注释','文末区域呈现已有脚注');
   await page.click('.cm-content .footnote-ref');
   await page.waitForTimeout(150);
   assert.equal(await page.locator('.footnote-box').count(),0,'已有的注释不再用浮框打开');

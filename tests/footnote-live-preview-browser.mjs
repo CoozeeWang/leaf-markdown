@@ -49,14 +49,14 @@ try {
   // reference definition, which tints the body as if it were a URL. Away from the
   // caret the marker is drawn as the note's number: brackets kept, the caret and
   // the colon gone, and at the size of the line it labels rather than raised.
-  const labels=await page.locator('.cm-content .leaf-footnote-label').evaluateAll(nodes=>nodes.map(n=>n.textContent));
-  assert.deepEqual(labels,['[1]','[2]'],'定义行应读作编号加正文');
-  const labelStyle=await page.locator('.cm-content .leaf-footnote-label').first().evaluate(el=>{
+  const labels=await page.locator('.cm-content .leaf-endnote-number').evaluateAll(nodes=>nodes.map(n=>n.textContent));
+  assert.deepEqual(labels,['1','2'],'定义行应读作编号加正文');
+  const labelStyle=await page.locator('.cm-content .leaf-endnote-number').first().evaluate(el=>{
     const cs=getComputedStyle(el),line=getComputedStyle(document.querySelector('.cm-content'));
     return {va:cs.verticalAlign,size:parseFloat(cs.fontSize),color:cs.color,lineSize:parseFloat(line.fontSize),lineColor:line.color};
   });
   assert.equal(labelStyle.va,'baseline','定义行的编号不应是上标');
-  assert.equal(labelStyle.size,labelStyle.lineSize,'定义行的编号应与正文同字号');
+  assert.ok(labelStyle.size<labelStyle.lineSize,'脚注编号与脚注区应小于正文');
   assert.notEqual(labelStyle.color,labelStyle.lineColor,'定义行的编号应更淡，与正文区分');
   const def=await page.locator('.cm-content .leaf-footnote-body').evaluateAll(nodes=>nodes.map(el=>{
     const inner=el.querySelector('.tok-url')??el,cs=getComputedStyle(inner);
@@ -115,8 +115,8 @@ try {
   await page.waitForTimeout(250);
   assert.deepEqual(await refs(),['1','2'],'两种写法都应渲染成数字角标，而不是把标号当引用');
   const flat=(await lineText()).join('\n');
-  assert.equal(flat.includes('[1] 紧接正文的定义'),true,'紧接正文的定义行应读作编号加正文');
-  assert.equal(flat.includes('[2] 列表里的定义'),true,'列表里的定义行应读作编号加正文');
+  assert.equal(flat.includes('紧接正文的定义'),true,'紧接正文的定义行应读作编号加正文');
+  assert.equal(flat.includes('列表里的定义'),true,'列表里的定义行应读作编号加正文');
   assert.equal(flat.includes(':'),false,'定义行的冒号不应留下');
   await page.screenshot({path:artifactPath('leaf-footnote-definition-lines.png'),clip:{x:0,y:90,width:900,height:300}});
 
@@ -127,7 +127,7 @@ try {
   await page.evaluate(()=>{v.dispatch({selection:{anchor:0,head:0}});});
   await page.waitForTimeout(250);
   assert.deepEqual(await refs(),['1'],'多行注释的引用也应编号');
-  assert.deepEqual((await lineText()).filter(t=>t.trim()).slice(-3),['[1] 第一条','续行内容','再来一行'],'续行的缩进应被隐藏');
+  assert.deepEqual((await lineText()).filter(t=>t.trim()).slice(-3),['第一条','续行内容','再来一行'],'续行的缩进应被隐藏');
   const cont=await page.locator('.cm-content .leaf-footnote-body').last().evaluate(el=>{
     const inner=el.querySelector('.tok-code')??el,cs=getComputedStyle(inner),line=getComputedStyle(document.querySelector('.cm-content'));
     return {font:cs.fontFamily,lineFont:line.fontFamily,color:cs.color,lineColor:line.color};
@@ -139,7 +139,7 @@ try {
 
   // Live preview only hides markup while the caret is outside it, and a definition
   // is one construct: the indent comes back with the marker, not on its own.
-  await page.evaluate(()=>{const s=v.state.doc.toString(),i=s.indexOf('续行内容');v.dispatch({selection:{anchor:i+1,head:i+1}});});
+  await page.click('#readingToggle');await page.click('[data-mode=source]');
   await page.waitForTimeout(200);
   assert.equal((await lineText()).join('\n').includes('    续行内容'),true,'光标进入定义时应显示续行的原始缩进');
 

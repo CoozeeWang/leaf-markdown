@@ -1,0 +1,48 @@
+<!doctype html><html><meta charset="utf-8"><div class="shell"><div id="editor" style="height:850px"></div></div>
+<script type="module">
+import {initializeLanguage} from '/src/i18n.js';
+await initializeLanguage();
+const {createLeafEditor}=await import('/src/editor.js');
+await import('/src/style.css');
+window.testEditor=createLeafEditor({parent:document.querySelector('#editor'),doc:''});
+window.v=testEditor.view;
+window.setTestDoc=(text,at=0)=>{testEditor.setValue(text);v.dispatch({selection:{anchor:at}});};
+window.startTest=async()=>{
+ const pause=()=>new Promise(r=>setTimeout(r,180));
+ const check=(ok,message)=>{if(!ok)throw Error(message);};
+ try {
+  const source='正文[^a]。\n\n[^a]: **注释**\n\n尾段';
+  setTestDoc(source);await pause();
+  check(testEditor.getValue()===source,'opening changed source');
+  const card=document.querySelector('.leaf-endnote'),note=card._editor.view,dom=note.contentDOM;
+  check(parseFloat(getComputedStyle(dom).fontSize)<parseFloat(getComputedStyle(v.contentDOM).fontSize),'note is not smaller');
+  check(note.state.readOnly,'note should start locked');
+  card.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+  check(!note.state.readOnly,'double click did not start editing');
+  note.dispatch({selection:{anchor:note.state.doc.length}});note.focus();
+  await pause();
+  check(note.dom.querySelector('.cm-cursor')?.getBoundingClientRect().height>5,'painted caret missing');
+  let trusted=false;dom.addEventListener('keydown',e=>{if(e.key==='Enter')trusted=e.isTrusted;});
+  for(let n=1;n<=2;n++){document.title='LeafKey Enter '+n;await pause();check(trusted,'expected AppKit Enter');}
+  note.dispatch({changes:{from:note.state.doc.length,insert:'脚注第二段'},userEvent:'input.type'});
+  check(testEditor.getValue().includes('    脚注第二段'),'paragraph escaped note');
+  check(card._editor.view.contentDOM===dom,'input DOM replaced');
+  check(testEditor.undo(),'undo missing');check(testEditor.getValue()===source,'undo did not restore original source order');
+  check(testEditor.redo(),'redo missing');
+  check(!document.querySelector('.leaf-continue-body'),'removed body button remains');
+  const at=v.state.doc.toString().indexOf('尾段')+2;
+  v.dispatch({selection:{anchor:at}});v.focus();await pause();
+  check(note.state.readOnly,'leaving note did not restore preview');
+  let bodyTrusted=false;v.contentDOM.addEventListener('keydown',e=>{if(e.key==='Enter')bodyTrusted=e.isTrusted;});
+  for(let n=3;n<=4;n++){document.title='LeafKey Enter '+n;await pause();check(bodyTrusted,'expected native body Enter');}
+  v.dispatch({...v.state.replaceSelection('续写正文'),userEvent:'input.type'});
+  const saved=testEditor.getValue();
+  check(saved.indexOf('续写正文')<saved.indexOf('[^a]:'),'body landed after notes');
+  testEditor.setValue(saved);await pause();check(testEditor.getValue()===saved,'reopen changed source');
+  testEditor.setSource(true);check(!document.querySelector('.leaf-footnote-region'),'source region still visible');
+  testEditor.setSource(false);check(document.querySelector('.leaf-footnote-region'),'region missing after source mode');
+  document.title='LeafTest PASS native protected footnote region, trusted Enter, small text, body continuation, shared undo and reopen';
+ }catch(e){document.title='LeafTest FAIL '+e.message;}
+};
+document.title='LeafSource';
+</script></html>

@@ -1,0 +1,63 @@
+<!doctype html><html><meta charset="utf-8"><div id="app"></div>
+<script type="module">
+// Synthetic desktop transport exercises the same menu callback as Tauri.
+// No document or recovery files are read or written by this fixture.
+window.isTauri=true;
+let sequence=0, source='Example body.';
+const callbacks=new Map(),handlers=new Map(),path='/synthetic/Footnote history.md';
+window.__TAURI_INTERNALS__={
+ metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},
+ transformCallback:fn=>{callbacks.set(++sequence,fn);return sequence;},
+ invoke:async(command,args)=>{
+  if(command==='plugin:event|listen'){handlers.set(args.event,callbacks.get(args.handler));return ++sequence;}
+  if(command==='language_get')return {preference:'system',language:'zh-Hans',revision:0};
+  if(command==='initial_path')return path;
+  if(command==='observe_document')return {path,content:source};
+  if(command==='read_document')return source;
+  if(command==='write_document'){source=args.content;return null;}
+  if(command==='recovery_retention')return 30;
+  if(command==='recovery_list'||command==='recent_list')return [];
+  return null;
+ }
+};
+await import('/src/entry.js');
+for(let i=0;i<200&&!document.querySelector('#saveStatus')?.textContent.includes('已开启');i++)await new Promise(r=>setTimeout(r,20));
+const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');
+const {isolateHistory}=await import('/node_modules/@codemirror/commands/dist/index.js');
+window.v=EditorView.findFromDOM(document.querySelector('#editor .cm-content'));
+window.doc=()=>v.state.doc.toString();
+window.setDoc=(text,at=text.length)=>{
+ v.dispatch({changes:{from:0,to:v.state.doc.length,insert:text},selection:{anchor:at},annotations:isolateHistory.of('full')});v.focus();
+};
+window.menuHistory=action=>handlers.get('leaf-menu')({payload:action});
+window.fixtureReady=true;
+window.startTest=async()=>{
+ const wait=()=>new Promise(r=>setTimeout(r,220));
+ const check=(condition,message)=>{if(!condition)throw Error(message);};
+ try {
+  setDoc('Example body.');
+  document.querySelector('[data-format=footnote]').click();await wait();
+  const inserted=doc();
+  check(document.activeElement.matches('.footnote-box textarea'),'popup not focused');
+  let trusted=false;
+  document.addEventListener('keydown',event=>{if(event.key.toLowerCase()==='z')trusted=event.isTrusted;},true);
+  document.title='LeafKey CmdZ';await wait();
+  check(trusted,'expected native undo chord');
+  check(doc()==='Example body.','native undo did not remove insertion');
+  check(!document.querySelector('.footnote-box'),'removed note popup remains');
+  check(document.activeElement===v.contentDOM,'focus did not return to document');
+  trusted=false;document.title='LeafKey CmdShiftZ';await wait();
+  check(trusted,'expected native redo chord');check(doc()===inserted,'native redo did not restore note');
+  document.querySelector('[data-format=footnote]').click();await wait();
+  const input=document.querySelector('.footnote-box textarea');
+  input.value='Note text';input.dispatchEvent(new Event('input',{bubbles:true}));
+  const withBody=doc();
+  await menuHistory('undo');
+  check(doc()!==withBody&&input.value==='','menu undo did not synchronize popup');
+  await menuHistory('redo');
+  check(doc()===withBody&&input.value==='Note text','menu redo did not synchronize popup');
+  document.title='LeafTest PASS native popup history shortcuts, focus return, menu routing and body synchronization';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};
+document.title='LeafSource';
+</script></html>

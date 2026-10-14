@@ -35,6 +35,8 @@ cargo test --locked --all-targets
 
 高亮与行内代码快捷键由 `inline-format-shortcuts-browser.mjs` 检查，覆盖两端按键、三语命令、实际渲染及撤销／重做。已有 Vite 测试服务运行时，macOS 可执行 `cargo run --locked --example native-table-keys -- ../tests/native-inline-format-shortcuts.html http://127.0.0.1:41732/tests/native-inline-format-shortcuts.html`，以 AppKit 按键验证实际 WKWebView；不代替安装版及真实中文输入法验收。
 
+脚注浮框的文档历史回归为 `footnote-history-browser.mjs`，覆盖 Mac／Windows 快捷键、原生菜单事件入口、撤销后继续输入、编号恢复与浮框同步。macOS 可用同一原生入口运行 `../tests/native-footnote-history.html` 与 `http://127.0.0.1:41732/tests/native-footnote-history.html --foreground`，检查 AppKit 撤销／重做与模拟菜单转发；不代替真实原生菜单、中文输入法或 Windows 实机验收。
+
 Issue #36 的文件跟随回归包含 `src-tauri/src/document_location.rs` 中的原生文件身份测试，以及 `tests/document-session.test.js` 中的串行轮询、未保存编辑和保存去向测试。Rust 测试在本机一次性目录中改名、移动和替换文件；前端测试使用模拟文件接口。两者通过后，仍需分别在 macOS、Windows 原生应用中用一次性 Markdown 文件检查文件名、最近打开和保存位置。浏览器测试与 macOS 结果不能代替 Windows 实测；构建通过也不能代替已安装应用的人工验收。
 
 空行整理的规则见[空行整理说明](BLANK-LINES.md)。相关回归为 `blank-lines.test.js`、`blank-lines-browser.mjs` 和 `paragraph-blank-lines-browser.mjs`：覆盖补减空行、首尾清理、嵌套列表和受保护内容，并检查按钮、快捷键、一次撤销／重做、重复整理、预览及保存后重新打开的一致性。保存检查使用模拟文件接口，不代替桌面版真实文件验收。
@@ -148,4 +150,8 @@ NSIS 配置启用 English、SimpChinese、TradChinese 和语言选择器，直�
 
 脚注侧栏三模式由 `footnote-sidebar-modes-browser.mjs` 检查；文末定义格式由 `footnote-definition-format-browser.mjs` 在 Chromium/WebKit 检查实际格式、解析器边界、多行内容、源码/光标标记与撤销，位置映射另由 `footnote-inline.test.js` 覆盖 CRLF 和缩进。长文浮框输入由 `footnote-input-performance-browser.mjs` 使用约十九万字符合成样本检查即时写回、侧栏同步和组合输入。macOS 原生夹具为 `native-footnote-sidebar.html`，使用现有 `native-table-keys` 入口验证实际 WKWebView 的文末/侧栏渲染与共享撤销。性能数字来自本机合成样本，不代替用户原文、真实输入法或安装版验收。
 
+普通正文 Enter 与脚注完成由 `paragraph-enter.test.js`、`footnote-completion.test.js` 及双引擎 `paragraph-input-browser.mjs` 检查，覆盖空格不延续、结构缩进、先成对括号后填标识、组合输入结束后补空定义和一次撤销。macOS 使用 `native-table-keys` 运行 `../tests/native-paragraph-input.html` 与 `http://127.0.0.1:41732/tests/native-paragraph-input.html`；Enter 来自 AppKit，组合输入为合成事件，仍需实际中文输入法与英文标点人工验收。
+
 正文缩放由 `body-zoom-browser.mjs` 检查八档比例、编辑坐标与真实鼠标输入、高亮快捷键区分、撤销、视图切换、长文位置、三语、菜单和独立导出预览。默认 Chromium，`LEAF_ZOOM_ENGINE=webkit` 可检查 WebKit；平台模拟不等于 Windows 实机。macOS 使用已有 `native-table-keys` 入口运行 `../tests/native-body-zoom.html` 与 `http://127.0.0.1:41732/tests/native-body-zoom.html`，加 `--foreground` 检查实际 WKWebView 的比例、坐标及 AppKit Shift 快捷键；后台窗口的帧测量可能暂停。正式安装版的真实输入法、保存重开、图片拖放、实际 PDF 和两平台验收仍分开记录。
+
+脚注编辑区由 `footnote-region-browser.mjs` 覆盖：中间定义的文末显示、打开不改原文、85% 字号、绘制光标、单击只读／双击与键盘编辑／离开恢复预览、键盘焦点外框与提示文字基线对齐、多段脚注、剪贴板粘贴、组合输入、正文续写、一次撤销／重做、搜索映射、CRLF、删除边界和全文删除；Chromium 使用 Mac/Windows 快捷键模拟，WebKit 使用 Mac 路径。`native-footnote-region.html` 配合 `native-table-keys` 检查实际 macOS WKWebView 的 AppKit Enter、文末区域、正文末尾自然续写与历史。原生夹具仍为合成文档，不能代替实际中文输入法、安装版保存和 Windows 实机验收。

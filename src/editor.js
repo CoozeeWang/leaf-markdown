@@ -49,6 +49,7 @@ import { leafMarkdownExtensions } from './markdown-extensions.js';
 import { structuredPreview, documentName, fileNameTitle, toggleFileNameTitle } from './structured-preview.js';
 import { renderInline, citationSignature, citationLabel } from './inline-preview.js';
 import { paragraphBlankLineChanges } from './blank-lines.js';
+import { insertPlainParagraphNewline } from './paragraph-enter.js';
 import { frontmatter, bodyStart } from './markdown-model.js';
 import { protectPropertyInsertions } from './properties-insert-guard.js';
 import { fileDropTarget, fileDropFeedback, setFileDropTarget, setFileDragging } from './file-drop.js';
@@ -56,7 +57,8 @@ import { paragraphDeletion, selectedParagraphDeletion } from './paragraph-delete
 import {outlineFolding} from './outline-folding.js';
 import { classifyInlineTag, pairInlineTags } from './inline-html.js';
 import { imageDrag } from './image-drag.js';
-import { shortcutText } from './platform-shortcuts.js';
+import { shortcutText, documentHistoryShortcut } from './platform-shortcuts.js';
+import { footnoteRegion, footnoteRegionEnabled, footnoteBoundaryGuard, prepareBodyBeforeNotes } from './footnote-region.js';
 import { footnoteInlineNodes } from './footnote-inline.js';
 
 const toggleBlankMarkers = StateEffect.define();
@@ -330,7 +332,7 @@ function livePreviewDecorations(view) {
   const definitionLines = new Set();
   const definitionSource = doc.toString();
   for (const note of index.notes) {
-    if (!note.def) continue;
+    if (!note.def || view.state.field(footnoteRegionEnabled, false)) continue;
     // A definition's own label is not a citation. The grammar turns "[^1]" into a
     // link whenever the definition does not open a block -- inside a list item, or
     // under a paragraph with no blank line between them -- and the citation pass
@@ -787,6 +789,7 @@ function dispatchFootnoteInsertion(view, changes, plan, select = true) {
     effects: insertedFootnoteAt.of(plan.caret),
     ...(select ? {selection: EditorSelection.cursor(plan.caret), scrollIntoView: true} : {}),
     userEvent: 'input',
+    annotations: isolateHistory.of('full'),
   });
   const caret = tr.effects.find(effect => effect.is(insertedFootnoteAt)).value;
   const note = tr.state.field(footnoteIndex).notes.find(note => note.refs.some(ref => ref.to === caret));
@@ -854,6 +857,24 @@ function closeFootnotePopup() {
   footnoteBox = null; footnoteBoxView = null; footnoteBoxOutside = null; footnoteBoxAnchor = null; footnoteBoxLabel = null;
 }
 
+function resizeFootnotePopup() {
+  const input = footnoteBox?.querySelector('textarea');
+  if (!input) return;
+  input.style.height = 'auto';
+  input.style.height = `${input.scrollHeight}px`;
+  placeFootnotePopup();
+}
+
+function documentHistory(view, action) {
+  const input = footnoteBoxView === view && footnoteBox?.querySelector('textarea');
+  const focused = input && document.activeElement === input;
+  const changed = action(view);
+  // Undoing the insertion removes the popup along with its reference. Keep the
+  // next redo shortcut in the document rather than on the now-detached input.
+  if (focused && !input.isConnected) view.focus();
+  return changed;
+}
+
 function placeFootnotePopup() {
   if (!footnoteBox) return;
   const view = footnoteBoxView;
@@ -874,14 +895,25 @@ function placeFootnotePopup() {
 
 // The definition in the document is the only copy. An empty box still leaves a
 // definition behind, so the marker and the note stay paired.
-function applyFootnoteBody(view, label, body) {
+function applyFootnoteBody(view, label, body, composing = false, ordinal = 0, continuous = false) {
   const text = view.state.doc.toString();
   const note = view.state.field(footnoteIndex).notes.find(candidate => candidate.id === label);
   if (!note) return;
-  const changes = note.def
-    ? [{ from: note.def.markerTo, to: note.def.bodyTo, insert: body.trim() ? ` ${footnoteBodyText(body)}` : '' }]
+  const definition = view.state.field(footnoteIndex).definitions.filter(def=>def.id===label)[ordinal] ?? note.def;
+  const changes = definition
+    ? [{ from: definition.markerTo, to: definition.bodyTo, insert: body.trim() ? ` ${footnoteBodyText(body)}` : '' }]
     : appendDefinition(text, label, body);
-  view.dispatch({ changes, userEvent: 'input' });
+  // Patch only the changed text so history groups continuous typing naturally.
+  for (const change of changes) {
+    if(change.to===undefined)continue;
+    const old=text.slice(change.from,change.to),next=change.insert;
+    let prefix=0,suffix=0;
+    while(prefix<Math.min(old.length,next.length)&&old[prefix]===next[prefix])prefix++;
+    while(suffix<Math.min(old.length,next.length)-prefix&&old.at(-1-suffix)===next.at(-1-suffix))suffix++;
+    change.from+=prefix;change.to-=suffix;change.insert=next.slice(prefix,next.length-suffix);
+  }
+  if(changes.every(c=>c.from===c.to&&!c.insert))return;
+  view.dispatch({ changes, userEvent: composing ? 'input.type.compose' : continuous ? 'input.type.note' : 'input' });
 }
 
 function openFootnotePopup(view, label, pos, anchor = null) {
@@ -896,14 +928,16 @@ function openFootnotePopup(view, label, pos, anchor = null) {
   document.body.append(box);
   footnoteBox = box; footnoteBoxView = view; footnoteBoxAt = pos ?? 0; footnoteBoxAnchor = anchor; footnoteBoxLabel = label;
 
-  const grow = () => {
-    input.style.height = 'auto';
-    input.style.height = `${input.scrollHeight}px`;
-    placeFootnotePopup();
-  };
-  input.addEventListener('input', () => { applyFootnoteBody(view, footnoteBoxLabel, input.value); grow(); });
+  input.addEventListener('input', event => { applyFootnoteBody(view, footnoteBoxLabel, input.value, event.isComposing, 0, true); resizeFootnotePopup(); });
   input.addEventListener('keydown', event => {
     if (event.isComposing) return;
+    const history = documentHistoryShortcut(event);
+    if (history) {
+      event.preventDefault();
+      event.stopPropagation();
+      documentHistory(view, history === 'undo' ? undo : redo);
+      return;
+    }
     if (event.key === 'Escape' || (event.key === 'Enter' && !event.shiftKey)) {
       event.preventDefault();
       const currentLabel = footnoteBoxLabel;
@@ -923,7 +957,8 @@ function openFootnotePopup(view, label, pos, anchor = null) {
   window.addEventListener('scroll', placeFootnotePopup, true);
   window.addEventListener('resize', placeFootnotePopup);
   requestAnimationFrame(() => {
-    grow();
+    if (!box.isConnected) return;
+    resizeFootnotePopup();
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
   });
@@ -1080,9 +1115,20 @@ export function createLeafEditor(options) {
     if (update.docChanged && !suppressChanges) {
       const labels = footnoteLabelMap(update.startState.field(footnoteIndex), update.state.field(footnoteIndex), update.changes);
       if (footnoteBox && footnoteBoxView === update.view) {
-        footnoteBoxLabel = labels.get(footnoteBoxLabel) ?? footnoteBoxLabel;
+        const label = labels.get(footnoteBoxLabel);
         footnoteBoxAt = update.changes.mapPos(footnoteBoxAt, 1);
-        if (!update.state.field(footnoteIndex).notes.some(note => note.id === footnoteBoxLabel)) closeFootnotePopup();
+        const note = label === undefined ? null : update.state.field(footnoteIndex).notes.find(note => note.id === label);
+        if (!note) closeFootnotePopup();
+        else {
+          footnoteBoxLabel = label;
+          const input = footnoteBox.querySelector('textarea'), body = note.def?.body ?? '';
+          if (update.transactions.some(tr => tr.isUserEvent('undo') || tr.isUserEvent('redo')) && input.value !== body) {
+            const {selectionStart, selectionEnd} = input;
+            input.value = body;
+            input.setSelectionRange(Math.min(selectionStart, body.length), Math.min(selectionEnd, body.length));
+            requestAnimationFrame(resizeFootnotePopup);
+          }
+        }
       }
       options.onChange?.(sourceOf(update.state), labels);
     }
@@ -1101,6 +1147,7 @@ export function createLeafEditor(options) {
   });
 
   const prepareBodyLine = view => {
+    if (prepareBodyBeforeNotes(view)) return true;
     if (view.state.field(sourceMode) || view.state.field(structuredPreview).yamlSource) return false;
     const source = view.state.doc.toString(), yaml = frontmatter(source);
     if (!yaml || yaml.to !== source.length || !view.state.selection.main.empty) return false;
@@ -1138,7 +1185,7 @@ export function createLeafEditor(options) {
     { key: 'Delete', run: view => !view.state.field(sourceMode) && (deleteFootnoteReference(view,true) || deleteLeafParagraphSeparator(view,true)) },
     {
       key: 'Enter',
-      run: (view) => !view.state.field(sourceMode) && (insertYamlNewline(view) || clearListContinuation(view) || insertNewlineContinueMarkup(view)),
+      run: (view) => !view.state.field(sourceMode) && (insertYamlNewline(view) || clearListContinuation(view) || insertNewlineContinueMarkup(view) || insertPlainParagraphNewline(view)),
     },
     { key: 'Tab', run: insertWritingTab },
     { key: 'Shift-Tab', run: outdentWritingImage },
@@ -1170,6 +1217,7 @@ export function createLeafEditor(options) {
       footnoteIndex,
       // Registered before the reading-mode filter below, which runs first: a
       // document that is only being read has no edit for this one to follow.
+      footnoteRegion(createLeafNoteEditor, applyFootnoteBody),
       footnoteRenumber,
       footnoteReferenceCompletion,
       footnoteReferenceDeletion,
@@ -1208,6 +1256,7 @@ export function createLeafEditor(options) {
         return true;
       } }),
       appKeymap,
+      footnoteBoundaryGuard,
       // In the edit view, the property widget is outside the selectable body.
       // Property controls and source mode still edit the YAML directly.
       EditorState.transactionFilter.of(tr => {
@@ -1391,8 +1440,9 @@ export function createLeafEditor(options) {
     format: (type) => formatEditor(view, type),
     // Driven by the application menu: on macOS the menu owns Cmd-Z, so the
     // key never reaches the editor's own historyKeymap binding.
-    undo: () => undo(view),
-    redo: () => redo(view),
+    undo: () => documentHistory(view, undo),
+    redo: () => documentHistory(view, redo),
+    ownsHistoryTarget: target => !!target && (view.dom.contains(target) || (footnoteBoxView === view && !!footnoteBox?.contains(target))),
     // Drives the toolbar buttons' disabled state.
     historyDepth: () => ({ undo: undoDepth(view.state), redo: redoDepth(view.state) }),
     headingLevel: () => selectionHeadingLevel(view.state),
@@ -1435,33 +1485,53 @@ export function createLeafEditor(options) {
   };
 }
 
+const noteSearchRange = StateEffect.define();
+const noteSearchDecoration = StateField.define({
+  create:()=>Decoration.none,
+  update(value,tr){
+    value=value.map(tr.changes);
+    for(const effect of tr.effects)if(effect.is(noteSearchRange))value=effect.value
+      ?Decoration.set([Decoration.mark({class:'cm-searchMatch cm-searchMatch-selected'}).range(effect.value.from,effect.value.to)])
+      :Decoration.none;
+    return value;
+  },
+  provide:field=>EditorView.decorations.from(field),
+});
+
 // A note uses the same Markdown grammar and live-preview decorations as the
 // document, but sends every edit through the document's history/save pipeline.
-export function createLeafNoteEditor({parent, doc, source = false, label, onChange, onUndo, onRedo, onLeave}) {
+export function createLeafNoteEditor({parent, doc, source = false, label, onChange, onUndo, onRedo, onLeave, multiline = false, onCompositionEnd, onFocus, onBlur, locked = false, onActivate, onEditingChange}) {
   let syncing = false;
+  const editing = new Compartment();
+  const editability = enabled => [EditorState.readOnly.of(!enabled), EditorView.editable.of(enabled)];
   const view = new EditorView({parent, doc, extensions: [
+    editing.of(editability(!locked)),
+    drawSelection(),
+    EditorState.changeFilter.of(tr=>syncing||!tr.startState.readOnly),
     markdown({extensions: leafMarkdownExtensions, addKeymap: false}),
     sourceMode.init(() => source), blankMarkers, headingNumbers,
     fileNameTitle.init(() => false), propertiesFolded, structuredPreview,
-    footnoteIndex, noteFocus,
+    footnoteIndex, noteFocus, noteSearchDecoration,
     syntaxHighlighting(leafHighlightStyle), livePreview,
     EditorView.lineWrapping,
-    EditorView.contentAttributes.of({'aria-label': label, spellcheck: 'false'}),
+    EditorView.contentAttributes.of(view=>({'aria-label':label,spellcheck:'false',tabindex:'0','aria-readonly':String(view.state.readOnly)})),
     EditorView.theme({'&': {backgroundColor:'transparent'}, '.cm-content': {padding:'0', minHeight:'1.7em'}, '.cm-line': {padding:'0'}, '.cm-scroller': {overflow:'visible', fontFamily:'inherit'}}),
     EditorView.updateListener.of(update => {
-      if (update.docChanged && !syncing) onChange(update.state.doc.toString());
+      if (update.docChanged && !syncing) onChange(update.state.doc.toString(), update.view.compositionStarted);
     }),
     EditorView.domEventHandlers({
-      focus(_event, view) { view.dispatch({effects:setNoteFocus.of(true)}); return false; },
-      blur(_event, view) { view.dispatch({effects:setNoteFocus.of(false)}); return false; },
+      focus(_event, view) { if(!view.state.readOnly){onFocus?.();view.dispatch({effects:setNoteFocus.of(true)});}return false; },
+      blur(_event, view) { view.dispatch({effects:setNoteFocus.of(false)});queueMicrotask(()=>{if(view.dom.isConnected&&!view.hasFocus&&!view.compositionStarted)onBlur?.();});return false; },
+      compositionend(_event,view) { onCompositionEnd?.();queueMicrotask(()=>{if(view.dom.isConnected&&!view.hasFocus)onBlur?.();});return false; },
     }),
     keymap.of([
       {key:'Mod-z',run:()=>{onUndo();return true;}},
       {key:'Mod-Shift-z',run:()=>{onRedo();return true;}},
-      ...[['Mod-b','bold'],['Mod-i','italic'],['Mod-=','highlight'],['Mod-Alt-c','code']].map(([key,type])=>({key,run:view=>{formatEditor(view,type);return true;}})),
+      {key:'Ctrl-y',run:()=>{onRedo();return true;}},
+      ...[['Mod-b','bold'],['Mod-i','italic'],['Mod-=','highlight'],['Mod-Alt-c','code'],['Mod-Shift-x','strike'],['Mod-.','sup'],['Mod-,','sub']].map(([key,type])=>({key,run:view=>{formatEditor(view,type);return true;}})),
       {key:'Mod-k',run:view=>{const r=view.state.selection.main;const selected=view.state.doc.sliceString(r.from,r.to);const address=t('writing_tools.link_address');const insert=`[${selected||t('writing_tools.link_text')}](${address})`;const from=r.from+insert.lastIndexOf(address);view.dispatch({changes:{from:r.from,to:r.to,insert},selection:{anchor:from,head:from+address.length},userEvent:'input'});return true;}},
       {key:'Shift-Enter',run:view=>{view.dispatch(view.state.replaceSelection('\n'));return true;}},
-      {key:'Enter',run:()=>{onLeave();return true;}},
+      {key:'Enter',run:view=>{if(view.state.readOnly){onActivate?.();return true;}if(multiline)return insertNewlineContinueMarkup(view);onLeave();return true;}},
       {key:'Escape',run:()=>{onLeave();return true;}},
       ...defaultKeymap,
     ]),
@@ -1477,7 +1547,7 @@ export function createLeafNoteEditor({parent, doc, source = false, label, onChan
     view.dispatch({changes:{from,to:length-suffix,insert:text.slice(from,text.length-suffix)}});
     syncing = false;
   };
-  return {view, sync, focus(){view.focus();view.dispatch({selection:{anchor:view.state.doc.length}});},
+  return {view, sync, setEditing(enabled,at){view.dispatch({effects:[editing.reconfigure(editability(enabled)),setNoteFocus.of(enabled)]});onEditingChange?.(enabled);if(enabled){if(at!=null)view.dispatch({selection:{anchor:Math.max(0,Math.min(at,view.state.doc.length))}});onFocus?.();view.focus();}}, highlightMatch(from,to){view.dispatch({effects:noteSearchRange.of(from==null?null:{from,to}),...(from==null?{}:{selection:{anchor:from,head:to}})});}, focus(){view.focus();view.dispatch({selection:{anchor:view.state.doc.length}});},
     value:()=>view.state.doc.toString(), format:type=>formatEditor(view,type),
     destroy:()=>view.destroy()};
 }

@@ -1838,8 +1838,8 @@ document.querySelector('#welcomeNewButton').addEventListener('click', () => {
 
 document.querySelectorAll('[data-format]').forEach((button) => {
   button.addEventListener('click', () => {
-    const note=document.activeElement.closest?.('.note-card')?._noteEditor;
-    if(note)note.format(button.dataset.format);else editor.format(button.dataset.format);
+    const note=document.activeElement.closest?.('.note-card, .leaf-endnote')?._noteEditor;
+    if(note && !(button.dataset.format==='footnote' && document.activeElement.closest('.leaf-endnote')))note.format(button.dataset.format);else editor.format(button.dataset.format);
     closePopovers();
     headingPopover.hidden = true;
     document.querySelector('#headingButton').setAttribute('aria-expanded', 'false');
@@ -2087,11 +2087,11 @@ renderRecentFiles();
 
 // macOS routes Cmd-Z through the application menu, so the shortcut never
 // reaches the editor's own history binding. The menu event comes back here:
-// the editor answers for its own history, while plain inputs (document
-// properties, callouts, the search field) keep the native undo manager.
+// the editor and its footnote popup answer for document history. Other plain
+// inputs (document properties, callouts, search) keep the native undo manager.
 function runHistory(action) {
   const active = document.activeElement;
-  if (active?.closest('.cm-editor')) { editor[action](); return; }
+  if (active?.closest('.cm-editor') || editor.ownsHistoryTarget(active)) { editor[action](); return; }
   try { document.execCommand(action); } catch { /* No native history for this target. */ }
 }
 

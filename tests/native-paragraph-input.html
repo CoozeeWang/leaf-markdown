@@ -1,0 +1,46 @@
+<!doctype html><html><meta charset="utf-8"><div id="editor" style="height:700px"></div>
+<script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import '/src/style.css';
+window.testEditor=createLeafEditor({parent:document.querySelector('#editor'),doc:''});
+window.v=testEditor.view;
+window.setTestDoc=(text,at=text.length)=>{testEditor.setValue(text);v.dispatch({selection:{anchor:at}});v.focus();};
+window.startTest=async()=>{
+ const pause=()=>new Promise(resolve=>setTimeout(resolve,160));
+ const check=(ok,message)=>{if(!ok)throw Error(message);};
+ try {
+  let count=0;
+  v.contentDOM.addEventListener('keydown',event=>{if(event.key==='Enter')window.nativeEnterTrusted=event.isTrusted;});
+  for(const text of [' 正文','  正文','正文']){
+   setTestDoc(text);
+   for(let i=0;i<2;i++){
+    document.title='LeafKey Enter '+(++count);await pause();
+    check(window.nativeEnterTrusted,'expected AppKit Enter');
+    const line=v.state.doc.lineAt(v.state.selection.main.head);
+    check(line.text===''&&v.state.selection.main.head===line.from,'prose Enter inherited spaces');
+   }
+  }
+  const source='正文[^1]。\n\n新引用[]\n\n[^1]: 原注',at=source.indexOf('[]')+1;
+  setTestDoc(source,at);
+  v.dispatch({changes:{from:at,insert:'^6'},selection:{anchor:at+2},userEvent:'input.type'});
+  check(testEditor.getValue()===source.replace('[]','[^6]'),'label changed while caret inside brackets');
+  v.dispatch({selection:{anchor:at+3},userEvent:'select'});
+  const complete=source.replace('[]','[^2]')+'\n\n[^2]:';
+  check(testEditor.getValue()===complete,'paired citation missing definition');
+  testEditor.undo();check(testEditor.getValue()===source,'paired citation undo');
+  setTestDoc(source,at);
+  v.contentDOM.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
+  v.dispatch({changes:{from:at,insert:'^6'},selection:{anchor:at+2},userEvent:'input.type.compose.start'});
+  check(testEditor.getValue()===source.replace('[]','[^6]'),'composition changed before commit');
+  v.contentDOM.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'^6'}));await pause();
+  v.dispatch({selection:{anchor:at+3},userEvent:'select'});
+  check(testEditor.getValue()===complete,'composition completion missing');
+  testEditor.undo();check(testEditor.getValue()===source,'composition completion undo');
+  testEditor.redo();check(testEditor.getValue()===complete,'composition completion redo');
+  v.dispatch({selection:{anchor:0}});await pause();
+  check([...document.querySelectorAll('.footnote-ref')].map(el=>el.textContent).join(',')==='1,2','empty definition superscripts missing');
+  document.title='LeafTest PASS native Enter, paired citation, deferred simulated composition, superscripts and undo';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};
+document.title='LeafSource';
+</script></html>

@@ -6,7 +6,7 @@ const sample = '# Font sample 字体\n\nCafé e\u0301 ma\u0304. 123\n\n写作，
 const sourceState = page => page.evaluate(async () => {
   const {EditorView} = await import('/node_modules/@codemirror/view/dist/index.js');
   const {undoDepth} = await import('/node_modules/@codemirror/commands/dist/index.js');
-  const view = EditorView.findFromDOM(document.querySelector('.editor-host .cm-content'));
+  const view = EditorView.findFromDOM(document.querySelector('#editor > .cm-editor'));
   return { source: view.state.doc.toString(), undo: undoDepth(view.state) };
 });
 const mode = async (page, value) => { await page.click('#readingToggle'); await page.click(`[data-mode="${value}"]`); };
@@ -77,7 +77,7 @@ for (const engine of process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGIN
     await page.keyboard.press('g'); await page.keyboard.press('Enter');
     assert.equal(await page.locator('#englishFontSelect').inputValue(),'georgia','Typing a prefix selects the named family');
     await pick(page,'#englishFontSelect',english);
-    const stack=await page.locator('.cm-scroller').evaluate(el=>getComputedStyle(el).fontFamily);
+    const stack=await page.locator('#editor > .cm-editor > .cm-scroller').evaluate(el=>getComputedStyle(el).fontFamily);
     assert.ok(stack.includes(`Leaf Body en ${english}`));
     assert.ok(stack.includes(`Leaf Body zh ${chinese}`));
     assert.deepEqual(await sourceState(page),before,'Font choices do not edit Markdown or create undo entries');
