@@ -72,6 +72,8 @@ impl Default for LeafMcpBroker {
     fn default()->Self {Self{inner:Arc::new(BrokerState{registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default(),leases:Mutex::new(AuthenticatedLeaseManager::default()),pending_finishes:Mutex::new(HashMap::new()),watchdog_started:std::sync::atomic::AtomicBool::new(false)})}}
 }
 impl LeafMcpBroker {
+    pub fn window_binding(&self,label:&str)->Option<OpenedDocument>{self.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).cloned()}
+    pub fn window_locked(&self,label:&str)->bool{self.window_binding(label).is_some_and(|d|d.task.is_some())||self.inner.pending_finishes.lock().unwrap().contains_key(label)}
     // Caller owns the native queue. Invalidate first, then close renderer history;
     // retries cannot resurrect a capability or discard any applied draft.
     async fn finalize(&self,app:&tauri::AppHandle,d:&mut OpenedDocument)->Result<(),String>{
@@ -81,6 +83,7 @@ impl LeafMcpBroker {
             self.inner.pending_finishes.lock().unwrap().insert(d.label.clone(),task.clone());
             self.bridge(app,&d.label,"finish",task).await?;
             self.inner.pending_finishes.lock().unwrap().remove(&d.label);
+            super::refresh_document_menu(app);
         }Ok(())
     }
     fn start_watchdog(&self,app:tauri::AppHandle){
@@ -288,6 +291,7 @@ impl LeafMcpBroker {
                     return Err(error);
                 }
                 self.inner.leases.lock().unwrap().begin(task["task_id"].as_str().unwrap(),client,lease_now());d.task=Some(task.clone());self.inner.registry.lock().unwrap().documents.insert(d.session_id.clone(),d);
+                super::refresh_document_menu(app);
                 self.inner.results.lock().unwrap().insert(key,(hash,task.clone()));Ok(task)
             },
             "apply_edit_batch"|"reconcile_request"=>{

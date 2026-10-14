@@ -18,6 +18,7 @@ const IMAGE_CLIPBOARD_TYPE = 'application/x-leaf-markdown-images';
 
 export function setupWriting({ editor, desktop, invoke, save, choose, serialized, editable, status, icon, }) {
   const view = editor.view, bookmarks = new Set();
+  const canWrite=()=>editable() && editor.mutationAllowed();
   let insertionFollow=null;
   view.dispatch({ effects: StateEffect.appendConfig.of(EditorView.updateListener.of(update => {
     if (update.docChanged) for (const b of bookmarks) { b.from=update.changes.mapPos(b.from,1); b.to=update.changes.mapPos(b.to,-1); if(b.to<b.from)b.to=b.from; }
@@ -62,7 +63,7 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     return {urlFrom:url.from,urlTo:url.to,from:node.from,to:node.to,image,label:raw.slice(image?2:1,raw.indexOf(']')),target:view.state.doc.sliceString(url.from,url.to)};
   }
   function editLink() {
-    if (!editable()) return;
+    if (!canWrite()) return;
     const existing=currentLink();
     if(existing){
       view.dispatch({selection:{anchor:existing.urlFrom,head:existing.urlTo},scrollIntoView:true});
@@ -77,7 +78,7 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     view.focus();
   }
   async function attachments(files, image=true, point=null) {
-    if (!editable()) return;
+    if (!canWrite()) return;
     if (!desktop) {status(translatedMessage("writing_tools.use_the_leaf_desktop_app_to_import"),'error');return;}
     // File imports also protect YAML/source mode and pending bookmarks: neither
     // a source caret nor a selection of the properties may replace the block.
@@ -137,7 +138,7 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     event.preventDefault();event.stopImmediatePropagation();
   },true);
   view.dom.addEventListener('paste',event=>{
-    if(event.target.closest('input,textarea')||!editable())return;
+    if(event.target.closest('input,textarea')||!canWrite())return;
     let copied=null;
     try { copied=JSON.parse(event.clipboardData.getData(IMAGE_CLIPBOARD_TYPE)); } catch { /* A normal clipboard has no Leaf image metadata. */ }
     if (desktop && copied && typeof copied.sourceLabel === 'string' && copied.content === event.clipboardData.getData('text/plain')) {
@@ -167,7 +168,7 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     if(html){event.preventDefault();event.stopImmediatePropagation();const b=remember();try{insert(htmlToMarkdown(html),b);}finally{bookmarks.delete(b);}}
   },true);
   async function pastePlain(){
-    if(!editable())return;
+    if(!canWrite())return;
     const b=remember();
     try{insert(await navigator.clipboard.readText(),b);}catch(error){status(translatedMessage("writing_tools.could_not_paste", {"error": error.message||error}),'error');}finally{bookmarks.delete(b);}
   }

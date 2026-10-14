@@ -1261,6 +1261,7 @@ async function renderRecentFiles() {
 }
 
 async function setDocument(content, name, handle = null, file = null) {
+  if (!editor.mutationAllowed()) throw new Error('document_locked');
   setMovedMissingImages();
   statusNotices.reset();
   collapsedOutline.clear();
@@ -2138,6 +2139,7 @@ renderRecentFiles();
 // the editor and its footnote popup answer for document history. Other plain
 // inputs (document properties, callouts, search) keep the native undo manager.
 function runHistory(action) {
+  if (!editor.mutationAllowed()) return;
   const active = document.activeElement;
   if (active?.closest('.cm-editor') || editor.ownsHistoryTarget(active) || commentPanel?.ownsHistoryTarget(active)) { editor[action](); return; }
   try { document.execCommand(action); } catch { /* No native history for this target. */ }
@@ -2150,6 +2152,7 @@ if (desktop) {
   shell.style.pointerEvents = 'none';
   editor.setReading(true);
   initDesktop({
+    mutationAllowed:()=>editor.mutationAllowed(),
     content: () => state.content,
     loadedImages: () => loadedLocalImagePaths(),
     retryMissingImages: () => retryMissingImages(),
@@ -2158,7 +2161,7 @@ if (desktop) {
     recoveryAvailable: statusNotices.recoveryAvailable,
     load: (content, name, path) => { state.resourcePath = path; return setDocument(content, name); },
     recovery: () => showRecovery({ invoke, restore: desktopRestore, drafts: !welcomeScreen.hidden }),
-    restore: content => { clearTimeout(state.saveTimer); editor.restoreValue(content); if (state.reading) renderReading(); },
+    restore: content => { if(!editor.mutationAllowed())throw new Error('document_locked');clearTimeout(state.saveTimer); editor.restoreValue(content); if (state.reading) renderReading(); },
     find: openDocumentSearch,
     exportPdf,
     cycleMode,
@@ -2177,6 +2180,7 @@ if (desktop) {
     addComment:()=>commentPanel.add(),
     undo: () => runHistory('undo'),
     redo: () => runHistory('redo'),
+    clipboard:command=>{if(editor.mutationAllowed())document.execCommand(command);},
     attach: (files, point) => writing.attachments(files, true, point),
     drag(active, point, files=[]) {
       const opening=files.some(path=>/\.(md|markdown|mdown)$/i.test(path))||!welcomeScreen.hidden;
@@ -2225,6 +2229,19 @@ if (desktop) {
           else if(args.action==='redo') editor.redo();
           else if(args.action==='human') editor.restoreValue(args.content);
           else if(args.action==='selection') editor.view.dispatch({selection:{anchor:args.anchor}});
+          else if(args.action==='entrance') {
+            const before=editor.mcpSnapshot();
+            if(args.entrance==='body')editor.view.dispatch({changes:{from:0,insert:'forbidden'},userEvent:'input.type'});
+            else if(args.entrance==='source'){editor.setSource(true);editor.view.dispatch({changes:{from:0,insert:'forbidden'},userEvent:'input'});editor.setSource(false);}
+            else if(args.entrance==='properties')editor.createProperties();
+            else if(args.entrance==='footnote')editor.setFootnoteBody('1','forbidden');
+            else if(args.entrance==='table')editor.view.dispatch({changes:{from:before.content.indexOf('one'),to:before.content.indexOf('one')+3,insert:'forbidden'},filter:false,userEvent:'input.table'});
+            else if(args.entrance==='comment'){const note=editor.comments().notes[0];if(!note)throw new Error('synthetic_comment_absent');editor.setCommentBody(note.id,'forbidden');}
+            else if(args.entrance==='writing')writing.editLink();
+            else if(args.entrance==='recovery')await desktopRestore('forbidden');
+            else if(args.entrance==='attachment')await writing.attachments(args.files,false);
+            else throw new Error('unknown_test_entrance');
+          }
           result={...editor.mcpSnapshot(),history:editor.historyDepth(),task_api:typeof editor.beginAiTask==='function'};
         } else throw new Error('unknown_bridge_operation');
         reply={result};
@@ -2235,7 +2252,7 @@ if (desktop) {
       await invoke('mcp_renderer_reply',{callId:payload.call_id,reply}).catch(()=>{});
     });
     if(welcomeScreen.hidden) await invoke('mcp_register');
-    if(testMode) {
+    if(testMode && testMode!=='passive') {
       const report=await invoke('mcp_test_run',{mode:testMode}).catch(()=>({pass:false,failure:'native driver failure'}));
       await invoke('mcp_test_report',{report});
     }

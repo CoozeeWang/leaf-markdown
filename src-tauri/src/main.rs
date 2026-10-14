@@ -187,6 +187,29 @@ fn menu_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
         })
 }
 
+const MUTATING_MENU_IDS:&[&str]=&["cut","paste","paste-plain","add-comment","undo","redo","recovery"];
+fn document_menu_item(app:&tauri::AppHandle,id:&str)->Option<tauri::menu::MenuItem<tauri::Wry>> {
+    fn find(items:Vec<tauri::menu::MenuItemKind<tauri::Wry>>,id:&str)->Option<tauri::menu::MenuItem<tauri::Wry>> {
+        for item in items {match item {
+            tauri::menu::MenuItemKind::MenuItem(item) if item.id().as_ref()==id=>return Some(item),
+            tauri::menu::MenuItemKind::Submenu(sub)=>{if let Some(item)=find(sub.items().ok()?,id){return Some(item);}},
+            _=>{}
+        }}None
+    }
+    find(app.menu()?.items().ok()?,id)
+}
+fn refresh_document_menu(app:&tauri::AppHandle) {
+    let locked=menu_window(app).is_some_and(|window|app.state::<mcp::LeafMcpBroker>().window_locked(window.label()));
+    for id in MUTATING_MENU_IDS {if let Some(item)=document_menu_item(app,id){let _=item.set_enabled(!locked);}}
+}
+fn dispatch_document_menu(app:&tauri::AppHandle,label:&str,command:&str)->Result<bool,String> {
+    let broker=app.state::<mcp::LeafMcpBroker>();
+    if MUTATING_MENU_IDS.contains(&command)&&broker.window_locked(label){return Ok(false);}
+    let binding=broker.window_binding(label);
+    app.emit_to(label,"leaf-menu",serde_json::json!({"command":command,"binding":binding})).map_err(|_|"menu_event_unavailable")?;
+    Ok(true)
+}
+
 fn create_from_file_manager(app: tauri::AppHandle, target: impl FnOnce() -> Result<PathBuf, String> + Send + 'static) {
     use tauri_plugin_dialog::DialogExt;
     tauri::async_runtime::spawn_blocking(move || {
@@ -1136,7 +1159,9 @@ fn main() {
             let cycle_mode = MenuItem::with_id(handle, "cycle-mode", "切换视图模式", true, Some("CmdOrCtrl+R"))?;
             let comment_shortcut = if cfg!(target_os="macos") { "Cmd+Alt+A" } else { "Ctrl+Alt+M" };
             let add_comment = MenuItem::with_id(handle, "add-comment", "添加批注", true, Some(comment_shortcut))?;
-            let edit = Submenu::with_items(handle, "编辑", true, &[&undo, &redo, &PredefinedMenuItem::cut(handle, None)?, &PredefinedMenuItem::copy(handle, None)?, &PredefinedMenuItem::paste(handle, None)?, &PredefinedMenuItem::select_all(handle, None)?, &find, &copy_rich, &paste_plain, &add_comment, &cycle_mode])?;
+            let cut=MenuItem::with_id(handle,"cut","Cut",true,Some("CmdOrCtrl+X"))?;
+            let paste=MenuItem::with_id(handle,"paste","Paste",true,Some("CmdOrCtrl+V"))?;
+            let edit = Submenu::with_items(handle, "编辑", true, &[&undo, &redo, &cut, &PredefinedMenuItem::copy(handle, None)?, &paste, &PredefinedMenuItem::select_all(handle, None)?, &find, &copy_rich, &paste_plain, &add_comment, &cycle_mode])?;
             let menu = Menu::with_items(handle, &[&app_menu, &file, &edit])?;
             app.state::<i18n::Language>().attach_menu(&menu)?;
             app.set_menu(menu)?;
@@ -1159,6 +1184,7 @@ fn main() {
             }
             if matches!(event, tauri::WindowEvent::Focused(true)) {
                 *window.app_handle().state::<MenuFocus>().0.lock().unwrap() = Some(window.label().into());
+                refresh_document_menu(window.app_handle());
             }
             // AppKit can return focus to an open panel's parent after the document
             // has opened. Enforce the same rule on that later focus transition.
@@ -1217,7 +1243,7 @@ fn main() {
                 if let Some(window) = target { let _ = window.emit_to(window.label(), "leaf-menu", "new"); }
             }
             else if let Some(window) = menu_window(app) {
-                let _ = window.emit_to(window.label(), "leaf-menu", event.id().as_ref());
+                let _ = dispatch_document_menu(app,window.label(),event.id().as_ref());
             }
         })
         .build(context).expect("Leaf could not start")

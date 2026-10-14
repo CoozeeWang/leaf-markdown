@@ -60,7 +60,10 @@ export function desktopEdited() {
   clearTimeout(draftTimer);
   draftTimer = setTimeout(() => session?.checkpoint().catch(error => hooks.status(translatedMessage("desktop.could_not_protect_the_draft", {"error": error}), 'error')), 250);
 }
-export function desktopRestore(content) { return session.restore(content); }
+export function desktopRestore(content) {
+  if (!hooks.mutationAllowed()) return Promise.reject(new Error('document_locked'));
+  return session.restore(content);
+}
 
 async function closeDocument() {
   if (closing) return;
@@ -127,6 +130,9 @@ export async function initDesktop(callbacks) {
   await listen('leaf-close', closeDocument);
   await window.listen('leaf-native-rename',({payload})=>hooks.renameNative?.(payload));
   await window.listen('leaf-menu', async ({ payload }) => {
+    const command=typeof payload==='string'?payload:payload.command;
+    if (['cut','paste','paste-plain','add-comment','undo','redo','recovery'].includes(command) && !hooks.mutationAllowed()) return;
+    payload=command;
     if (payload === 'new') {
       try { await desktopNew(); } catch (error) { hooks.status(translatedMessage("desktop.could_not_create_the_document", {"error": error}), 'error'); }
     }
@@ -144,6 +150,7 @@ export async function initDesktop(callbacks) {
     if (payload === 'cycle-mode') hooks.cycleMode?.();
     if (payload === 'undo') hooks.undo?.();
     if (payload === 'redo') hooks.redo?.();
+    if (payload === 'cut' || payload === 'paste') hooks.clipboard?.(payload);
   });
   let draggedPaths=[];
   await window.onDragDropEvent(async ({ payload }) => {

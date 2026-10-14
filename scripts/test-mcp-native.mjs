@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 const mode=process.argv[2] || 'tracer';
-assert(['tracer','task-history-gate','renderer-ack-loss'].includes(mode));
+assert(['tracer','task-history-gate','renderer-ack-loss','all-write-entrances','stop-late-second-window'].includes(mode));
 const root=resolve(import.meta.dirname,'..');
 const directory=await mkdtemp(join(tmpdir(),'leaf-mcp-native-'));
 const result=join(directory,'result.json');

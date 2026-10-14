@@ -20,7 +20,7 @@ pub fn configure(config: &mut tauri::utils::config::Config) {
 
 #[tauri::command]
 pub fn mcp_test_mode(app: tauri::AppHandle,window:tauri::WebviewWindow) -> Option<String> {
-    (enabled(&app) && window.label().starts_with("document-")).then(|| std::env::var("LEAF_MCP_TEST_MODE").unwrap_or_default())
+    (enabled(&app) && window.label().starts_with("document-")).then(|| if window.label()=="document-1" {std::env::var("LEAF_MCP_TEST_MODE").unwrap_or_default()}else{"passive".into()})
 }
 
 #[tauri::command]
@@ -126,9 +126,50 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     let redo=broker.bridge(app,label,"test",json!({"action":"redo"})).await?;ensure(redo["content"]=="Synthetic draft","single tracer redo")?;
     if mode=="task-history-gate" {history_gate(app,label,broker,&client).await?;}
     if mode=="renderer-ack-loss" {ack_loss_gate(app,label,broker,&client).await?;edge_gate(app,label,broker,&client).await?;}
+    if mode=="all-write-entrances" {entrances_gate(app,label,broker,&client).await?;}
     broker.unregister(label);
     ensure(tool(&client,"read_document",binding).await.is_err(),"closed session must fail")?;
     let _=client.cancel().await;Ok(())
+}
+
+async fn wait_document(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBroker,previous:&[String])->Result<String,String>{
+    for _ in 0..100 {
+        let label=broker.inner.registry.lock().unwrap().documents.values().find(|d|!previous.contains(&d.label)).map(|d|d.label.clone());
+        if let Some(label)=label {if broker.bridge(app,&label,"snapshot",json!({})).await.is_ok(){return Ok(label);}}
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }Err("second renderer registration timeout".into())
+}
+async fn entrances_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{
+    let source="---\ntitle: Synthetic\n---\n\n# Heading\n\nBody[^1] {==quote==}{>>note<<}\n\n| A | B |\n| --- | --- |\n| one | two |\n\n[^1]: Footnote\n";
+    broker.bridge(app,label,"test",json!({"action":"reset","content":source})).await?;
+    let snapshot=broker.bridge(app,label,"snapshot",json!({})).await?;
+    let d=broker.register(label);let d=broker.authorize(app,label,&d.session_id,"synthetic-client",json!({"from":0,"to":source.encode_utf16().count()})).await?;
+    let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
+    let mut begin=binding.clone();begin["revision"]=snapshot["revision"].clone();begin["request_id"]=json!("entrances-begin");
+    let task=tool(client,"begin_edit",begin).await?;
+    for entrance in ["body","source","properties","footnote","table","comment","writing","recovery","attachment"] {
+        let outcome=broker.bridge(app,label,"test",json!({"action":"entrance","entrance":entrance,"files":["synthetic.txt"]})).await;
+        if entrance=="recovery" {ensure(matches!(outcome,Err(ref error) if error=="document_locked"),"recovery refused before session state changes")?;}else{outcome?;}
+        ensure(broker.bridge(app,label,"snapshot",json!({})).await?==snapshot,&format!("production {entrance} changed locked draft"))?;
+    }
+    for command in super::MUTATING_MENU_IDS {
+        ensure(!super::dispatch_document_menu(app,label,command)?,&format!("native {command} must reject locked recipient"))?;
+        let item=super::document_menu_item(app,command).ok_or("native menu absent")?;
+        ensure(!item.is_enabled().map_err(|_|"menu enabled inspection")?,"actual native edit menu must be disabled")?;
+    }
+    let previous=broker.inner.registry.lock().unwrap().documents.values().map(|d|d.label.clone()).collect::<Vec<_>>();
+    super::create_document(app.clone(),None,Some("Another synthetic document".into()),None)?;
+    let other=wait_document(app,broker,&previous).await?;
+    broker.bridge(app,&other,"test",json!({"action":"human","content":"Another edited document"})).await?;
+    ensure(broker.bridge(app,&other,"snapshot",json!({})).await?["content"]=="Another edited document","different production document remains editable")?;
+    ensure(super::dispatch_document_menu(app,&other,"undo")?,"native history route works in independent document")?;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    ensure(broker.bridge(app,&other,"snapshot",json!({})).await?["content"]=="Another synthetic document","native menu event reaches other CodeMirror history")?;
+    ensure(broker.bridge(app,label,"snapshot",json!({})).await?==snapshot,"another window event must not alter locked document")?;
+    let mut end=binding;end["task_id"]=task["task_id"].clone();tool(client,"stop_edit",end).await?;
+    broker.bridge(app,label,"test",json!({"action":"human","content":"Human resumed"})).await?;
+    ensure(broker.bridge(app,label,"snapshot",json!({})).await?["content"]=="Human resumed","human resumes after native finalize")?;
+    Ok(())
 }
 
 async fn ack_loss_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String> {
