@@ -46,6 +46,8 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm test
+      - name: Claude extension transport regression
+        run: node tests/claude-stdio-host.cjs src-tauri/src/claude_stdio.cjs
       - name: Windows trilingual interface checks
         if: inputs.platform == 'windows'
         shell: bash
