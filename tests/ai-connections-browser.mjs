@@ -127,6 +127,10 @@ try {
     assert.equal(await page.evaluate(()=>document.body.innerHTML.includes('synthetic-private-key-not-for-output')), false);
     assert.equal(await page.evaluate(()=>aiMock.keySeen), true);
     assert.equal(await page.locator('#aiConfigured').count(), 0);
+    await page.locator('#aiCopyTunnel').scrollIntoViewIfNeeded();
+    const hostActions=await page.locator('.ai-add-actions').evaluate(node=>({row:node.getBoundingClientRect().toJSON(),add:document.querySelector('#aiAddChatGPT').getBoundingClientRect().toJSON(),copy:document.querySelector('#aiCopyTunnel').getBoundingClientRect().toJSON()}));
+    assert.ok(Math.abs(hostActions.add.top-hostActions.copy.top)<2);
+    assert.ok(Math.abs(hostActions.copy.right-hostActions.row.right)<2, 'ChatGPT actions align right');
     assert.equal(await page.locator('#aiDevice').innerText(), '本机：macOS · Apple 芯片（arm64）');
     await page.waitForFunction(()=>document.querySelector('#aiDownload').textContent.includes('darwin-arm64.zip'));
     assert.equal(await page.locator('#aiRuntimeKey').getAttribute('placeholder'), '已保存（不显示）');
@@ -189,6 +193,8 @@ try {
         const bounds = await page.locator('#appearancePopover').evaluate(node => ({box:node.getBoundingClientRect().toJSON(),scroll:node.scrollWidth,width:node.clientWidth}));
         assert.ok(bounds.box.left>=0 && bounds.box.right<=width, 'settings stays in viewport');
         assert.ok(bounds.scroll<=bounds.width+1, 'settings has no horizontal overflow');
+        const actions=await page.locator('.ai-add-actions').evaluate(node=>{const [add,copy]=[...node.children].map(n=>n.getBoundingClientRect());return {topDifference:Math.abs(add.top-copy.top),rightDifference:Math.abs(copy.right-node.getBoundingClientRect().right)};});
+        assert.ok(actions.topDifference<2 && actions.rightDifference<2, 'ChatGPT actions remain on one row aligned right');
         assert.equal(await page.locator('.ai-guided-steps > li').count(),4);
         const heading = await page.locator('.settings-heading').boundingBox(), version = await page.locator('.settings-about').boundingBox();
         await page.locator('.appearance-scroll').evaluate(n=>n.scrollTop=n.scrollHeight);
