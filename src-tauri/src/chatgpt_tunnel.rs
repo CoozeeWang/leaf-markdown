@@ -158,7 +158,9 @@ fn prepare_profile_with_helper(id:&str,executable:&std::path::Path,directory:&st
     std::fs::write(&path,&text).map_err(|_|"tunnel_profile_write")?;
     #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o600)).map_err(|_|"tunnel_profile_write")?;}
     bounded_cli(executable,&["doctor".into(),"--profile-file".into(),path.to_string_lossy().into_owned(),"--explain".into()],Some(key),false).map_err(|e|cli_stage("doctor",e))?;
-    std::fs::File::open(&path).and_then(|file|file.sync_all()).map_err(|_|"tunnel_profile_write")?;
+    // Windows FlushFileBuffers requires a writable handle. File::open is
+    // read-only and makes an otherwise valid generated profile fail to save.
+    std::fs::OpenOptions::new().write(true).open(&path).and_then(|file|file.sync_all()).map_err(|_|"tunnel_profile_write")?;
     std::fs::rename(&path,&profile).map_err(|_|"tunnel_profile_write")?;
     #[cfg(unix)] std::fs::File::open(directory).and_then(|file|file.sync_all()).map_err(|_|"tunnel_profile_write")?;
     use sha2::{Digest,Sha256};
