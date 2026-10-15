@@ -161,4 +161,4 @@ Windows「保存为 PDF」直接使用 WebView2 `PrintToPdf`，避免 Microsoft 
 
 源码测试串行调度测试文件，因为多个 AI 契约用例会调用同一 Rust 工作目录；并行启动会在 Windows 冷构建时争用 Cargo 锁，导致等待锁被误判为三分钟超时。原生断言和各用例超时仍保留，未跳过失败项。
 
-Windows 安装包流程现在先运行 `windows-pdf-check`：使用生产的临时输出和 WebView2 实现，实际生成单行与多页 Unicode 标题 PDF，并重复覆盖后校验内容／元数据。保留临时路径的清理保护，但在交给外部渲染器前关闭 Leaf 的文件句柄；Windows 单元测试同时比较旧句柄阻塞与新路径允许独占写入。该检查不代替用户保存窗口与真实安装版验收。
+Windows 安装包流程现在先构建启用 `native-smoke` 的本机测试应用，运行 `windows-native-smoke.mjs --pdf-only`：打开实际 Leaf 导出窗口，经 `print_export` 命令生成单行与多页 Unicode 标题 PDF，并重复覆盖后校验内容／元数据。保留临时路径的清理保护，但在交给外部渲染器前关闭 Leaf 的文件句柄；Windows 单元测试同时比较旧句柄阻塞与新路径允许独占写入。该检查不代替用户保存窗口与真实安装版验收。

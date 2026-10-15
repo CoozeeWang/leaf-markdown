@@ -57,27 +57,14 @@ jobs:
       - name: Verify actual Windows PDF rendering
         if: inputs.platform == 'windows'
         shell: pwsh
-        env:
-          # The isolated PDF probe does not bundle or launch the MCP sidecar.
-          # Keep this override scoped here; the installer validates its sidecar.
-          TAURI_CONFIG: '{"bundle":{"externalBin":[]}}'
         run: |
-          npm run build
-          if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
+          npm run desktop:build -- --debug --no-bundle --features native-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Native PDF probe build failed' }
           python -m pip install pypdf==6.10.0
-          New-Item -ItemType Directory -Force test-results/windows-pdf | Out-Null
-          $short = Join-Path $PWD 'test-results/windows-pdf/short.pdf'
-          $long = Join-Path $PWD 'test-results/windows-pdf/中文標題-é-😀.pdf'
-          cargo run --locked --manifest-path src-tauri/Cargo.toml --features tauri/webview-data-url --example windows-pdf-check -- $short short
-          if ($LASTEXITCODE -ne 0) { throw 'Short WebView2 PDF failed' }
-          python -c "from pypdf import PdfReader; import sys; p=PdfReader(sys.argv[1]); assert len(p.pages)==1; assert 'One synthetic line.' in p.pages[0].extract_text()" $short
-          if ($LASTEXITCODE -ne 0) { throw 'Short PDF validation failed' }
-          foreach ($attempt in 1..2) {
-            cargo run --locked --manifest-path src-tauri/Cargo.toml --features tauri/webview-data-url --example windows-pdf-check -- $long long
-            if ($LASTEXITCODE -ne 0) { throw 'Long/overwrite WebView2 PDF failed' }
-            python tests/pdf-title-check.py $long '中文標題-é-😀'
-            if ($LASTEXITCODE -ne 0) { throw 'PDF metadata/content validation failed' }
-          }
+          if ($LASTEXITCODE -ne 0) { throw 'PDF validation dependency failed' }
+          $env:LEAF_NATIVE_SMOKE_EXE = Join-Path $PWD 'src-tauri/target/debug/leaf.exe'
+          node tests/windows-native-smoke.mjs --pdf-only
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Leaf PDF export failed' }
       - name: Build installer
         shell: bash
         run: npm run desktop:build -- --target "$LEAF_BUILD_TARGET" --config "$LEAF_BUILD_CONFIG"
