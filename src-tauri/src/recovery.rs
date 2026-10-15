@@ -69,7 +69,7 @@ impl Store {
         serde_json::to_writer(&mut temp, record).map_err(|e| e.to_string())?;
         temp.flush().map_err(|e| e.to_string())?;
         temp.as_file().sync_all().map_err(|e| e.to_string())?;
-        temp.persist(path).map_err(|e| e.to_string())?;
+        crate::atomic_file::persist(temp, &path).map_err(|e| e.to_string())?;
         Ok(())
     }
     pub fn copy_for_rename(&self, old: &str, new: &str, source: &str) -> Result<(), String> {

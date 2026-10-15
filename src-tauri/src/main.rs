@@ -14,6 +14,7 @@ mod pdf_output;
 mod native_shortcuts;
 #[cfg(target_os = "macos")]
 mod native_title;
+mod atomic_file;
 mod recovery;
 mod resources;
 mod document_location;

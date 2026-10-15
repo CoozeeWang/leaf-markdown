@@ -2,6 +2,8 @@
 //! The adapter owns no documents: every operation goes to the live Leaf broker.
 #[path = "../ai_credentials.rs"]
 mod ai_credentials;
+#[path = "../atomic_file.rs"]
+mod atomic_file;
 use std::{sync::Arc, path::PathBuf};
 use rmcp::{ServiceExt,ServerHandler,ErrorData,model::*,service::{RoleClient,RoleServer,Peer,RequestContext},transport::{stdio,StreamableHttpClientTransport,streamable_http_client::StreamableHttpClientTransportConfig}};
 

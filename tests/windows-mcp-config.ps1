@@ -1,8 +1,7 @@
 # Real vendor parser + isolated native broker/host checks. No real API key.
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Run in a disposable GitHub Actions Windows runner only' }
-cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
-if ($LASTEXITCODE -ne 0) { throw 'Windows Rust regression suite failed' }
+# The complete Rust suite runs in the preceding workflow step.
 $archive = 'tunnel-client-v0.0.16-windows-amd64.zip'
 $metadata = Invoke-RestMethod 'https://api.github.com/repos/openai/tunnel-client/releases/tags/v0.0.16'
 $asset = $metadata.assets | Where-Object { $_.name -eq $archive }

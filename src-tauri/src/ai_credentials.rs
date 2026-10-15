@@ -115,7 +115,7 @@ pub fn write_private_existing_parent(path:&std::path::Path,text:&str)->Result<()
  let mut f=tempfile::NamedTempFile::new_in(parent).map_err(|_|"credential_write")?;
  #[cfg(unix)]{use std::os::unix::fs::PermissionsExt;f.as_file().set_permissions(std::fs::Permissions::from_mode(0o600)).map_err(|_|"credential_write")?;}
  #[cfg(windows)]protect_windows(f.path())?;
- f.write_all(text.as_bytes()).and_then(|_|f.as_file().sync_all()).map_err(|_|"credential_write")?;f.persist(path).map_err(|_|"credential_write")?;Ok(())
+ f.write_all(text.as_bytes()).and_then(|_|f.as_file().sync_all()).map_err(|_|"credential_write")?;crate::atomic_file::persist(f,path).map_err(|_|"credential_write")?;Ok(())
 }
 pub fn read_private(path:&std::path::Path)->Result<String,String>{
  let metadata=std::fs::symlink_metadata(path).map_err(|_|"credential_unavailable")?;
@@ -334,7 +334,7 @@ impl AiClientProfileStore {
             let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|_| "profile_write")?;
             file.write_all(&serde_json::to_vec(&self.profiles).map_err(|_| "profile_encoding")?).map_err(|_| "profile_write")?;
             file.as_file().sync_all().map_err(|_| "profile_write")?;
-            file.persist(path).map_err(|_| "profile_write")?;
+            crate::atomic_file::persist(file,path).map_err(|_| "profile_write")?;
         }
         Ok(())
     }

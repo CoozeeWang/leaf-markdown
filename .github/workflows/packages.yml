@@ -55,7 +55,7 @@ jobs:
           npx playwright install chromium webkit
           npm run test:browser -- i18n-browser.mjs
       - name: Native unit tests
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
       - name: Verify Windows MCP configuration and native restart
         if: inputs.platform == 'windows'
         shell: pwsh
