@@ -1862,7 +1862,6 @@ function renderAiConnections() {
   aiNode('mcpEnabled').disabled = !desktop || !profiles || value.busy;
   const controls=aiNode('aiConnectionControls');
   controls.disabled=!desktop || !profiles?.enabled || value.busy;
-  controls.inert=!desktop||!profiles?.enabled;
   for(const target of controls.querySelectorAll('a, summary')) {
     if(controls.disabled) {
       target.setAttribute('aria-disabled','true');target.tabIndex=-1;

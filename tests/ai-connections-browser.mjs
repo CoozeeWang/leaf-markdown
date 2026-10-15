@@ -123,7 +123,7 @@ try {
       assert.equal(await page.locator('#aiClient').isDisabled(),true);
       assert.equal(await page.locator('#aiClear').isDisabled(),true);
       assert.equal(await page.locator('#aiLocalConfigure').isDisabled(),true);
-      assert.equal(await page.locator('#aiConnectionControls').evaluate(node=>node.inert),true);
+      assert.equal(await page.locator('#aiConnectionControls').evaluate(node=>node.inert),false,'saved settings remain readable to assistive technology');
       assert.equal(await page.locator('#aiConnectionControls').evaluate(node=>getComputedStyle(node).opacity),'0.5');
       assert.ok(await page.locator('#aiConnectionControls input, #aiConnectionControls button, #aiConnectionControls select').evaluateAll(nodes=>nodes.every(node=>node.matches(':disabled'))));
       const before=await page.evaluate(()=>aiMock.calls.length);
