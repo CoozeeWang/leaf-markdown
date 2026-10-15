@@ -33,6 +33,8 @@ Rust 测试在 `src-tauri` 中运行：
 cargo test --locked --all-targets
 ```
 
+MCP adapter 的协议回归包含旧版 `initialize` 和新版 `server/discover` 两条实际传输链路，检查从旧版内部 broker 转发的工具／资源响应在新版宿主中带有 `resultType: "complete"`，在旧版宿主中保留原格式，并保留数据、元信息和错误语义。`node scripts/test-mcp-adapter.mjs stdio-and-origin` 另用隔离原生应用与标准 TypeScript SDK 检查新版工具发现、读取、错误响应和旧版连接／撤权；运行前须构建匹配的 `native-smoke` GUI 与 helper。该检查不代表真实 Claude 或 Windows 安装版验收。
+
 高亮与行内代码快捷键由 `inline-format-shortcuts-browser.mjs` 检查，覆盖两端按键、三语命令、实际渲染及撤销／重做。已有 Vite 测试服务运行时，macOS 可执行 `cargo run --locked --example native-table-keys -- ../tests/native-inline-format-shortcuts.html http://127.0.0.1:41732/tests/native-inline-format-shortcuts.html`，以 AppKit 按键验证实际 WKWebView；不代替安装版及真实中文输入法验收。
 
 脚注浮框的文档历史回归为 `footnote-history-browser.mjs`，覆盖 Mac／Windows 快捷键、原生菜单事件入口、撤销后继续输入、编号恢复与浮框同步。macOS 可用同一原生入口运行 `../tests/native-footnote-history.html` 与 `http://127.0.0.1:41732/tests/native-footnote-history.html --foreground`，检查 AppKit 撤销／重做与模拟菜单转发；不代替真实原生菜单、中文输入法或 Windows 实机验收。

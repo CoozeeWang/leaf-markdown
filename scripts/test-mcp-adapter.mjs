@@ -7,6 +7,8 @@ import { tmpdir, homedir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import {stageDevBundle} from './desktop-dev-macos.mjs';
+import {Client} from '@modelcontextprotocol/client';
+import {StdioClientTransport} from '@modelcontextprotocol/client/stdio';
 
 const root = resolve(import.meta.dirname, '..');
 const mode = process.argv[2] || 'stdio-and-origin';
@@ -78,6 +80,24 @@ try {
   const app = start(appExecutable, []);
   app.stderr.on('data', chunk => process.stderr.write(chunk));
   const ready = await waitJson('adapter-ready.json');
+  for (const binary of binaries) {
+    await test('modern SDK discovers tools and reads through the actual adapter', async () => {
+      const transport = new StdioClientTransport({command:binary,args:['--descriptor',ready.descriptor],cwd:directory,env:{PATH:'/no-development-runtimes'},stderr:'pipe'});
+      const client = new Client({name:'Synthetic modern adapter host',version:'1.0.0'},{capabilities:{},versionNegotiation:{mode:{pin:'2026-07-28'}}});
+      let stderr='';transport.stderr.on('data',chunk=>stderr+=chunk);
+      try {
+        await client.connect(transport);
+        const tools=await client.listTools();assert(tools.tools.some(t=>t.name==='read_document'));
+        const read=await client.callTool({name:'read_document',arguments:ready.binding});
+        assert.equal(read.isError,false);assert.equal(read.structuredContent.content,'synthetic alpha omega');
+        const resources=await client.listResources();assert.equal(resources.resources.length,1);
+        const resource=await client.readResource({uri:resources.resources[0].uri});assert.match(resource.contents[0].text,/<!doctype html>/i);
+        const denied=await client.callTool({name:'read_document',arguments:{...ready.binding,session_id:'synthetic-stale-session'}});
+        assert.equal(denied.isError,true,'tool failures also use a valid complete response');
+        assert.equal(stderr,'','no diagnostic or credential output');
+      } finally {await client.close();}
+    });
+  }
   const clients = [];
   for (const binary of binaries) {
     const h = helper(binary, ready.descriptor); clients.push(h); await initialize(h);
