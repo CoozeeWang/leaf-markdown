@@ -274,26 +274,20 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <label class="setting-check ai-master"><input id="mcpEnabled" type="checkbox" disabled>${h('ai.master')}</label>
         <p class="setting-hint">${h('ai.access_boundary')}</p>
         <label class="setting-row ai-client-row"><span>${h('ai.client')}</span><span class="ui-select"><select id="aiClient"><option value="chatgpt">ChatGPT</option><option value="claude-desktop">Claude Desktop</option><option value="workbuddy">WorkBuddy</option></select>${icon('chevron',16)}</span></label>
-        <div class="ai-document-access">
-          <p id="aiDocumentTarget" class="setting-hint"></p>
-          <label class="setting-row"><span>${h('ai.document_scope')}</span><span class="ui-select"><select id="aiDocumentScope"><option value="selection">${h('ai.scope_selection')}</option><option value="document">${h('ai.scope_document')}</option></select>${icon('chevron',16)}</span></label>
-          <p class="setting-hint">${h('ai.document_access_help')}</p>
-          <button id="aiAuthorizeDocument" class="ai-button" disabled></button>
-          <p id="aiDocumentGrantStatus" class="setting-hint" role="status"></p>
-        </div>
-        <div class="ai-actions"><span id="aiConfigured" class="ai-badge" role="status"></span><button id="aiClear" class="ai-button ai-danger" disabled></button></div>
+        <div class="ai-actions ai-config-actions"><button id="aiClear" class="ai-button ai-danger" disabled></button></div>
         <p id="aiConnectionError" class="setting-hint ai-error" role="alert"></p>
         <div id="aiLocalSetup" hidden><p id="aiLocalInstructions" class="setting-hint"></p><div class="ai-actions"><button id="aiLocalConfigure" class="ai-button">${h('ai.prepare')}</button><button id="aiCopyConfig" class="ai-button" disabled>${h('ai.copy_config')}</button></div><pre id="aiExported" hidden></pre></div>
         <div id="aiChatGPTSetup" class="ai-guided-card">
           <h4>${h('ai.guided_title')}</h4><p id="aiSavedStatus" class="setting-hint" role="status"></p>
           <ol class="ai-guided-steps">
-            <li><label for="aiTunnelId">${h('ai.tunnel_id')}</label><p class="setting-hint">${h('ai.tunnel_help')} <a href="https://platform.openai.com/settings/organization/tunnels" data-ai-link>${h('ai.tunnel_link')}</a></p><input id="aiTunnelId" autocomplete="off" spellcheck="false" data-i18n-placeholder="ai.tunnel_placeholder" placeholder="${t('ai.tunnel_placeholder')}" disabled></li>
-            <li><label for="aiTunnelProgram">${h('ai.program')}</label><div class="ai-input-row"><input id="aiTunnelProgram" readonly data-i18n-placeholder="ai.program_placeholder" placeholder="${t('ai.program_placeholder')}"><button id="aiPickProgram" class="ai-button" disabled>${h('ai.choose_program')}</button></div><div class="ai-device-row"><span id="aiDevice" class="setting-hint"></span><button id="aiRefreshDownload" class="ai-text-button">${h('ai.recheck')}</button></div><p id="aiDownloadStatus" class="setting-hint" role="status"></p><a id="aiDownload" href="https://github.com/openai/tunnel-client/releases/latest" data-ai-link>${h('ai.downloads')}</a><p class="setting-hint">${h('ai.program_help')}</p><details id="aiMacHelp" open><summary>${h('ai.mac_title')}</summary><p class="setting-hint">${h('ai.mac_help')}</p></details></li>
-            <li><label for="aiRuntimeKey">${h('ai.runtime_key')}</label><input id="aiRuntimeKey" type="password" autocomplete="off" spellcheck="false" disabled><p class="setting-hint">${h('ai.key_help')} <a href="https://platform.openai.com/settings/organization/api-keys" data-ai-link>${h('ai.key_link')}</a></p><p id="aiKeepKey" class="setting-hint" hidden>${h('ai.keep_key')}</p><div class="ai-actions"><button id="aiSaveSetup" class="ai-button" disabled>${h('ai.save_setup')}</button><button id="aiEditSetup" class="ai-button" hidden>${h('ai.edit_setup')}</button><button id="aiCancelSetup" class="ai-button" hidden>${h('ai.cancel')}</button></div></li>
-            <li><span class="ai-step-title">${h('ai.add_title')}</span><p class="setting-hint">${h('ai.add_help')}</p><div class="ai-actions"><button id="aiStartTunnel" class="ai-button" disabled>${h('ai.start')}</button><button id="aiStopTunnel" class="ai-button" disabled>${h('ai.stop_connection')}</button></div><p id="aiRuntimeStatus" class="setting-hint" role="status"></p><div class="ai-actions"><button id="aiAddChatGPT" class="ai-button" disabled>${h('ai.add_title')}</button><button id="aiCopyTunnel" class="ai-button" disabled>${h('ai.copy_tunnel')}</button></div><p class="setting-hint">${h('ai.host_boundary')}</p></li>
+            <li><label for="aiTunnelId">${h('ai.tunnel_id')}</label><p class="setting-hint">${h('ai.setup_at')} <a href="https://platform.openai.com/settings/organization/tunnels" data-ai-link>${h('ai.tunnel_link')}</a> ${h('ai.tunnel_help')}</p><input id="aiTunnelId" autocomplete="off" spellcheck="false" data-i18n-placeholder="ai.tunnel_placeholder" placeholder="${t('ai.tunnel_placeholder')}" disabled></li>
+            <li><label for="aiTunnelProgram">${h('ai.program')}</label><div class="ai-input-row"><input id="aiTunnelProgram" readonly data-i18n-placeholder="ai.program_placeholder" placeholder="${t('ai.program_placeholder')}"><button id="aiPickProgram" class="ai-button" disabled>${h('ai.choose_program')}</button></div><div class="ai-device-row"><span id="aiDevice" class="setting-hint"></span><button id="aiRefreshDownload" class="ai-text-button">${h('ai.recheck')}</button></div><p id="aiDownloadStatus" class="setting-hint" role="status"></p><a id="aiDownload" href="https://github.com/openai/tunnel-client/releases/latest" data-ai-link>${h('ai.downloads')}</a><p id="aiProgramHelp" class="setting-hint"></p><details id="aiMacHelp" open><summary>${h('ai.mac_title')}</summary><p class="setting-hint">${h('ai.mac_help')}</p></details></li>
+            <li><label for="aiRuntimeKey">${h('ai.runtime_key')}</label><input id="aiRuntimeKey" type="password" autocomplete="off" spellcheck="false" disabled><p class="setting-hint">${h('ai.setup_at')} <a href="https://platform.openai.com/settings/organization/api-keys" data-ai-link>${h('ai.key_link')}</a> ${h('ai.key_help')}</p><p id="aiKeepKey" class="setting-hint" hidden>${h('ai.keep_key')}</p><div class="ai-actions"><button id="aiSaveSetup" class="ai-button ai-primary" disabled>${h('ai.save_setup')}</button><button id="aiEditSetup" class="ai-button" hidden>${h('ai.edit_setup')}</button><button id="aiCancelSetup" class="ai-button" hidden>${h('ai.cancel')}</button></div></li>
+            <li><span class="ai-step-title">${h('ai.add_title')}</span><p class="setting-hint">${h('ai.add_help')}</p><p id="aiRuntimeStatus" class="setting-hint" role="status"></p><div class="ai-actions"><button id="aiAddChatGPT" class="ai-button ai-primary" disabled>${h('ai.add_button')}</button><button id="aiCopyTunnel" class="ai-button" disabled>${h('ai.copy_tunnel')}</button><button id="aiRetryTunnel" class="ai-text-button" hidden>${h('ai.retry_connection')}</button></div><details><summary>${h('ai.existing_title')}</summary><p class="setting-hint">${h('ai.existing_help')}</p></details></li>
           </ol>
         </div>
         <details id="aiSetupHelp" class="ai-setup-help"><summary>${h('ai.help_title')}</summary><p class="setting-hint">${h('ai.help_hint')}</p><p class="setting-hint ai-setup-prompt">${h('ai.help_prompt')}</p><button id="aiCopyPrompt" class="ai-button">${h('ai.copy_prompt')}</button></details>
+        <div class="ai-document-access"><p class="setting-hint">${h('ai.document_access_help')}</p><button id="aiAuthorizeDocument" class="ai-button" disabled></button><p id="aiDocumentGrantStatus" class="setting-hint" role="status"></p></div>
         <p id="aiActionStatus" class="setting-hint" role="status"></p>
       </section>
       </div>
@@ -1864,9 +1858,9 @@ function renderAiConnections() {
     const item = profiles?.clients.find(p => p.client === option.value);
     option.textContent = `${aiClientNames[option.value]} · ${t(item ? item.configured ? 'ai.configured' : 'ai.unconfigured' : 'ai.unknown')}`;
   }
-  aiNode('aiConfigured').textContent = t(profile ? profile.configured ? 'ai.configured' : 'ai.unconfigured' : 'ai.unknown');
   aiNode('aiClear').textContent = t('ai.clear', {client:aiClientNames[value.selected]});
   aiNode('aiClear').disabled = value.busy || !profile?.configured;
+  aiNode('aiClear').hidden = !profile?.configured;
   aiNode('aiChatGPTSetup').hidden = value.selected !== 'chatgpt';
   aiNode('aiSetupHelp').hidden = value.selected !== 'chatgpt';
   aiNode('aiLocalSetup').hidden = value.selected === 'chatgpt';
@@ -1875,7 +1869,7 @@ function renderAiConnections() {
   aiNode('aiCopyConfig').disabled = value.busy || !value.exported;
   aiNode('aiExported').hidden = !value.exported;
   aiNode('aiExported').textContent = value.exported ? JSON.stringify(value.exported, null, 2) : '';
-  aiNode('aiSavedStatus').textContent = t(runtime?.saved_config ? 'ai.saved' : 'ai.not_saved');
+  aiNode('aiSavedStatus').textContent = runtime?.saved_config ? t('ai.saved') : '';
   aiNode('aiRuntimeStatus').textContent = t(runtime?.host_verified ? 'ai.host_verified' : runtime?.local_ready ? 'ai.local_ready' : runtime?.process ? 'ai.starting' : 'ai.stopped');
   aiNode('aiRuntimeStatus').dataset.state = runtime?.host_verified ? 'host-verified' : runtime?.local_ready ? 'local-ready' : runtime?.process ? 'starting' : 'stopped';
   if (runtime?.last_error) showAiError(runtime.last_error);
@@ -1893,35 +1887,37 @@ function renderAiConnections() {
   aiNode('aiEditSetup').disabled = value.busy;
   aiNode('aiCancelSetup').hidden = !value.editing || !runtime?.saved_config;
   aiNode('aiCancelSetup').disabled = value.busy;
-  aiNode('aiStartTunnel').disabled = value.busy || !profiles?.enabled || !runtime?.saved_config || value.editing;
-  aiNode('aiStopTunnel').disabled = value.busy || !runtime?.process;
+  aiNode('aiRetryTunnel').hidden = !profiles?.enabled || !runtime?.saved_config || !!runtime?.process || value.editing;
+  aiNode('aiRetryTunnel').disabled = value.busy;
   aiNode('aiAddChatGPT').disabled = value.busy || !runtime?.local_ready || value.editing;
   aiNode('aiCopyTunnel').disabled = value.busy || !chatgpt?.tunnel?.tunnel_id || value.editing;
-  aiNode('aiMacHelp').hidden = value.platform && value.platform.os !== 'macos';
+  const platform=value.platform;
+  const chip=['aarch64','arm64'].includes(platform?.arch)?'arm64':['x86_64','amd64'].includes(platform?.arch)?'amd64':null;
+  const device=chip&&['macos','windows','linux'].includes(platform?.os)?t(`ai.device_${platform.os}_${chip}`):t('ai.device_unknown');
+  aiNode('aiDevice').textContent=t('ai.device',{device});
+  aiNode('aiProgramHelp').textContent=t(platform?.os==='windows'?'ai.program_help_windows':platform?'ai.program_help':'ai.program_help_unknown');
+  if(value.downloadName)aiNode('aiDownload').textContent=t('ai.download_file',{file:value.downloadName});
+  aiNode('aiMacHelp').hidden = platform && platform.os !== 'macos';
   renderAiDocumentGrant();
   requestAnimationFrame(updateAppearanceScrollHint);
 }
 function renderAiDocumentGrant() {
   const opened = desktop && welcomeScreen.hidden && !!mcpBinding;
-  const snapshot = opened ? editor.mcpSnapshot() : null;
   const profile = aiConnection.profiles?.clients.find(p=>p.client===aiConnection.selected);
   const client = aiClientNames[aiConnection.selected];
-  aiNode('aiDocumentTarget').textContent = opened ? t('ai.document_target',{client,file:state.fileName}) : t('ai.document_none');
-  aiNode('aiDocumentScope').disabled = !opened || aiConnection.busy || !!editor.aiTask();
   aiNode('aiAuthorizeDocument').textContent = t('ai.authorize_document',{client});
-  aiNode('aiAuthorizeDocument').disabled = !opened || aiConnection.busy || !aiConnection.profiles?.enabled || !profile?.enabled || !!editor.aiTask() || (aiNode('aiDocumentScope').value==='selection' && snapshot.selection.from===snapshot.selection.to);
+  aiNode('aiAuthorizeDocument').disabled = !opened || aiConnection.busy || !aiConnection.profiles?.enabled || !profile?.enabled || !!editor.aiTask();
   const grant=aiConnection.authorization;
-  aiNode('aiDocumentGrantStatus').textContent = grant && opened && aiConnection.profiles?.enabled && profile?.enabled && grant.session_id===mcpBinding.session_id && grant.authorization_epoch===mcpBinding.authorization_epoch && grant.client===aiConnection.selected ? t('ai.document_authorized',{client,file:state.fileName,scope:t(grant.scopeKind==='selection'?'ai.scope_selection':'ai.scope_document')}) : '';
+  aiNode('aiDocumentGrantStatus').textContent = grant && opened && aiConnection.profiles?.enabled && profile?.enabled && grant.session_id===mcpBinding.session_id && grant.authorization_epoch===mcpBinding.authorization_epoch && grant.client===aiConnection.selected ? t('ai.document_authorized',{client}) : '';
 }
-aiNode('aiDocumentScope').onchange = renderAiDocumentGrant;
 aiNode('aiAuthorizeDocument').onclick = () => {
   if(aiNode('aiAuthorizeDocument').disabled)return;
-  const binding={...mcpBinding}, snapshot=editor.mcpSnapshot(), client=aiConnection.selected, scopeKind=aiNode('aiDocumentScope').value;
-  const scope=scopeKind==='selection'?{...snapshot.selection}:{from:0,to:snapshot.content.length};
+  const binding={...mcpBinding}, snapshot=editor.mcpSnapshot(), client=aiConnection.selected;
+  const scope={from:0,to:snapshot.content.length};
   void runAiAction(async()=>{
     const result=await invoke('mcp_authorize',{sessionId:binding.session_id,client,scope,revision:snapshot.revision});
     if(result.document_id!==binding.document_id || result.session_id!==binding.session_id || mcpBinding?.session_id!==binding.session_id || mcpBinding?.document_id!==binding.document_id || mcpBinding.authorization_epoch!==result.authorization_epoch || editor.mcpSnapshot().revision!==snapshot.revision)throw new Error('stale_authorization');
-    aiConnection.authorization={...result,scopeKind};
+    aiConnection.authorization={...result,scopeKind:'document'};
   });
 };
 function restoreAiFields() {
@@ -1959,7 +1955,7 @@ async function runAiAction(action) {
   if (aiConnection.busy || !desktop) return false;
   aiConnection.busy = true; ++aiConnection.read;
   aiNode('aiConnectionError').textContent = ''; aiNode('aiActionStatus').textContent = t('ai.working'); renderAiConnections();
-  try {await action(); aiNode('aiActionStatus').textContent = t('ai.done'); return true;}
+  try {await action(); aiNode('aiActionStatus').textContent = ''; return true;}
   catch (error) {showAiError(error); aiNode('aiActionStatus').textContent = ''; return false;}
   finally {aiConnection.busy = false; renderAiConnections();}
 }
@@ -1973,6 +1969,7 @@ aiNode('mcpEnabled').addEventListener('change', () => {
   void runAiAction(async () => {
     aiConnection.profiles = await invoke('mcp_set_enabled', {enabled:desired});
     acceptAiTunnel(await invoke('mcp_tunnel_status'));
+    if (desired) await enableConfiguredAiConnections();
   });
 });
 aiNode('aiPickProgram').onclick = () => {void runAiAction(async () => {
@@ -1986,17 +1983,19 @@ aiNode('aiSaveSetup').onclick = () => {
   void runAiAction(async () => {
     const value = await invoke('mcp_configure_tunnel', {tunnelId:aiNode('aiTunnelId').value.trim(), executable:aiConnection.executable, runtimeKey, operationId:aiOperation(), generation:aiConnection.tunnel.profile.generation});
     acceptAiTunnel(value); aiConnection.editing = false; restoreAiFields();
+    if (aiConnection.profiles?.enabled) await enableConfiguredAiConnections();
   });
 };
 aiNode('aiEditSetup').onclick = () => {aiConnection.editing = true; renderAiConnections(); aiNode('aiTunnelId').focus();};
 aiNode('aiCancelSetup').onclick = () => {aiConnection.editing = false; restoreAiFields(); renderAiConnections(); aiNode('aiEditSetup').focus();};
-aiNode('aiStartTunnel').onclick = () => {void runAiAction(async () => {
-  const profile = aiConnection.tunnel.profile;
-  const result = await invoke('mcp_enable_client', {client:'chatgpt', operationId:aiOperation(), generation:profile.generation});
-  acceptAiProfile(result.profile);
-  acceptAiTunnel(await invoke('mcp_start_tunnel'));
-});};
-aiNode('aiStopTunnel').onclick = () => {void runAiAction(async () => acceptAiTunnel(await invoke('mcp_stop_tunnel')));};
+async function enableConfiguredAiConnections() {
+  for (const profile of aiConnection.profiles.clients.filter(p=>p.configured && !p.enabled)) {
+    const result = await invoke('mcp_enable_client', {client:profile.client, operationId:aiOperation(), generation:profile.generation});
+    acceptAiProfile(result.profile);
+  }
+  if (aiConnection.tunnel?.runtime.saved_config) acceptAiTunnel(await invoke('mcp_start_tunnel'));
+}
+aiNode('aiRetryTunnel').onclick = () => {void runAiAction(enableConfiguredAiConnections);};
 aiNode('aiLocalConfigure').onclick = () => {const client = aiConnection.selected; void runAiAction(async () => {
   let profile = aiConnection.profiles.clients.find(p => p.client === client);
   if (!profile.configured) {profile = await invoke('mcp_configure_client', {client, operationId:aiOperation(), generation:profile.generation}); acceptAiProfile(profile);}
@@ -2023,13 +2022,14 @@ aiNode('aiAddChatGPT').onclick = () => {void openAiSetupLink('https://chatgpt.co
 let aiDownloadRead = 0;
 async function refreshAiDownload() {
   const serial = ++aiDownloadRead;
+  aiConnection.downloadName=null;
   aiNode('aiRefreshDownload').disabled = true; aiNode('aiDownload').href = 'https://github.com/openai/tunnel-client/releases/latest';
   aiNode('aiDownload').textContent = t('ai.downloads'); aiNode('aiDownloadStatus').textContent = t('ai.checking');
   const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 8000);
   try {
     const platform = desktop ? await invoke('mcp_connection_platform') : null;
     aiConnection.platform = platform;
-    aiNode('aiDevice').textContent = t('ai.device', {device:platform ? `${platform.os} · ${platform.arch}` : t('ai.device_unknown')});
+    renderAiConnections();
     const response = await fetch('https://api.github.com/repos/openai/tunnel-client/releases/latest', {credentials:'omit',referrerPolicy:'no-referrer',redirect:'error',cache:'no-store',signal:controller.signal,headers:{Accept:'application/vnd.github+json'}});
     if (!response.ok) throw new Error('release_unavailable');
     const release = await response.json();
@@ -2039,6 +2039,7 @@ async function refreshAiDownload() {
     const name = `tunnel-client-${release.tag_name}-${os}-${arch}.zip`;
     const matches = Array.isArray(release.assets) ? release.assets.filter(a => a.name === name && a.state === 'uploaded' && validAiSetupLink(a.browser_download_url)) : [];
     if (release.draft !== false || release.prerelease !== false || matches.length !== 1) {aiNode('aiDownloadStatus').textContent = t('ai.download_missing'); return;}
+    aiConnection.downloadName=name;
     aiNode('aiDownload').href = matches[0].browser_download_url; aiNode('aiDownload').textContent = t('ai.download_file', {file:name}); aiNode('aiDownloadStatus').textContent = '';
   } catch {if (serial === aiDownloadRead) aiNode('aiDownloadStatus').textContent = t('ai.download_failed');}
   finally {clearTimeout(timeout); if (serial === aiDownloadRead) {aiNode('aiRefreshDownload').disabled = false; renderAiConnections();}}
@@ -2639,7 +2640,7 @@ if (desktop) {
           else if(args.action==='ai-settings-authorize') {
             openSettings('ai');await refreshAiConnections();
             aiNode('aiClient').value=args.client;aiNode('aiClient').dispatchEvent(new Event('change'));
-            aiNode('aiDocumentScope').value=args.scope_kind || 'document';aiNode('aiDocumentScope').dispatchEvent(new Event('change'));
+            if(args.scope_kind && args.scope_kind!=='document')throw new Error('native_ui_scope_document_only');
             if(aiNode('aiAuthorizeDocument').disabled)throw new Error('native_ui_authorize_disabled');
             aiNode('aiAuthorizeDocument').click();
             while(aiConnection.busy)await new Promise(resolve=>setTimeout(resolve,10));

@@ -69,7 +69,7 @@ async function nativePage() {
   return page;
 }
 try {
-  await test('current-document authorization requires explicit client and scope and never grants on selection', async () => {
+  await test('current-document authorization defaults to the whole document and still requires an explicit action', async () => {
     const page = await nativePage();
     assert.equal(await page.locator('#aiAuthorizeDocument').count(), 1, 'normal settings must expose document authorization');
     assert.ok(await page.locator('#aiAuthorizeDocument').isDisabled());
@@ -78,9 +78,8 @@ try {
     await page.locator('#aiLocalConfigure').click();
     await page.waitForFunction(()=>aiMock.clients.find(p=>p.client==='workbuddy').enabled);
     assert.equal(await page.evaluate(()=>aiMock.calls.filter(c=>c.command==='mcp_authorize').length),0);
-    assert.equal(await page.locator('#aiDocumentScope').inputValue(),'selection');
-    assert.ok(await page.locator('#aiAuthorizeDocument').isDisabled(), 'empty selection must not silently grant the document');
-    await page.locator('#aiDocumentScope').selectOption('document');
+    assert.equal(await page.locator('#aiDocumentScope').count(),0);
+    assert.equal(await page.locator('#aiDocumentTarget').count(),0);
     await page.waitForFunction(()=>!document.querySelector('#aiAuthorizeDocument').disabled);
     await page.locator('#aiAuthorizeDocument').click();
     await page.waitForFunction(()=>aiMock.calls.some(c=>c.command==='mcp_authorize'));
@@ -125,9 +124,17 @@ try {
     assert.equal(await page.locator('#aiRuntimeKey').inputValue(), '');
     assert.equal(await page.evaluate(()=>document.body.innerHTML.includes('synthetic-private-key-not-for-output')), false);
     assert.equal(await page.evaluate(()=>aiMock.keySeen), true);
+    assert.equal(await page.locator('#aiConfigured').count(), 0);
+    assert.equal(await page.locator('#aiDevice').innerText(), '本机：macOS · Apple 芯片（arm64）');
+    await page.waitForFunction(()=>document.querySelector('#aiDownload').textContent.includes('darwin-arm64.zip'));
+    assert.equal(await page.locator('#aiRuntimeKey').getAttribute('placeholder'), '已保存（不显示）');
+    const position = await page.locator('#aiClear').evaluate(node=>({clear:node.getBoundingClientRect().toJSON(),select:document.querySelector('#aiClient').getBoundingClientRect().toJSON()}));
+    assert.ok(position.clear.top >= position.select.bottom);
+    assert.ok(Math.abs(position.clear.right-position.select.right)<2);
     await page.locator('.appearance-scroll').evaluate(node=>node.scrollTop=0);
     await page.screenshot({path:artifactPath('ai-settings-configured-720.png')});
-    await page.locator('#aiStartTunnel').click();
+    assert.equal(await page.locator('#aiStartTunnel').count(),0);
+    assert.equal(await page.locator('#aiActionStatus').innerText(), '');
     await page.waitForFunction(()=>document.querySelector('#aiRuntimeStatus').dataset.state==='local-ready');
     assert.match(await page.locator('#aiRuntimeStatus').innerText(), /本地/);
     assert.doesNotMatch(await page.locator('#aiRuntimeStatus').innerText(), /成功调用/);
@@ -159,12 +166,17 @@ try {
     await page.locator('#mcpEnabled').uncheck();
     await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
     assert.deepEqual(await page.evaluate(()=>aiMock.clients.map(p=>p.configured)), [false,true,true], 'master off preserves independent settings');
+    await page.locator('#mcpEnabled').check();
+    await page.waitForFunction(()=>aiMock.clients.slice(1).every(p=>p.enabled));
+    assert.equal(await page.evaluate(()=>aiMock.calls.filter(c=>c.command==='mcp_authorize').length),0, 'reconnecting configured clients never authorizes a document');
     await page.close();
   });
   await test('three languages, narrow themes and fixed settings chrome retain clear keyboard targets', async () => {
     const page = await nativePage();
     for (const language of ['zh-Hans','zh-Hant-TW','en']) {
       await page.evaluate(async value => {const {setLanguagePreference}=await import('/src/i18n.js');await setLanguagePreference(value);},language);
+      assert.match(await page.locator('#aiDevice').innerText(), /Apple/);
+      assert.doesNotMatch(await page.locator('#aiDevice').innerText(), /aarch64/);
       for (const width of [320,390,720,1000]) for (const theme of ['light','dark']) {
         await page.setViewportSize({width,height:720});
         await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
@@ -209,6 +221,7 @@ try {
       const content='# Synthetic\n\nUnchanged body.';
       await emitNative('leaf-mcp-editor',{call_id:'notice-snapshot',operation:'snapshot',args:{}});
       const revision=aiMock.calls.findLast(call=>call.command==='mcp_renderer_reply').args.reply.result.revision;
+      await emitNative('leaf-mcp-editor',{call_id:'notice-binding',operation:'binding',args:{document_id:'doc-ui',session_id:'session-ui',authorization_epoch:4,mutation_generation:0,revision}});
       await emitNative('leaf-mcp-editor',{call_id:'notice-begin',operation:'begin',args:{document_id:'doc-ui',session_id:'session-ui',task_id:'task-ui',client:'chatgpt',authorization_epoch:4,mutation_generation:0,scope:{from:0,to:content.length},revision}});
     });
     const notice=page.locator('#aiTaskNotice');
