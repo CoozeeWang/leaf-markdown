@@ -5,6 +5,22 @@ use serde::{Serialize, Deserialize};
 use sha2::{Digest, Sha256};
 
 pub const CLIENTS: [&str; 3] = ["chatgpt", "claude-desktop", "workbuddy"];
+// User intent is durable; process bearers, document grants and tasks are not.
+#[derive(Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpPreferences { pub enabled: bool }
+impl McpPreferences {
+    pub fn load(path:&std::path::Path)->Result<Self,String> {
+        match std::fs::read(path) {
+            Ok(bytes)=>serde_json::from_slice(&bytes).map_err(|_|"mcp_preference_invalid".into()),
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Ok(Self::default()),
+            Err(_)=>Err("mcp_preference_read".into()),
+        }
+    }
+    pub fn save(&self,path:&std::path::Path)->Result<(),String> {
+        write_private(path,&serde_json::to_string(self).map_err(|_|"mcp_preference_write")?).map_err(|_|"mcp_preference_write".into())
+    }
+}
 pub fn native_build_identity()->String {
     let mut hash=Sha256::new();
     for source in [include_str!("ai_credentials.rs"),include_str!("ai_client_install.rs"),include_str!("claude_stdio.cjs"),include_str!("mcp.rs"),include_str!("chatgpt_tunnel.rs"),include_str!("main.rs"),include_str!("bin/leaf-mcp-adapter.rs"),include_str!("../Cargo.toml")] {hash.update(source.as_bytes());}
@@ -602,12 +618,23 @@ pub mod tests {
         s.enable("chatgpt","new-enable",disabled.generation,&k).unwrap();assert_ne!(s.token("chatgpt",&k).unwrap(),old_token);assert!(k.get(&old_ref).is_err());
     }
     #[test]
-    fn restart_is_disabled_and_profiles_persist_without_secrets() {
+    fn restart_retires_client_capabilities_and_profiles_persist_without_secrets() {
         let dir=tempfile::tempdir().unwrap();let path=dir.path().join("profiles.json");let k=MemoryKeyring::default();
         let mut s=AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(path.clone())).unwrap();
         let p=s.configure("chatgpt","synthetic-secret","save",0,&k).unwrap();s.enable("chatgpt","enable",p.generation,&k).unwrap();
         assert!(!std::fs::read_to_string(&path).unwrap().contains("synthetic-secret"));
         let restarted=AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(path)).unwrap();assert!(!restarted.status("chatgpt").unwrap().enabled);
+    }
+    #[test]
+    fn master_preference_persists_explicit_consent_and_refuses_invalid_data() {
+        let dir=tempfile::tempdir().unwrap();let path=dir.path().join("mcp-preferences-v1.json");
+        assert!(!McpPreferences::load(&path).unwrap().enabled);
+        McpPreferences{enabled:true}.save(&path).unwrap();assert!(McpPreferences::load(&path).unwrap().enabled);
+        McpPreferences{enabled:false}.save(&path).unwrap();assert!(!McpPreferences::load(&path).unwrap().enabled);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(),"{\"enabled\":false}");
+        std::fs::write(&path,"{broken").unwrap();assert!(McpPreferences::load(&path).is_err());
+        assert!(McpPreferences{enabled:true}.save(&dir.path().join("missing-parent/file")).is_ok());
+        assert!(McpPreferences{enabled:true}.save(dir.path()).is_err());
     }
     #[test]
     fn unavailable_keyring_never_creates_plaintext_fallback() {

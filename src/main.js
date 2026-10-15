@@ -1927,7 +1927,7 @@ function restoreAiFields() {
 function showAiError(error) {
   // Native failures may contain arbitrary OS/user text. Never echo credential
   // input or opaque diagnostics into DOM; the recoverable action is stable.
-  const codes = new Set(['invalid_tunnel_id','invalid_tunnel_executable','invalid_runtime_key','tunnel_unconfigured','tunnel_executable_missing','tunnel_cli_failed','tunnel_cli_rejected','tunnel_cli_timeout','tunnel_cli_contract_changed','tunnel_profile_changed','tunnel_profile_reconfigure_required','tunnel_profile_unavailable','tunnel_profile_write','tunnel_spawn_failed','tunnel_start_timeout','tunnel_exited','stale_configuration','credential_unavailable','runtime_key_unavailable','runtime_key_required','runtime_gui_only','invalid_runtime_reference','connection_disabled','helper_not_installed']);
+  const codes = new Set(['invalid_tunnel_id','invalid_tunnel_executable','invalid_runtime_key','tunnel_unconfigured','tunnel_executable_missing','tunnel_cli_failed','tunnel_cli_rejected','tunnel_cli_init_rejected','tunnel_cli_init_timeout','tunnel_cli_doctor_rejected','tunnel_cli_doctor_timeout','mcp_preference_read','mcp_preference_invalid','mcp_preference_write','tunnel_cli_timeout','tunnel_cli_contract_changed','tunnel_profile_changed','tunnel_profile_reconfigure_required','tunnel_profile_unavailable','tunnel_profile_write','tunnel_spawn_failed','tunnel_start_timeout','tunnel_exited','stale_configuration','credential_unavailable','runtime_key_unavailable','runtime_key_required','runtime_gui_only','invalid_runtime_reference','connection_disabled','helper_not_installed']);
   const code = codes.has(String(error)) ? String(error) : 'connection_failed';
   aiNode('aiConnectionError').dataset.failure = String(error).startsWith('invalid args') ? 'ipc_invalid_args' : /(?:not found|unknown command|Unknown IPC)/.test(String(error)) ? 'ipc_missing' : code;
   aiNode('aiConnectionError').textContent = t('ai.error', {code});
@@ -1944,6 +1944,8 @@ async function refreshAiConnections() {
     if (initial) aiConnection.profiles = profiles;
     else {aiConnection.profiles.enabled = profiles.enabled; for (const profile of profiles.clients) acceptAiProfile(profile);}
     acceptAiTunnel(tunnel);
+    const startupError=Object.values(profiles.connection_errors || {})[0];
+    if (startupError) showAiError(startupError);
     if (initial) {aiConnection.editing = !tunnel.runtime.saved_config; restoreAiFields();}
     renderAiConnections();
   } catch (error) {if (serial === aiConnection.read) {showAiError(error); renderAiConnections();}}
@@ -1986,11 +1988,17 @@ aiNode('aiSaveSetup').onclick = () => {
 aiNode('aiEditSetup').onclick = () => {aiConnection.editing = true; renderAiConnections(); aiNode('aiTunnelId').focus();};
 aiNode('aiCancelSetup').onclick = () => {aiConnection.editing = false; restoreAiFields(); renderAiConnections(); aiNode('aiEditSetup').focus();};
 async function enableConfiguredAiConnections() {
+  let failure;
   for (const profile of aiConnection.profiles.clients.filter(p=>p.configured && !p.enabled)) {
-    const result = await invoke('mcp_enable_client', {client:profile.client, operationId:aiOperation(), generation:profile.generation});
-    acceptAiProfile(result.profile);
+    try {
+      const result = await invoke('mcp_enable_client', {client:profile.client, operationId:aiOperation(), generation:profile.generation});
+      acceptAiProfile(result.profile);
+    } catch (error) {failure ??= error;}
   }
-  if (aiConnection.tunnel?.runtime.saved_config) acceptAiTunnel(await invoke('mcp_start_tunnel'));
+  try {if (aiConnection.tunnel?.runtime.saved_config) acceptAiTunnel(await invoke('mcp_start_tunnel'));}
+  catch (error) {failure ??= error;}
+  failure ??= Object.values(aiConnection.profiles.connection_errors || {})[0];
+  if (failure) throw failure;
 }
 aiNode('aiRetryTunnel').onclick = () => {void runAiAction(enableConfiguredAiConnections);};
 aiNode('aiLocalConfigure').onclick = () => {const client=aiConnection.selected;void runAiAction(async()=>{
@@ -2043,6 +2051,7 @@ async function refreshAiDownload() {
 }
 aiNode('aiRefreshDownload').onclick = () => {void refreshAiDownload();};
 let aiDownloadStarted = false;
+if (desktop) void listenNative('leaf-mcp-connections-changed', () => {void refreshAiConnections();});
 setInterval(() => {if (!appearancePopover.hidden && !aiNode('settingsPanel-ai').hidden) void refreshAiConnections();}, 4000);
 window.addEventListener('focus', () => {if (!appearancePopover.hidden && !aiNode('settingsPanel-ai').hidden) void refreshAiConnections();});
 onLanguageChange(renderAiConnections);

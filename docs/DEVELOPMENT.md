@@ -164,3 +164,11 @@ Windows「保存为 PDF」直接使用 WebView2 `PrintToPdf`，避免 Microsoft 
 源码测试串行调度测试文件，因为多个 AI 契约用例会调用同一 Rust 工作目录；并行启动会在 Windows 冷构建时争用 Cargo 锁，导致等待锁被误判为三分钟超时。原生断言和各用例超时仍保留，未跳过失败项。
 
 Windows 安装包流程现在先构建启用 `native-smoke` 的本机测试应用，运行 `windows-native-smoke.mjs --pdf-only`：打开实际 Leaf 导出窗口，经 `print_export` 命令生成单行与多页 Unicode 标题 PDF，并重复覆盖后校验内容／元数据。保留临时路径的清理保护，但在交给外部渲染器前关闭 Leaf 的文件句柄；Windows 单元测试同时比较旧句柄阻塞与新路径允许独占写入。该检查不代替用户保存窗口与真实安装版验收。
+
+## MCP configuration and restart regressions
+
+The master MCP preference is stored separately from process credentials. First use is off; explicit on/off survives restarts. Startup creates fresh client capabilities and descriptors, restores configured clients independently, and reports connection errors without clearing consent. Closed document identities and edit tasks never survive a restart.
+
+After building a matching `native-smoke` GUI/helper, `node scripts/test-mcp-startup.mjs` runs three isolated application lifetimes (first use, restored on, restored off). `node scripts/test-mcp-adapter.mjs stdio-and-origin --reuse-build` also checks generated Claude MCPB and WorkBuddy configuration through the real adapter with a standard MCP SDK. These checks need no model quota and do not replace installed-host/model acceptance.
+
+Windows `Internal test packages` additionally runs `tests/windows-mcp-config.ps1` in its disposable runner. It verifies the official tunnel-client 0.0.16 archive digest and runs the production profile preparation path (init, final YAML, doctor) with spaces, apostrophes and Unicode paths and a synthetic placeholder key. No real tunnel is started by that CLI test. `--mcp-command` uses the vendor’s shell-style lexer; Windows paths use forward slashes in this string. CreateProcess argument quoting remains separate. Init/doctor failures return distinct stable stage codes; raw stderr and keys are not exposed.

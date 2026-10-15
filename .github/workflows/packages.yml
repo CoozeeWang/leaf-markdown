@@ -77,6 +77,10 @@ jobs:
         run: |
           npm run desktop:build -- --debug --no-bundle --features native-smoke
           if ($LASTEXITCODE -ne 0) { throw 'Native PDF probe build failed' }
+          cargo build --locked --manifest-path src-tauri/Cargo.toml --bin leaf-mcp-adapter --features native-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'MCP adapter test build failed' }
+          ./tests/windows-mcp-config.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Windows MCP configuration checks failed' }
           python -m pip install pypdf==6.10.0
           if ($LASTEXITCODE -ne 0) { throw 'PDF validation dependency failed' }
           $env:LEAF_NATIVE_SMOKE_EXE = Join-Path $PWD 'src-tauri/target/debug/leaf.exe'

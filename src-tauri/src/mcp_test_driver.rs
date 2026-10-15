@@ -76,6 +76,7 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     let _=broker.bridge(app,label,"test",json!({"action":"reset","content":""})).await?;
     let original=broker.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).cloned().ok_or("renderer registration absent")?;
     ensure(original.client.is_none(),"default authorization must be closed")?;
+    if mode.starts_with("connection-restart-") {return connection_restart(app,label,broker,mode).await;}
     if mode=="chatgpt-tunnel-automatic-access" {return automatic_access(app,label,broker).await;}
     if mode=="chatgpt-tunnel-tracer" {return tunnel_tracer(app,label,broker,mode).await;}
     if mode=="chatgpt-tunnel-dev-bundle" {return tunnel_lifecycle(app,label,broker).await;}
@@ -257,6 +258,40 @@ async fn authorization_retirement(app:&tauri::AppHandle,label:&str,broker:&super
     let snapshot=broker.bridge(app,label,"snapshot",json!({})).await?;
     let mut begin=old;begin["revision"]=snapshot["revision"].clone();begin["request_id"]=json!("begin-after-prefix");
     ensure(tool(client,"begin_edit",begin).await.is_err(),"manual insertion before selection cannot start old capability")?;
+    Ok(())
+}
+
+async fn connection_restart(app:&tauri::AppHandle,_label:&str,broker:&super::mcp::LeafMcpBroker,mode:&str)->Result<(),String> {
+    let directory=super::application_data(app).map_err(|_|"test data")?;
+    if mode=="connection-restart-cold" {
+        ensure(!*broker.inner.enabled.lock().unwrap(),"first use defaults off")?;
+        for client in super::mcp::ai_credentials::CLIENTS {
+            broker.configure_client(app,client,"synthetic-local-profile".into(),"setup",0).await?;
+        }
+        broker.set_enabled(app,true).await?;
+        broker.restore_connections(app).await;
+        ensure(*broker.inner.enabled.lock().unwrap(),"configured tunnel failure cannot clear intent")?;
+        let old=std::fs::read(directory.join("mcp/claude-desktop.json")).map_err(|_|"old descriptor")?;
+        std::fs::write(directory.join("old-descriptor.json"),old).map_err(|_|"test evidence")?;
+    }else if mode=="connection-restart-on" {
+        ensure(*broker.inner.enabled.lock().unwrap(),"enabled consent survives actual process restart")?;
+        for _ in 0..100 {
+            if broker.client_profiles()?.iter().filter(|p|p.client!="chatgpt").all(|p|p.enabled){break;}
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        for client in ["claude-desktop","workbuddy"] {
+            ensure(broker.client_profiles()?.iter().any(|p|p.client==client&&p.enabled),"local client restored despite ChatGPT failure")?;
+            let path=directory.join(format!("mcp/{client}.json"));
+            let d:super::mcp::ai_credentials::BrokerDescriptor=serde_json::from_slice(&std::fs::read(path).map_err(|_|"descriptor")?).map_err(|_|"descriptor")?;
+            ensure(!d.load_token()?.is_empty(),"fresh instance-bound credential published")?;
+        }
+        let old:super::mcp::ai_credentials::BrokerDescriptor=serde_json::from_slice(&std::fs::read(directory.join("old-descriptor.json")).unwrap()).unwrap();
+        ensure(old.load_token().is_err(),"old process descriptor rejected")?;
+        broker.set_enabled(app,false).await?;
+    }else {
+        ensure(!*broker.inner.enabled.lock().unwrap(),"explicit off survives actual process restart")?;
+        ensure(broker.client_profiles()?.iter().all(|p|!p.enabled),"no local clients started while master off")?;
+    }
     Ok(())
 }
 

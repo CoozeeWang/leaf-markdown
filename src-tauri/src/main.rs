@@ -1233,6 +1233,8 @@ fn main() {
         })
         .setup(|app| {
             app.state::<mcp::LeafMcpBroker>().initialize(app.handle()).map_err(std::io::Error::other)?;
+            let handle=app.handle().clone();
+            tauri::async_runtime::spawn(async move {handle.state::<mcp::LeafMcpBroker>().restore_connections(&handle).await;});
             app.manage(i18n::Language::load(application_data(app.handle())?.join("language-v1.json")));
             let recent_path = application_data(app.handle())?.join("recent-files-v1.json");
             app.manage(recent::Recent::load(recent_path));

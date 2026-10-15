@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, copyFile, mkdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { spawn } from 'node:child_process';
@@ -52,7 +52,7 @@ async function initialize(h) {
 }
 await test('standard MCP adapter with actual native keyring and broker', async () => {
 try {
-  let binaries;let appExecutable=resolve(root,'src-tauri/target/debug/leaf');
+  let binaries;let appExecutable=resolve(root,'src-tauri/target/debug/leaf'+(process.platform==='win32'?'.exe':''));
   if(mode!=='packaged'&&!process.argv.includes('--reuse-build')) await build(['--debug','--no-bundle','--features','native-smoke','--config','src-tauri/tauri.mcp-test.conf.json']);
   if (mode === 'packaged') {
     assert.equal(existsSync(resolve(root, '.cache/mcp-adapter/artifacts.json')), true, 'actual Tauri bundle and MCPB artifacts must be produced');
@@ -75,11 +75,43 @@ try {
     const staged=await stageDevBundle({source:appExecutable,helper:binaries[0],test:true,testBundlePath:join(directory,'Leaf Adapter Test.app')});
     appExecutable=staged.executable;binaries=[staged.helper];
   }
+  if(process.platform==='win32') {
+    const installed=join(directory,'Public Example 中文');await mkdir(installed);
+    const gui=join(installed,'leaf.exe'),helper=join(installed,'leaf-mcp-adapter.exe');
+    await copyFile(appExecutable,gui);await copyFile(binaries[0],helper);appExecutable=gui;binaries=[helper];
+  }
   const server = start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '41731', '--strictPort']);
   for (let i = 0; i < 100; i++) { try { if ((await fetch('http://127.0.0.1:41731')).ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
   const app = start(appExecutable, []);
   app.stderr.on('data', chunk => process.stderr.write(chunk));
   const ready = await waitJson('adapter-ready.json');
+  // Exercise generated host artifacts, including the Claude stream launcher,
+  // with the actual adapter. This does not require a model or paid host quota.
+  await test('generated Claude MCPB and WorkBuddy config launch the real adapter',async()=>{
+    const zip=await readFile(ready.claude_bundle);let offset=0;const entries=new Map();
+    while(zip.readUInt32LE(offset)===0x04034b50){
+      const size=zip.readUInt32LE(offset+18),nameLength=zip.readUInt16LE(offset+26),extra=zip.readUInt16LE(offset+28);
+      const name=zip.subarray(offset+30,offset+30+nameLength).toString();const start=offset+30+nameLength+extra;
+      entries.set(name,zip.subarray(start,start+size));offset=start+size;
+    }
+    const manifest=JSON.parse(entries.get('manifest.json').toString());
+    assert(manifest.compatibility.platforms.includes(process.platform));
+    assert.equal(manifest.server.mcp_config.command,'node');
+    const launcher=join(directory,'claude-launcher.cjs');await writeFile(launcher,entries.get('server/index.js'));
+    const workbuddy=JSON.parse(await readFile(ready.workbuddy_config,'utf8')).mcpServers.Leaf;
+    assert.equal(workbuddy.type,'stdio');
+    for(const [name,config] of [['claude',{command:process.execPath,args:[launcher]}],['workbuddy',workbuddy]]) {
+      const transport=new StdioClientTransport({...config,stderr:'pipe'});
+      const client=new Client({name:'Synthetic '+name+' host',version:'1.0.0'},{capabilities:{},versionNegotiation:{mode:{pin:'2026-07-28'}}});
+      try {
+        await client.connect(transport);const tools=await client.listTools();assert(tools.tools.some(t=>t.name==='apply_edit_batch'));
+        const documents=await client.callTool({name:'list_documents',arguments:{}});assert.equal(documents.isError,false);
+        if(name==='claude') {
+          const read=await client.callTool({name:'read_document',arguments:ready.binding});assert.equal(read.structuredContent.content,'synthetic alpha omega');
+        }
+      }finally{await client.close();}
+    }
+  });
   for (const binary of binaries) {
     await test('modern SDK discovers tools and reads through the actual adapter', async () => {
       const transport = new StdioClientTransport({command:binary,args:['--descriptor',ready.descriptor],cwd:directory,env:{PATH:'/no-development-runtimes'},stderr:'pipe'});

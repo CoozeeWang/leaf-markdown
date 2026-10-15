@@ -130,6 +130,10 @@ fn bounded_cli(executable:&std::path::Path,args:&[String],key:Option<&str>,captu
     if bytes.len()>16384{return Err("tunnel_cli_contract_changed".into());}String::from_utf8(bytes).map_err(|_|"tunnel_cli_contract_changed".into())
 }
 pub fn prepare_profile(id:&str,executable:&std::path::Path,directory:&std::path::Path,descriptor:&std::path::Path,key:&str)->Result<super::mcp::ai_credentials::TunnelProfile,String>{
+    let helper=std::env::current_exe().map_err(|_|"helper_not_installed")?.parent().unwrap().join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});
+    prepare_profile_with_helper(id,executable,directory,descriptor,key,&helper)
+}
+fn prepare_profile_with_helper(id:&str,executable:&std::path::Path,directory:&std::path::Path,descriptor:&std::path::Path,key:&str,helper:&std::path::Path)->Result<super::mcp::ai_credentials::TunnelProfile,String>{
     validate_input(id,executable)?;
     let version=bounded_cli(executable,&["--version".into()],None,true)?;
     if !version.trim().bytes().next().is_some_and(|b|b.is_ascii_digit()){return Err("tunnel_cli_contract_changed".into());}
@@ -137,15 +141,13 @@ pub fn prepare_profile(id:&str,executable:&std::path::Path,directory:&std::path:
         let help=bounded_cli(executable,&args.iter().map(|v|v.to_string()).collect::<Vec<_>>(),None,true)?;
         if required.iter().any(|r|!help.contains(r)){return Err("tunnel_cli_contract_changed".into());}
     }
-    let helper=std::env::current_exe().map_err(|_|"helper_not_installed")?.parent().unwrap().join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});
     if !helper.is_file(){return Err("helper_not_installed".into());}
     std::fs::create_dir_all(directory).map_err(|_|"tunnel_profile_write")?;
     #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(directory,std::fs::Permissions::from_mode(0o700)).map_err(|_|"tunnel_profile_write")?;}
     let staging=tempfile::tempdir_in(directory).map_err(|_|"tunnel_profile_write")?;
-    let quote=|p:&std::path::Path|->String{if cfg!(windows){windows_quote(&p.to_string_lossy())}else{format!("'{}'",p.to_string_lossy().replace('\'',"'\\''"))}};
-    let fixed_command=format!("{} --descriptor {}",quote(&helper),quote(descriptor));
+    let fixed_command=tunnel_command(helper,descriptor,cfg!(windows));
     let args=vec!["init".into(),"--sample".into(),"sample_mcp_stdio_local".into(),"--profile".into(),"leaf".into(),"--profile-dir".into(),staging.path().to_string_lossy().into_owned(),"--tunnel-id".into(),id.into(),"--mcp-command".into(),fixed_command.clone(),"--control-plane-api-key-ref".into(),"env:CONTROL_PLANE_API_KEY".into(),"--health-listen-addr".into(),"127.0.0.1:0".into()];
-    bounded_cli(executable,&args,None,false)?;
+    bounded_cli(executable,&args,None,false).map_err(|e|cli_stage("init",e))?;
     let path=staging.path().join("leaf.yaml");let generated=std::fs::read_to_string(&path).map_err(|_|"tunnel_cli_contract_changed")?;
     if !generated.contains("config_version: 1")||!generated.contains("commands:")||!generated.contains("channel: main")||!generated.contains(&serde_json::to_string(&fixed_command).unwrap())||!generated.contains("env:CONTROL_PLANE_API_KEY")||!generated.contains(id){return Err("tunnel_cli_contract_changed".into());}
     // Use the verified schema with a fixed command; no user-provided command,
@@ -155,7 +157,7 @@ pub fn prepare_profile(id:&str,executable:&std::path::Path,directory:&std::path:
     let text=format!("config_version: 1\ncontrol_plane:\n  base_url: \"https://api.openai.com\"\n  tunnel_id: {}\n  api_key: \"env:CONTROL_PLANE_API_KEY\"\nhealth:\n  listen_addr: \"127.0.0.1:0\"\n  url_file: {}\nadmin_ui:\n  open_browser: false\nlog:\n  level: warn\n  format: json\nmcp:\n  commands:\n    - channel: main\n      command: {}\n",scalar(id),scalar(&health.to_string_lossy()),scalar(&fixed_command));
     std::fs::write(&path,&text).map_err(|_|"tunnel_profile_write")?;
     #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o600)).map_err(|_|"tunnel_profile_write")?;}
-    bounded_cli(executable,&["doctor".into(),"--profile-file".into(),path.to_string_lossy().into_owned(),"--explain".into()],Some(key),false)?;
+    bounded_cli(executable,&["doctor".into(),"--profile-file".into(),path.to_string_lossy().into_owned(),"--explain".into()],Some(key),false).map_err(|e|cli_stage("doctor",e))?;
     std::fs::File::open(&path).and_then(|file|file.sync_all()).map_err(|_|"tunnel_profile_write")?;
     std::fs::rename(&path,&profile).map_err(|_|"tunnel_profile_write")?;
     #[cfg(unix)] std::fs::File::open(directory).and_then(|file|file.sync_all()).map_err(|_|"tunnel_profile_write")?;
@@ -170,7 +172,26 @@ pub fn validate_saved(config:&super::mcp::ai_credentials::TunnelProfile,descript
     let helper=std::env::current_exe().map_err(|_|"helper_not_installed")?.parent().unwrap().join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});
     let text=String::from_utf8(bytes).map_err(|_|"tunnel_profile_changed")?;
     // Both paths are inside the hash-bound, fixed-command profile.
-    if !helper.is_file()||!text.contains(&helper.to_string_lossy().replace('\\',"\\\\"))||!text.contains(&descriptor.to_string_lossy().replace('\\',"\\\\")){return Err("tunnel_profile_reconfigure_required".into());}Ok(())
+    if !helper.is_file()||!profile_contains_command(&text,&helper,descriptor){return Err("tunnel_profile_reconfigure_required".into());}Ok(())
+}
+// tunnel-client uses a shell-style lexer even on Windows. This is a command
+// string inside YAML, not a CreateProcessW argument vector. Win32 accepts /.
+fn tunnel_command(helper:&std::path::Path,descriptor:&std::path::Path,windows:bool)->String {
+    let quote=|p:&std::path::Path| if windows {format!("\"{}\"",p.to_string_lossy().replace('\\',"/"))}else{format!("'{}'",p.to_string_lossy().replace('\'',"'\\''"))};
+    format!("{} --descriptor {}",quote(helper),quote(descriptor))
+}
+fn profile_contains_command(text:&str,helper:&std::path::Path,descriptor:&std::path::Path)->bool {
+    let command=tunnel_command(helper,descriptor,cfg!(windows));
+    text.contains(&format!("command: {}",serde_json::to_string(&command).unwrap()))
+}
+fn cli_stage(stage:&str,error:String)->String {
+    match (stage,error.as_str()) {
+        ("init","tunnel_cli_rejected")=>"tunnel_cli_init_rejected".into(),
+        ("init","tunnel_cli_timeout")=>"tunnel_cli_init_timeout".into(),
+        ("doctor","tunnel_cli_rejected")=>"tunnel_cli_doctor_rejected".into(),
+        ("doctor","tunnel_cli_timeout")=>"tunnel_cli_doctor_timeout".into(),
+        _=>error,
+    }
 }
 fn windows_quote(value:&str)->String {let mut out=String::from("\"");let mut slashes=0;for c in value.chars(){if c=='\\'{slashes+=1;continue;}if c=='"'{out.push_str(&"\\".repeat(slashes*2+1));out.push('"');}else{out.push_str(&"\\".repeat(slashes));out.push(c);}slashes=0;}out.push_str(&"\\".repeat(slashes*2));out.push('"');out}
 
@@ -302,6 +323,27 @@ mod tests {
         assert!(validate_input("",std::path::Path::new("/synthetic/tunnel-client")).is_err());
         assert!(validate_input(&format!("tunnel_{}","A".repeat(32)),std::path::Path::new("/synthetic/tunnel-client")).is_err());
         assert!(validate_input(&format!("tunnel_{}","a".repeat(32)),std::path::Path::new("relative/tunnel-client")).is_err());
+    }
+    #[test]
+    fn vendor_command_is_distinct_from_createprocess_arguments() {
+        let command=tunnel_command(std::path::Path::new("C:\\Public Example\\中文's\\leaf-mcp-adapter.exe"),std::path::Path::new("C:\\Public Example\\中文's\\descriptor.json"),true);
+        assert_eq!(command,"\"C:/Public Example/中文's/leaf-mcp-adapter.exe\" --descriptor \"C:/Public Example/中文's/descriptor.json\"");
+        assert_eq!(cli_stage("doctor","tunnel_cli_rejected".into()),"tunnel_cli_doctor_rejected");
+        assert_eq!(cli_stage("init","tunnel_cli_timeout".into()),"tunnel_cli_init_timeout");
+    }
+    #[test]
+    fn official_tunnel_client_prepares_profile_with_spaces_and_unicode() {
+        let Some(executable)=std::env::var_os("LEAF_TEST_TUNNEL_CLIENT") else {return;};
+        let root=tempfile::tempdir().unwrap();
+        let directory=root.path().join("Public Example 中文's");std::fs::create_dir(&directory).unwrap();
+        let helper=directory.join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});
+        std::fs::copy(std::env::current_exe().unwrap(),&helper).unwrap();
+        let descriptor=directory.join("descriptor 中文.json");std::fs::write(&descriptor,"{}").unwrap();
+        let profile=prepare_profile_with_helper(&format!("tunnel_{}","0".repeat(32)),&PathBuf::from(executable),&directory.join("profiles"),&descriptor,"synthetic-placeholder-not-an-api-key",&helper).unwrap();
+        let text=std::fs::read_to_string(&profile.profile).unwrap();
+        assert!(profile_contains_command(&text,&helper,&descriptor));
+        assert!(!text.contains("synthetic-placeholder-not-an-api-key"));
+        if cfg!(windows){assert!(text.contains("C:/")||text.contains(":/"));}
     }
     #[cfg(unix)]
     fn fixture(directory:&std::path::Path,body:&str)->PathBuf{

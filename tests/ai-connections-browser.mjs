@@ -37,7 +37,7 @@ async function nativePage() {
         // Only a boolean records input receipt: mock diagnostics never retain it.
         const safe = {...args}; if ('runtimeKey' in safe) {aiMock.keySeen=!!safe.runtimeKey; delete safe.runtimeKey;}
         aiMock.calls.push({command,args:safe});
-        if (aiMock.fail===command) throw 'synthetic_connection_error';
+        if (aiMock.fail===command || (aiMock.failChatGPT && command==='mcp_enable_client' && args.client==='chatgpt')) throw 'synthetic_connection_error';
         if (command === 'mcp_profiles') {
           const snapshot = copy({enabled:aiMock.enabled,clients});
           if (aiMock.hold) return new Promise(resolve => aiMock.pending.push(()=>resolve(snapshot)));
@@ -241,6 +241,21 @@ try {
     await page.waitForTimeout(50);
     assert.match(await page.locator('#aiClient option[value="claude-desktop"]').innerText(), /已配置/);
     await page.evaluate(()=>aiMock.hold=false);
+    await page.close();
+  });
+  await test('failed ChatGPT setup does not clear consent or prevent local client enable',async()=>{
+    const page=await nativePage();
+    await page.evaluate(()=>{
+      for(const client of aiMock.clients) client.configured=true;
+      aiMock.failChatGPT=true;
+    });
+    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    await page.waitForFunction(()=>document.querySelector('#aiClient option[value="workbuddy"]').textContent.includes('已配置'));
+    await page.locator('#mcpEnabled').click();
+    await page.waitForFunction(()=>aiMock.clients[1].enabled&&aiMock.clients[2].enabled);
+    assert.equal(await page.locator('#mcpEnabled').isChecked(),true);
+    assert.equal(await page.evaluate(()=>aiMock.clients[0].enabled),false);
+    assert.ok(await page.locator('#aiConnectionError').textContent());
     await page.close();
   });
   await test('persistent AI notice has one localized sentence, a lock, reachable stop and an independent save error', async () => {

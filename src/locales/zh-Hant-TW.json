@@ -737,7 +737,7 @@
   "ai.settings": "AI 輔助編輯",
   "ai.heading": "MCP 連線",
   "ai.master": "啟用 MCP 連線",
-  "ai.access_boundary": "預設關閉。開啟後，已設定的 AI 可讀取與輔助編輯已開啟的文件，包含未儲存的內容；文字會傳送至所用 AI 服務。",
+  "ai.access_boundary": "首次使用預設關閉，之後會記住你的選擇，直到你主動關閉。開啟後，已設定的 AI 可讀取與輔助編輯已開啟的文件，包含未儲存的內容；文字會傳送至所用 AI 服務。",
   "ai.client": "AI 軟體",
   "ai.configured": "已設定",
   "ai.unconfigured": "未設定",

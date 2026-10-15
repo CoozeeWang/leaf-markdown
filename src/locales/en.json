@@ -737,7 +737,7 @@
   "ai.settings": "AI-assisted editing",
   "ai.heading": "MCP connection",
   "ai.master": "Enable MCP connection",
-  "ai.access_boundary": "Off by default. When enabled, configured AI clients can read and edit open documents, including unsaved changes. Text is sent to the AI service.",
+  "ai.access_boundary": "Off on first use. Your choice is remembered until you turn it off. When enabled, configured AI clients can read and help edit open documents, including unsaved content; text is sent to the AI service you use.",
   "ai.client": "AI software",
   "ai.configured": "Configured",
   "ai.unconfigured": "Not configured",

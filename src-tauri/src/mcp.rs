@@ -71,9 +71,9 @@ impl MutationLedger {
 }
 #[derive(Clone)]
 pub struct LeafMcpBroker {pub inner:Arc<BrokerState>}
-pub struct BrokerState {pub automatic_access:std::sync::atomic::AtomicBool,pub tunnel:Mutex<super::chatgpt_tunnel::TunnelManager>,pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,pub credentials:Mutex<HashMap<String,String>>,pub profiles:Mutex<Option<AiClientProfileStore>>,pub results:Mutex<HashMap<String,(String,Value)>>,pub ledger:MutationLedger,leases:Mutex<AuthenticatedLeaseManager>,pending_finishes:Mutex<HashMap<String,Value>>,watchdog_started:std::sync::atomic::AtomicBool,reader_grants:Mutex<HashMap<String,ReaderGrant>>,reader_ports:Mutex<HashMap<String,u16>>}
+pub struct BrokerState {pub automatic_access:std::sync::atomic::AtomicBool,pub tunnel:Mutex<super::chatgpt_tunnel::TunnelManager>,pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,preference_path:Mutex<Option<PathBuf>>,connection_errors:Mutex<HashMap<String,String>>,pub credentials:Mutex<HashMap<String,String>>,pub profiles:Mutex<Option<AiClientProfileStore>>,pub results:Mutex<HashMap<String,(String,Value)>>,pub ledger:MutationLedger,leases:Mutex<AuthenticatedLeaseManager>,pending_finishes:Mutex<HashMap<String,Value>>,watchdog_started:std::sync::atomic::AtomicBool,reader_grants:Mutex<HashMap<String,ReaderGrant>>,reader_ports:Mutex<HashMap<String,u16>>}
 impl Default for LeafMcpBroker {
-    fn default()->Self {Self{inner:Arc::new(BrokerState{automatic_access:std::sync::atomic::AtomicBool::new(true),tunnel:Mutex::new(super::chatgpt_tunnel::TunnelManager::default()),registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default(),leases:Mutex::new(AuthenticatedLeaseManager::default()),pending_finishes:Mutex::new(HashMap::new()),watchdog_started:std::sync::atomic::AtomicBool::new(false),reader_grants:Mutex::new(HashMap::new()),reader_ports:Mutex::new(HashMap::new())})}}
+    fn default()->Self {Self{inner:Arc::new(BrokerState{automatic_access:std::sync::atomic::AtomicBool::new(true),tunnel:Mutex::new(super::chatgpt_tunnel::TunnelManager::default()),registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),preference_path:Mutex::new(None),connection_errors:Mutex::new(HashMap::new()),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default(),leases:Mutex::new(AuthenticatedLeaseManager::default()),pending_finishes:Mutex::new(HashMap::new()),watchdog_started:std::sync::atomic::AtomicBool::new(false),reader_grants:Mutex::new(HashMap::new()),reader_ports:Mutex::new(HashMap::new())})}}
 }
 impl LeafMcpBroker {
     pub fn register_window(&self,app:&tauri::AppHandle,label:&str)->OpenedDocument {
@@ -167,6 +167,12 @@ impl LeafMcpBroker {
         #[cfg(feature="native-smoke")]
         if super::mcp_test_driver::enabled(app)&&std::env::var("LEAF_MCP_TEST_MODE").ok().as_deref()!=Some("chatgpt-tunnel-automatic-access"){self.inner.automatic_access.store(false,Ordering::Relaxed);}
         self.inner.ledger.initialize(directory.join("mcp-mutations-v1.json"))?;
+        let preference=directory.join("mcp-preferences-v1.json");
+        match ai_credentials::McpPreferences::load(&preference) {
+            Ok(value)=>*self.inner.enabled.lock().unwrap()=value.enabled,
+            Err(error)=>{self.inner.connection_errors.lock().unwrap().insert("startup".into(),error);}
+        }
+        *self.inner.preference_path.lock().unwrap()=Some(preference);
         let store=AiClientProfileStore::new(format!("{}.mcp",app.config().identifier),Some(directory.join("mcp-profiles-v1.json")))?;
         for profile in store.list().iter().filter(|p|p.configured){if let Some(r)=&profile.credential_ref{
             let payload=if profile.client=="chatgpt"&&profile.has_runtime_key&&profile.runtime_ref.is_none(){r.load()?}else{serde_json::to_string(&ai_credentials::BoundCredential{token:ai_credentials::random_token()?,uri:String::new(),instance:String::new(),generation:profile.generation,external_secret:None}).unwrap()};
@@ -186,12 +192,15 @@ impl LeafMcpBroker {
     }
     pub async fn enable_client(&self,client:&str,operation:&str,expected:u64)->Result<AiClientProfile,String> {
         let _serial=self.inner.queue.lock().await;
+        self.enable_client_locked(client,operation,expected).await
+    }
+    async fn enable_client_locked(&self,client:&str,operation:&str,expected:u64)->Result<AiClientProfile,String> {
         let broker=self.clone();let client=client.to_owned();let operation=operation.to_owned();
         tauri::async_runtime::spawn_blocking(move||{
             let mut guard=broker.inner.profiles.lock().unwrap();let store=guard.as_mut().ok_or("profiles_unavailable")?;
             if client=="chatgpt" {store.migrate_runtime(&SessionSecrets,&ai_credentials::GuiRuntimeSecretStore)?;}
             let result=store.enable(&client,&operation,expected,&SessionSecrets)?;
-            if result.enabled {broker.inner.credentials.lock().unwrap().insert(client.clone(),store.token(&client,&SessionSecrets)?);}Ok(result)
+            if result.enabled {broker.inner.credentials.lock().unwrap().insert(client.clone(),store.token(&client,&SessionSecrets)?);broker.inner.connection_errors.lock().unwrap().remove(&client);}Ok(result)
         }).await.map_err(|_|"credential_unavailable")?
     }
     async fn invalidate_client(&self,app:&tauri::AppHandle,client:&str) {
@@ -213,10 +222,30 @@ impl LeafMcpBroker {
         let broker=self.clone();let client=client.to_owned();let operation=operation.to_owned();
         tauri::async_runtime::spawn_blocking(move||{let mut guard=broker.inner.profiles.lock().unwrap();let store=guard.as_mut().ok_or("profiles_unavailable")?;if client=="chatgpt"&&clear{store.clear_runtime(&ai_credentials::GuiRuntimeSecretStore)?;}store.revoke(&client,clear,&operation,&SessionSecrets)}).await.map_err(|_|"credential_unavailable")?
     }
+    pub async fn restore_connections(&self,app:&tauri::AppHandle) {
+        let _serial=self.inner.queue.lock().await;
+        if !*self.inner.enabled.lock().unwrap(){return;}
+        for profile in self.client_profiles().unwrap_or_default().into_iter().filter(|p|p.configured) {
+            let result=async {
+                self.enable_client_locked(&profile.client,&ai_credentials::random_token()?,profile.generation).await?;
+                self.publish_descriptor_locked(app,&profile.client).await?;
+                if profile.client=="chatgpt" {self.start_tunnel_locked(app).await?;}
+                Ok::<(),String>(())
+            }.await;
+            if let Err(error)=result {self.inner.connection_errors.lock().unwrap().insert(profile.client,error);}
+        }
+        let _=app.emit("leaf-mcp-connections-changed",());
+    }
     pub async fn set_enabled(&self,app:&tauri::AppHandle,enabled:bool)->Result<(),String> {
         let _serial=self.inner.queue.lock().await;
-        if !enabled {self.inner.tunnel.lock().unwrap().stop()?;}
-        if *self.inner.enabled.lock().unwrap()==enabled {return Ok(());}
+        let unchanged=*self.inner.enabled.lock().unwrap()==enabled;
+        // Disable live access even if saving the preference fails. Enabling must
+        // save successfully before exposing any capability.
+        if !enabled {*self.inner.enabled.lock().unwrap()=false;self.inner.tunnel.lock().unwrap().stop()?;}
+        let saved=if let Some(path)=self.inner.preference_path.lock().unwrap().as_ref(){ai_credentials::McpPreferences{enabled}.save(path)}else{Ok(())};
+        if enabled {saved.clone()?;}
+        self.inner.connection_errors.lock().unwrap().clear();
+        if unchanged {return saved;}
         if !enabled {
             *self.inner.enabled.lock().unwrap()=false;
             let clients:Vec<_>=self.inner.credentials.lock().unwrap().keys().cloned().collect();
@@ -224,19 +253,24 @@ impl LeafMcpBroker {
             let shared:Vec<_>=self.inner.registry.lock().unwrap().documents.values().filter(|d|d.client.as_deref()==Some("*")).cloned().collect();
             for d in shared {self.retire_authorization(app,&d.label,&d.session_id,d.authorization_epoch).await?;if let Some(next)=self.window_binding(&d.label){self.bridge(app,&d.label,"binding",serde_json::to_value(next).unwrap()).await?;}}
         } else {
-            let broker=self.clone();
-            tauri::async_runtime::spawn_blocking(move||->Result<(),String>{
-                let mut guard=broker.inner.profiles.lock().unwrap();let store=guard.as_mut().ok_or("profiles_unavailable")?;
-                for profile in store.list().into_iter().filter(|p|p.enabled) {
-                    if profile.client=="chatgpt" {store.migrate_runtime(&SessionSecrets,&ai_credentials::GuiRuntimeSecretStore)?;}
-                    let operation=ai_credentials::random_token()?;
-                    let disabled=store.revoke(&profile.client,false,&format!("off-{operation}"),&SessionSecrets)?;
-                    store.enable(&profile.client,&format!("on-{operation}"),disabled.generation,&SessionSecrets)?;
-                    broker.inner.credentials.lock().unwrap().insert(profile.client.clone(),store.token(&profile.client,&SessionSecrets)?);
-                }Ok(())
-            }).await.map_err(|_|"credential_unavailable")??;
             *self.inner.enabled.lock().unwrap()=true;
-        }Ok(())
+            let broker=self.clone();
+            tauri::async_runtime::spawn_blocking(move|| {
+                let mut guard=broker.inner.profiles.lock().unwrap();
+                let Some(store)=guard.as_mut() else{return;};
+                for profile in store.list().into_iter().filter(|p|p.enabled) {
+                    let result=(||->Result<(),String>{
+                        if profile.client=="chatgpt" {store.migrate_runtime(&SessionSecrets,&ai_credentials::GuiRuntimeSecretStore)?;}
+                        let operation=ai_credentials::random_token()?;
+                        let disabled=store.revoke(&profile.client,false,&format!("off-{operation}"),&SessionSecrets)?;
+                        store.enable(&profile.client,&format!("on-{operation}"),disabled.generation,&SessionSecrets)?;
+                        broker.inner.credentials.lock().unwrap().insert(profile.client.clone(),store.token(&profile.client,&SessionSecrets)?);
+                        Ok(())
+                    })();
+                    if let Err(error)=result {broker.inner.connection_errors.lock().unwrap().insert(profile.client,error);}
+                }
+            }).await.map_err(|_|"credential_unavailable")?;
+        }saved
     }
     pub async fn publish_descriptor(&self,app:&tauri::AppHandle,client:&str)->Result<PathBuf,String> {
         let _serial=self.inner.queue.lock().await;
@@ -301,6 +335,9 @@ impl LeafMcpBroker {
     }
     pub async fn start_tunnel(&self,app:&tauri::AppHandle)->Result<Value,String>{
         let _serial=self.inner.queue.lock().await;
+        self.start_tunnel_locked(app).await
+    }
+    async fn start_tunnel_locked(&self,app:&tauri::AppHandle)->Result<Value,String> {
         self.start_watchdog(app.clone());
         let broker=self.clone();tauri::async_runtime::spawn_blocking(move||{if let Some(store)=broker.inner.profiles.lock().unwrap().as_mut(){store.retry_tunnel_cleanup(&SessionSecrets,&ai_credentials::GuiRuntimeSecretStore);}}).await.map_err(|_|"runtime_key_unavailable")?;
         if !*self.inner.enabled.lock().unwrap(){return Err("connection_disabled".into());}
@@ -793,7 +830,12 @@ impl LeafMcpBroker {
         let session=self.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).unwrap().session_id.clone();
         let d=self.authorize(app,&label,&session,"claude-desktop",json!({"from":0,"to":21})).await?;
         let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
-        std::fs::write(root.join("adapter-ready.json"),serde_json::to_vec(&json!({"descriptor":a,"other_descriptor":b,"binding":binding})).unwrap()).map_err(|_|"test_evidence")?;
+        let helper=std::env::current_exe().map_err(|_|"test helper")?.parent().unwrap().join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});
+        let claude_command=self.export_stdio_config("claude-desktop",helper.clone(),a.clone())?;
+        let workbuddy_command=self.export_stdio_config("workbuddy",helper,b.clone())?;
+        let bundle=super::ai_client_install::claude_bundle(&root.join("install"),&claude_command)?;
+        let workbuddy=root.join("workbuddy/mcp.json");super::ai_client_install::install_workbuddy(&workbuddy,&workbuddy_command)?;
+        std::fs::write(root.join("adapter-ready.json"),serde_json::to_vec(&json!({"descriptor":a,"other_descriptor":b,"binding":binding,"claude_bundle":bundle,"workbuddy_config":workbuddy})).unwrap()).map_err(|_|"test_evidence")?;
         wait_test_signal(&root,"race").await?;
         let snapshot=self.call(app,"claude-desktop","read_document",binding.clone()).await?;
         let mut begin=binding.clone();begin["request_id"]=json!("race-begin");begin["revision"]=snapshot["revision"].clone();
@@ -929,7 +971,7 @@ mod authenticated_lease_tests {
 }
 
 #[tauri::command]
-pub fn mcp_profiles(broker:tauri::State<LeafMcpBroker>)->Result<Value,String> {Ok(json!({"enabled":*broker.inner.enabled.lock().unwrap(),"clients":broker.client_profiles()?.iter().map(AiClientProfile::masked).collect::<Vec<_>>()}))}
+pub fn mcp_profiles(broker:tauri::State<LeafMcpBroker>)->Result<Value,String> {Ok(json!({"enabled":*broker.inner.enabled.lock().unwrap(),"clients":broker.client_profiles()?.iter().map(AiClientProfile::masked).collect::<Vec<_>>(),"connection_errors":*broker.inner.connection_errors.lock().unwrap()}))}
 #[tauri::command]
 pub async fn mcp_configure_client(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpBroker>,client:String,secret:Option<String>,operation_id:String,generation:u64)->Result<Value,String> {
     let secret=if client=="chatgpt" {secret.ok_or("invalid_credential")?}else{"local-profile".into()};
@@ -947,7 +989,7 @@ pub async fn mcp_revoke_client(app:tauri::AppHandle,broker:tauri::State<'_,LeafM
 pub async fn mcp_set_enabled(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpBroker>,enabled:bool)->Result<Value,String> {
     broker.set_enabled(&app,enabled).await?;
     if enabled {for profile in broker.client_profiles()?.into_iter().filter(|p|p.enabled){broker.publish_descriptor(&app,&profile.client).await?;}}
-    Ok(json!({"enabled":enabled,"clients":broker.client_profiles()?.iter().map(AiClientProfile::masked).collect::<Vec<_>>()}))
+    Ok(json!({"enabled":enabled,"clients":broker.client_profiles()?.iter().map(AiClientProfile::masked).collect::<Vec<_>>(),"connection_errors":*broker.inner.connection_errors.lock().unwrap()}))
 }
 #[tauri::command]
 pub fn mcp_tunnel_status(broker:tauri::State<LeafMcpBroker>)->Result<Value,String>{broker.tunnel_status()}
