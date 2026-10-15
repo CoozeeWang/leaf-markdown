@@ -1128,7 +1128,8 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .settings-tabs button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 
 .ai-connection-controls { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
-.ai-connection-controls:disabled :is(input, select, button, a, summary) { opacity: .5; }
+.ai-connection-controls:disabled { opacity: .5; }
+.ai-connection-controls:disabled :is(input, select, button) { opacity: 1; }
 .ai-connection-controls:disabled :is(a, summary) { cursor: default; }
 .mcp-heading { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
 #settingsPanel-ai { min-width: 0; font-size: var(--ui-caption); }
@@ -1274,3 +1275,4 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .ai-local-steps { padding-left: 20px; }
 .ai-local-steps > li { margin: 8px 0; line-height: 1.7; }
 #aiLocalResult:empty { display: none; }
+#aiLocalResult { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }

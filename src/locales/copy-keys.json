@@ -806,5 +806,10 @@
   "AI0100": "ai.workbuddy_step2",
   "AI0101": "ai.workbuddy_step3",
   "AI0102": "ai.claude_added",
-  "AI0103": "ai.workbuddy_added"
+  "AI0103": "ai.workbuddy_added",
+  "AI0104": "ai.claude_save_bundle",
+  "AI0105": "ai.claude_step1_windows",
+  "AI0106": "ai.claude_step2_windows",
+  "AI0107": "ai.claude_bundle_saved",
+  "AI0108": "ai.claude_save_failed"
 }

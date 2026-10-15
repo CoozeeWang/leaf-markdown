@@ -820,5 +820,10 @@
   "ai.workbuddy_step2": "Leaf backs up the existing configuration and adds its connection. In WorkBuddy, open Experts · Skills · Connectors → Connectors → Custom connectors and enable Leaf. Restart WorkBuddy if it is not listed.",
   "ai.workbuddy_step3": "Keep Leaf open with MCP enabled. After enabling Leaf in WorkBuddy, ask directly in the conversation; no selection from the “+” menu is needed.",
   "ai.claude_added": "The Claude installer is open. Confirm installation of Leaf.",
-  "ai.workbuddy_added": "Connection added. Enable Leaf in WorkBuddy."
+  "ai.workbuddy_added": "Connection added. Enable Leaf in WorkBuddy.",
+  "ai.claude_save_bundle": "Save Claude extension",
+  "ai.claude_step1_windows": "Click “Save Claude extension” and choose where to save Leaf.mcpb.",
+  "ai.claude_step2_windows": "In Claude Desktop, open Settings → Extensions → Advanced settings → Install Extension, select the saved Leaf.mcpb, then install and enable Leaf. You do not need to double-click the file.",
+  "ai.claude_bundle_saved": "Extension file saved. Installation in Claude is still required.\nFile location: {{path}}\nSelect this file in Claude under Settings → Extensions → Advanced settings → Install Extension.",
+  "ai.claude_save_failed": "The extension file was not saved. Choose a writable location with a .mcpb file extension and try again."
 }

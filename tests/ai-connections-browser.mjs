@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {chromium, launchOptions, artifactPath} from './browser-runtime.mjs';
 
 const browser = await chromium.launch(launchOptions);
-async function nativePage() {
+async function nativePage(os='macos') {
   const page = await browser.newPage({viewport:{width:720,height:720}});
   page.on('pageerror', error=>console.error('AI UI page error:',error.message));
   await page.route('https://api.github.com/**', route => route.fulfill({json:{draft:false,prerelease:false,tag_name:'v0.0.16',assets:[{name:'tunnel-client-v0.0.16-darwin-arm64.zip',state:'uploaded',browser_download_url:'https://github.com/openai/tunnel-client/releases/download/v0.0.16/tunnel-client-v0.0.16-darwin-arm64.zip'}]}}));
-  await page.addInitScript(() => {
+  await page.addInitScript(os => {
     window.isTauri = true;
     localStorage.setItem('leaf-settings-tab','ai');
     const callbacks = {}, handlers = {}; let id = 0;
@@ -32,7 +32,7 @@ async function nativePage() {
         if (command === 'recovery_retention') return 30;
         if (command === 'mcp_register') return {document_id:'doc-ui',session_id:'session-ui',authorization_epoch:1,mutation_generation:0};
         if (command === 'plugin:dialog|open') return '/synthetic folder/连接程序/tunnel-client';
-        if (command === 'mcp_connection_platform') return {os:'macos',arch:'aarch64'};
+        if (command === 'mcp_connection_platform') return {os,arch:os==='windows'?'x86_64':'aarch64'};
         if (!command.startsWith('mcp_')) return null;
         // Only a boolean records input receipt: mock diagnostics never retain it.
         const safe = {...args}; if ('runtimeKey' in safe) {aiMock.keySeen=!!safe.runtimeKey; delete safe.runtimeKey;}
@@ -53,7 +53,7 @@ async function nativePage() {
         }
         const profile = clients.find(p=>p.client===args.client) || clients[0];
         if (command === 'mcp_configure_tunnel') {clients[0].configured=true;clients[0].has_runtime_key=true;clients[0].generation++;clients[0].tunnel={tunnel_id:args.tunnelId,executable:args.executable};runtime.saved_config=runtime.runtime_present=true;runtime.generation=clients[0].generation;runtime.epoch++;return copy({profile:clients[0],runtime});}
-        if (command === 'mcp_add_client') {if(aiMock.cancelAdd)return {cancelled:true};profile.configured=profile.enabled=true;profile.generation++;return {profile:copy(profile),cancelled:false};}
+        if (command === 'mcp_add_client') {if(aiMock.cancelAdd)return {cancelled:true};profile.configured=profile.enabled=true;profile.generation++;return {profile:copy(profile),cancelled:false,...(os==='windows'&&profile.client==='claude-desktop'?{bundle_path:'C:\\Synthetic folder\\中文 <test> O\'Brien\\Leaf.mcpb'}:{})};}
         if (command === 'mcp_configure_client') {profile.configured=true;profile.generation++;return copy(profile);}
         if (command === 'mcp_enable_client') {profile.enabled=true;profile.generation++;return {profile:copy(profile),descriptor:'/synthetic/descriptor.json'};}
         if (command === 'mcp_revoke_client') {profile.configured=false;profile.enabled=false;profile.generation++;if(profile.client==='chatgpt'){profile.has_runtime_key=false;profile.tunnel=null;runtime.saved_config=runtime.process=runtime.local_ready=false;runtime.epoch++;}return copy(profile);}
@@ -63,7 +63,7 @@ async function nativePage() {
         return null;
       }
     };
-  });
+  },os);
   await page.goto(`${process.env.LEAF_TEST_BASE_URL || 'http://127.0.0.1:41732'}/?document=1`);
   await page.locator('#appearanceButton').click();
   assert.equal(await page.locator('#settingsTab-ai').getAttribute('aria-selected'),'true', 'restoring the AI tab must run its setup checks without another click');
@@ -72,6 +72,72 @@ async function nativePage() {
   return page;
 }
 try {
+  await test('Windows Claude export reports only a saved file and handles cancel, write failure and narrow translated paths',async()=>{
+    const page=await nativePage('windows');
+    await page.locator('#mcpEnabled').check();
+    await page.locator('#aiClient').selectOption('claude-desktop');
+    assert.equal(await page.locator('#aiLocalConfigure').innerText(),'保存 Claude 扩展');
+    assert.match(await page.locator('#aiLocalStep2').innerText(),/高级设置.*安装扩展/);
+    await page.evaluate(()=>aiMock.cancelAdd=true);
+    await page.locator('#aiLocalConfigure').click();
+    await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
+    assert.equal(await page.evaluate(()=>aiMock.clients[1].configured),false);
+    assert.equal(await page.locator('#aiLocalResult').textContent(),'');
+    await page.evaluate(()=>{aiMock.cancelAdd=false;aiMock.fail='mcp_add_client';});
+    await page.locator('#aiLocalConfigure').click();
+    await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
+    assert.ok(await page.locator('#aiConnectionError').textContent());
+    assert.equal(await page.locator('#aiLocalResult').textContent(),'');
+    await page.evaluate(()=>aiMock.fail=null);
+    await page.locator('#aiLocalConfigure').click();
+    await page.waitForFunction(()=>document.querySelector('#aiLocalResult').textContent.includes('Leaf.mcpb'));
+    assert.match(await page.locator('#aiLocalResult').textContent(),/尚需在 Claude 中安装/);
+    assert.doesNotMatch(await page.locator('#aiLocalResult').textContent(),/已打开|安装成功|连接成功/);
+    assert.equal(await page.locator('#aiLocalResult test').count(),0,'export path is text, never markup');
+    await page.keyboard.press('Escape');
+    for(const language of ['zh-Hans','zh-Hant-TW','en']){
+      await page.evaluate(async value=>{const {setLanguagePreference}=await import('/src/i18n.js');await setLanguagePreference(value);},language);
+      for(const width of [320,720])for(const theme of ['light','dark']){
+        await page.setViewportSize({width,height:720});await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);
+        await page.locator('#appearanceButton').click();
+        await page.locator('#settingsTab-ai').click();
+        await page.locator('#aiLocalResult').scrollIntoViewIfNeeded();
+        const bounds=await page.locator('#appearancePopover').evaluate(node=>({scroll:node.scrollWidth,width:node.clientWidth}));
+        assert.ok(bounds.scroll<=bounds.width+1,'saved path wraps within settings');
+        assert.match(await page.locator('#aiLocalResult').textContent(),/C:\\Synthetic folder\\中文 <test> O'Brien\\Leaf\.mcpb/);
+        assert.doesNotMatch(await page.locator('#aiLocalStep2').textContent(),/ai\./);
+        if(width===320)await page.screenshot({path:artifactPath(`claude-windows-export-${language}-${theme}.png`)});
+        await page.keyboard.press('Escape');
+      }
+    }
+    await page.close();
+  });
+  await test('master off disables and dims all three clients; blocked actions preserve saved profiles',async()=>{
+    const page=await nativePage('windows');
+    await page.locator('#mcpEnabled').check();
+    for(const client of ['chatgpt','claude-desktop','workbuddy']){
+      await page.locator('#aiClient').selectOption(client);
+      await page.evaluate(()=>{for(const profile of aiMock.clients)profile.configured=true;});
+      await page.locator('#mcpEnabled').uncheck();
+      await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
+      assert.equal(await page.locator('#aiClient').isDisabled(),true);
+      assert.equal(await page.locator('#aiClear').isDisabled(),true);
+      assert.equal(await page.locator('#aiLocalConfigure').isDisabled(),true);
+      assert.equal(await page.locator('#aiConnectionControls').evaluate(node=>node.inert),true);
+      assert.equal(await page.locator('#aiConnectionControls').evaluate(node=>getComputedStyle(node).opacity),'0.5');
+      assert.ok(await page.locator('#aiConnectionControls input, #aiConnectionControls button, #aiConnectionControls select').evaluateAll(nodes=>nodes.every(node=>node.matches(':disabled'))));
+      const before=await page.evaluate(()=>aiMock.calls.length);
+      await page.evaluate(()=>{document.querySelector('#aiLocalConfigure').onclick();document.querySelector('#aiClear').onclick();});
+      assert.equal(await page.evaluate(()=>aiMock.calls.length),before,'no configuration IPC while off');
+      assert.equal(await page.locator('dialog').count(),0);
+      assert.equal(await page.evaluate(()=>aiMock.clients.every(profile=>profile.configured)),true);
+      await page.locator('#mcpEnabled').check();
+      await page.waitForFunction(()=>!document.querySelector('#aiConnectionControls').disabled);
+      assert.equal(await page.locator('#aiClient').isDisabled(),false);
+      assert.equal(await page.locator('#aiLocalConfigure').isDisabled(),false);
+    }
+    await page.close();
+  });
   await test('master off disables every setup control and link until explicitly enabled', async () => {
     const page=await nativePage();
     const group=page.locator('#aiConnectionControls');

@@ -820,5 +820,10 @@
   "ai.workbuddy_step2": "Leaf 会先备份已有配置，再添加连接。打开 WorkBuddy 的“专家·技能·连接器 → 连接器 → 自定义连接器”，找到 Leaf 并启用；若未显示，请重启 WorkBuddy 后再查看。",
   "ai.workbuddy_step3": "保持 Leaf 打开并启用 MCP 连接。在 WorkBuddy 启用 Leaf 后，可直接在对话中提出要求，无需从“＋”菜单选择 Leaf。",
   "ai.claude_added": "已打开 Claude 安装界面，请确认安装 Leaf。",
-  "ai.workbuddy_added": "连接已添加，请在 WorkBuddy 中启用 Leaf。"
+  "ai.workbuddy_added": "连接已添加，请在 WorkBuddy 中启用 Leaf。",
+  "ai.claude_save_bundle": "保存 Claude 扩展",
+  "ai.claude_step1_windows": "点击“保存 Claude 扩展”，选择位置保存 Leaf.mcpb。",
+  "ai.claude_step2_windows": "打开 Claude 桌面版的“设置 → 扩展 → 高级设置 → 安装扩展”，选择刚保存的 Leaf.mcpb，确认安装并启用 Leaf。无需双击文件。",
+  "ai.claude_bundle_saved": "扩展文件已保存，尚需在 Claude 中安装。\n文件位置：{{path}}\n在 Claude 的“设置 → 扩展 → 高级设置 → 安装扩展”中选择此文件。",
+  "ai.claude_save_failed": "扩展文件未保存。请选择可写入的位置，以 .mcpb 为文件后缀后重试。"
 }

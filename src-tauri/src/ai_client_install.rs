@@ -1,4 +1,4 @@
-//! Direct native-host installation; fixed destinations, no documents or secrets in exports.
+//! Native-host setup and user-selected exports; no documents or secrets in bundles.
 use std::{path::{Path,PathBuf},collections::HashSet};
 use serde_json::{Value,json};
 use super::mcp::ai_credentials::{private_directory,write_private_existing_parent};
@@ -15,13 +15,22 @@ fn zip_stored(entries:&[(&str,Vec<u8>)])->Vec<u8>{
 }
 pub fn claude_bundle(directory:&Path,command:&Value)->Result<PathBuf,String>{
  private_directory(directory)?;
+ let path=directory.join("Leaf.mcpb");
+ export_claude_bundle(&path,command)?;
+ Ok(path)
+}
+/// Export into a user-selected directory without changing its permissions.
+pub fn export_claude_bundle(path:&Path,command:&Value)->Result<(),String>{
+ if !path.extension().and_then(|v|v.to_str()).is_some_and(|v|v.eq_ignore_ascii_case("mcpb")){return Err("invalid_export_path".into());}
+ let directory=path.parent().ok_or("invalid_export_path")?;
+ if std::fs::symlink_metadata(path).is_ok_and(|m|!m.is_file()||m.file_type().is_symlink()){return Err("invalid_export_path".into());}
  let manifest=json!({"manifest_version":"0.3","name":"leaf-mcp","display_name":"Leaf","version":env!("CARGO_PKG_VERSION"),"description":"Read and edit open Leaf documents while MCP is enabled.","author":{"name":"Leaf contributors"},"compatibility":{"platforms":[std::env::consts::OS.replace("macos","darwin").replace("windows","win32")]},"server":{"type":"node","entry_point":"server/index.js","mcp_config":{"command":"node","args":["${__dirname}/server/index.js"]}}});
  let script=format!("const c={};\n{}",serde_json::to_string(command).map_err(|_|"install_encoding")?,include_str!("claude_stdio.cjs"));
  let bytes=zip_stored(&[("manifest.json",serde_json::to_vec(&manifest).unwrap()),("server/index.js",script.into_bytes())]);
- let path=directory.join("Leaf.mcpb");
  // A private export includes local executable paths, never a bearer or API key.
  let mut temp=tempfile::NamedTempFile::new_in(directory).map_err(|_|"install_write")?;use std::io::Write;
- temp.write_all(&bytes).and_then(|_|temp.as_file().sync_all()).map_err(|_|"install_write")?;temp.persist(&path).map_err(|_|"install_write")?;Ok(path)
+ temp.write_all(&bytes).and_then(|_|temp.as_file().sync_all()).map_err(|_|"install_write")?;
+ super::atomic_file::persist(temp,path).map_err(|_|"install_write")?;Ok(())
 }
 // serde_json normally accepts duplicate keys. Refuse them before merging host data.
 struct UniqueValue(Value);
@@ -53,6 +62,28 @@ pub fn install_workbuddy(target:&Path,command:&Value)->Result<(),String>{
 }
 #[cfg(test)]mod tests{
  use super::*;
+ #[test]fn selected_export_path_preserves_directory_and_siblings(){
+  let dir=tempfile::tempdir().unwrap();let folder=dir.path().join("Shared folder 中文 O'Brien");std::fs::create_dir(&folder).unwrap();
+  let sibling=folder.join("unrelated.txt");std::fs::write(&sibling,b"keep").unwrap();
+  #[cfg(unix)]let permissions={use std::os::unix::fs::PermissionsExt;std::fs::metadata(&folder).unwrap().permissions().mode()};
+  let path=folder.join("Leaf 测试.mcpb");let config=json!({"command":"synthetic helper","args":["--descriptor","synthetic descriptor.json"]});
+  export_claude_bundle(&path,&config).unwrap();let first=std::fs::read(&path).unwrap();
+  assert_eq!(&first[..4],b"PK\x03\x04");assert!(first.windows(13).any(|w|w==b"manifest.json"));
+  assert!(first.windows(b"server/index.js".len()).any(|w|w==b"server/index.js"));
+  assert!(first.windows(b"synthetic descriptor.json".len()).any(|w|w==b"synthetic descriptor.json"));
+  export_claude_bundle(&path,&config).unwrap();assert_eq!(std::fs::read(&path).unwrap(),first);
+  assert_eq!(std::fs::read(sibling).unwrap(),b"keep");
+  #[cfg(unix)]{use std::os::unix::fs::PermissionsExt;assert_eq!(std::fs::metadata(&folder).unwrap().permissions().mode(),permissions);}
+  assert_eq!(std::fs::read_dir(&folder).unwrap().count(),2,"no temporary files left after export");
+ }
+ #[test]fn export_failure_preserves_existing_files(){
+  let dir=tempfile::tempdir().unwrap();let path=dir.path().join("keep.txt");std::fs::write(&path,b"original").unwrap();
+  assert_eq!(export_claude_bundle(&path,&json!({})).unwrap_err(),"invalid_export_path");assert_eq!(std::fs::read(&path).unwrap(),b"original");
+  let folder=dir.path().join("folder.mcpb");std::fs::create_dir(&folder).unwrap();
+  assert_eq!(export_claude_bundle(&folder,&json!({})).unwrap_err(),"invalid_export_path");
+  assert!(export_claude_bundle(&dir.path().join("missing/Leaf.mcpb"),&json!({})).is_err());
+  assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(),2);
+ }
  #[test]fn host_merge_preserves_other_entries_and_exact_backup(){let dir=tempfile::tempdir().unwrap();let target=dir.path().join("mcp.json");let original="{\n  \"setting\": true, \"mcpServers\": {\"Other\": {\"command\":\"synthetic\"}}\n}";std::fs::write(&target,original).unwrap();install_workbuddy(&target,&json!({"command":"synthetic-helper","args":["--descriptor","synthetic.json"]})).unwrap();let v:Value=serde_json::from_slice(&std::fs::read(&target).unwrap()).unwrap();assert_eq!(v["mcpServers"]["Other"]["command"],"synthetic");assert_eq!(v["setting"],true);let backups:Vec<_>=std::fs::read_dir(dir.path()).unwrap().flatten().filter(|e|e.file_name().to_string_lossy().starts_with("mcp.json.leaf-backup-")).collect();assert_eq!(backups.len(),1);assert_eq!(std::fs::read(backups[0].path()).unwrap(),original.as_bytes());}
  #[test]fn invalid_and_duplicate_host_config_is_unchanged(){let dir=tempfile::tempdir().unwrap();let target=dir.path().join("mcp.json");for text in ["{broken","{\"mcpServers\":[],\"mcpServers\":{}}","[]"]{std::fs::write(&target,text).unwrap();assert!(install_workbuddy(&target,&json!({"command":"synthetic"})).is_err());assert_eq!(std::fs::read_to_string(&target).unwrap(),text);}}
  #[test]fn extension_zip_has_valid_headers_and_crc(){let dir=tempfile::tempdir().unwrap();let p=claude_bundle(dir.path(),&json!({"command":"synthetic-helper","args":["synthetic.json"]})).unwrap();let b=std::fs::read(p).unwrap();assert_eq!(&b[..4],b"PK\x03\x04");assert!(b.windows(13).any(|w|w==b"manifest.json"));assert_eq!(crc32(b"123456789"),0xcbf43926);}

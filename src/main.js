@@ -1834,7 +1834,7 @@ document.querySelector('#settingsClose').onclick = closeSettings;
 const aiClients = ['chatgpt', 'claude-desktop', 'workbuddy'];
 const aiClientNames = {'chatgpt':'ChatGPT','claude-desktop':'Claude Desktop','workbuddy':'WorkBuddy'};
 const aiNode = id => document.getElementById(id);
-const aiConnection = {profiles:null, tunnel:null, selected:'chatgpt', editing:true, executable:'', busy:false, read:0, platform:null};
+const aiConnection = {profiles:null, tunnel:null, selected:'chatgpt', editing:true, executable:'', busy:false, read:0, platform:null, localInstall:null};
 const aiOperation = () => crypto.randomUUID();
 aiNode('aiConnectionControls').addEventListener('click',event=>{
   if(aiNode('aiConnectionControls').disabled) {event.preventDefault();event.stopImmediatePropagation();}
@@ -1862,6 +1862,7 @@ function renderAiConnections() {
   aiNode('mcpEnabled').disabled = !desktop || !profiles || value.busy;
   const controls=aiNode('aiConnectionControls');
   controls.disabled=!desktop || !profiles?.enabled || value.busy;
+  controls.inert=!desktop||!profiles?.enabled;
   for(const target of controls.querySelectorAll('a, summary')) {
     if(controls.disabled) {
       target.setAttribute('aria-disabled','true');target.tabIndex=-1;
@@ -1871,20 +1872,23 @@ function renderAiConnections() {
       if(target.dataset.aiHref) {target.setAttribute('href',target.dataset.aiHref);delete target.dataset.aiHref;}
     }
   }
-  aiNode('aiClient').disabled = value.busy;
+  aiNode('aiClient').disabled = controls.disabled;
   for (const option of aiNode('aiClient').options) {
     const item = profiles?.clients.find(p => p.client === option.value);
     option.textContent = `${aiClientNames[option.value]} · ${t(item ? item.configured ? 'ai.configured' : 'ai.unconfigured' : 'ai.unknown')}`;
   }
   aiNode('aiClear').textContent = t('ai.clear', {client:aiClientNames[value.selected]});
-  aiNode('aiClear').disabled = value.busy || !profile?.configured;
+  aiNode('aiClear').disabled = controls.disabled || !profile?.configured;
   aiNode('aiClear').hidden = !profile?.configured;
   aiNode('aiChatGPTSetup').hidden = value.selected !== 'chatgpt';
   aiNode('aiSetupHelp').hidden = value.selected !== 'chatgpt';
   aiNode('aiLocalSetup').hidden = value.selected === 'chatgpt';
-  aiNode('aiLocalConfigure').textContent=t('ai.add_client',{client:value.selected==='claude-desktop'?'Claude':'WorkBuddy'});
-  aiNode('aiLocalConfigure').disabled=!desktop||!profile||value.busy;
-  for(const [index,key] of ['step1','step2','step3'].entries()) aiNode(`aiLocalStep${index+1}`).textContent=t(`ai.${value.selected==='claude-desktop'?'claude':'workbuddy'}_${key}`);
+  const windowsClaude=value.selected==='claude-desktop'&&value.platform?.os==='windows';
+  aiNode('aiLocalConfigure').textContent=windowsClaude?t('ai.claude_save_bundle'):t('ai.add_client',{client:value.selected==='claude-desktop'?'Claude':'WorkBuddy'});
+  aiNode('aiLocalConfigure').disabled=controls.disabled||!profile;
+  for(const [index,key] of ['step1','step2','step3'].entries()) aiNode(`aiLocalStep${index+1}`).textContent=t(`ai.${value.selected==='claude-desktop'?'claude':'workbuddy'}_${key}${windowsClaude&&index<2?'_windows':''}`);
+  const installed=value.localInstall;
+  aiNode('aiLocalResult').textContent=installed?t(installed.path?'ai.claude_bundle_saved':installed.client==='claude-desktop'?'ai.claude_added':'ai.workbuddy_added',{path:installed.path}):'';
   aiNode('aiSavedStatus').textContent = runtime?.saved_config ? t('ai.saved') : '';
   aiNode('aiRuntimeStatus').textContent = t(runtime?.host_verified ? 'ai.host_verified' : runtime?.local_ready ? 'ai.local_ready' : runtime?.process ? 'ai.starting' : 'ai.stopped');
   aiNode('aiRuntimeStatus').dataset.state = runtime?.host_verified ? 'host-verified' : runtime?.local_ready ? 'local-ready' : runtime?.process ? 'starting' : 'stopped';
@@ -1930,7 +1934,7 @@ function showAiError(error) {
   const codes = new Set(['invalid_tunnel_id','invalid_tunnel_executable','invalid_runtime_key','tunnel_unconfigured','tunnel_executable_missing','tunnel_cli_failed','tunnel_cli_rejected','tunnel_cli_init_rejected','tunnel_cli_init_timeout','tunnel_cli_doctor_rejected','tunnel_cli_doctor_timeout','mcp_preference_read','mcp_preference_invalid','mcp_preference_write','tunnel_cli_timeout','tunnel_cli_contract_changed','tunnel_profile_changed','tunnel_profile_reconfigure_required','tunnel_profile_unavailable','tunnel_profile_write','tunnel_spawn_failed','tunnel_start_timeout','tunnel_exited','stale_configuration','credential_unavailable','runtime_key_unavailable','runtime_key_required','runtime_gui_only','invalid_runtime_reference','connection_disabled','helper_not_installed']);
   const code = codes.has(String(error)) ? String(error) : 'connection_failed';
   aiNode('aiConnectionError').dataset.failure = String(error).startsWith('invalid args') ? 'ipc_invalid_args' : /(?:not found|unknown command|Unknown IPC)/.test(String(error)) ? 'ipc_missing' : code;
-  aiNode('aiConnectionError').textContent = t('ai.error', {code});
+  aiNode('aiConnectionError').textContent = ['install_write','invalid_export_path'].includes(String(error))?t('ai.claude_save_failed'):t('ai.error', {code});
 }
 async function refreshAiConnections() {
   if (!desktop) {aiNode('aiConnectionError').textContent = t('ai.desktop_required'); renderAiConnections(); return;}
@@ -1950,8 +1954,8 @@ async function refreshAiConnections() {
     renderAiConnections();
   } catch (error) {if (serial === aiConnection.read) {showAiError(error); renderAiConnections();}}
 }
-async function runAiAction(action) {
-  if (aiConnection.busy || !desktop) return false;
+async function runAiAction(action, {masterSwitch=false}={}) {
+  if (aiConnection.busy || !desktop || (!masterSwitch&&!aiConnection.profiles?.enabled)) return false;
   aiConnection.busy = true; ++aiConnection.read;
   aiNode('aiConnectionError').textContent = ''; aiNode('aiActionStatus').textContent = t('ai.working'); renderAiConnections();
   try {await action(); aiNode('aiActionStatus').textContent = ''; return true;}
@@ -1959,7 +1963,7 @@ async function runAiAction(action) {
   finally {aiConnection.busy = false; renderAiConnections();}
 }
 aiNode('aiClient').addEventListener('change', () => {
-  aiConnection.selected = aiNode('aiClient').value; aiNode('aiLocalResult').textContent='';
+  aiConnection.selected = aiNode('aiClient').value; aiConnection.localInstall=null;
   aiNode('aiRuntimeKey').value = ''; aiNode('aiConnectionError').textContent = ''; aiNode('aiActionStatus').textContent = ''; renderAiConnections();
 });
 aiNode('mcpEnabled').addEventListener('change', () => {
@@ -1969,7 +1973,7 @@ aiNode('mcpEnabled').addEventListener('change', () => {
     aiConnection.profiles = await invoke('mcp_set_enabled', {enabled:desired});
     acceptAiTunnel(await invoke('mcp_tunnel_status'));
     if (desired) await enableConfiguredAiConnections();
-  });
+  },{masterSwitch:true});
 });
 aiNode('aiPickProgram').onclick = () => {void runAiAction(async () => {
   const path = await pickNativeFile({multiple:false, title:t('ai.choose_program')});
@@ -2002,11 +2006,12 @@ async function enableConfiguredAiConnections() {
 }
 aiNode('aiRetryTunnel').onclick = () => {void runAiAction(enableConfiguredAiConnections);};
 aiNode('aiLocalConfigure').onclick = () => {const client=aiConnection.selected;void runAiAction(async()=>{
+  aiConnection.localInstall=null;
   aiNode('aiLocalResult').textContent='';
   const result=await invoke('mcp_add_client',{client,language:currentLanguage()});
   if(result.cancelled)return;
   acceptAiProfile(result.profile);
-  aiNode('aiLocalResult').textContent=t(client==='claude-desktop'?'ai.claude_added':'ai.workbuddy_added');
+  aiConnection.localInstall={client,path:result.bundle_path};
 });};
 async function copyAiText(text) {
   try {await navigator.clipboard.writeText(text); aiNode('aiActionStatus').textContent = t('ai.copied');}
@@ -2056,6 +2061,7 @@ setInterval(() => {if (!appearancePopover.hidden && !aiNode('settingsPanel-ai').
 window.addEventListener('focus', () => {if (!appearancePopover.hidden && !aiNode('settingsPanel-ai').hidden) void refreshAiConnections();});
 onLanguageChange(renderAiConnections);
 aiNode('aiClear').onclick = () => {
+  if(aiNode('aiConnectionControls').disabled)return;
   const client = aiConnection.selected, opener = aiNode('aiClear');
   const dialog = document.createElement('dialog'); dialog.className = 'ai-clear-dialog close-document-dialog';
   dialog.setAttribute('aria-labelledby', 'aiClearTitle'); dialog.setAttribute('aria-describedby','aiClearDescription');

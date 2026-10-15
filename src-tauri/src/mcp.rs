@@ -1016,6 +1016,19 @@ pub fn mcp_export_stdio(app:tauri::AppHandle,broker:tauri::State<LeafMcpBroker>,
 pub async fn mcp_add_client(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpBroker>,client:String,language:String)->Result<Value,String>{
     if !["claude-desktop","workbuddy"].contains(&client.as_str()){return Err("invalid_client".into());}
     if !*broker.inner.enabled.lock().unwrap(){return Err("connection_disabled".into());}
+    // Windows does not reliably register .mcpb with Claude. Let the user choose
+    // an export location, then import inside Claude; never invoke ShellExecute.
+    // Ask before mutating profiles so cancelling a Save dialog is a true no-op.
+    #[cfg(target_os="windows")]
+    let export_path=if client=="claude-desktop" {
+        use tauri_plugin_dialog::DialogExt;
+        let handle=app.clone();
+        let path=tauri::async_runtime::spawn_blocking(move||handle.dialog().file()
+            .add_filter("Claude extension",&["mcpb"]).set_file_name("Leaf.mcpb").blocking_save_file())
+            .await.map_err(|_|"install_failed")?;
+        let Some(path)=path else{return Ok(json!({"cancelled":true}));};
+        Some(path.into_path().map_err(|_|"invalid_export_path")?)
+    }else{None};
     if client=="workbuddy" {
         use tauri_plugin_dialog::DialogExt;
         let handle=app.clone();let chinese=language.starts_with("zh");
@@ -1029,12 +1042,20 @@ pub async fn mcp_add_client(app:tauri::AppHandle,broker:tauri::State<'_,LeafMcpB
     let helper=std::env::current_exe().map_err(|_|"helper_not_installed")?.parent().unwrap().join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});
     let config=broker.export_stdio_config(&client,helper,descriptor)?;
     if client=="claude-desktop" {
+        #[cfg(target_os="windows")]
+        {
+            let path=export_path.ok_or("invalid_export_path")?;
+            super::ai_client_install::export_claude_bundle(&path,&config)?;
+            return Ok(json!({"profile":profile.masked(),"cancelled":false,"bundle_path":path}));
+        }
+        #[cfg(not(target_os="windows"))]
+        {
         let directory=super::application_data(&app).map_err(|_|"install_path")?.join("mcp/install");
         let bundle=super::ai_client_install::claude_bundle(&directory,&config)?;
         #[cfg(target_os="macos")] let status=std::process::Command::new("/usr/bin/open").args(["-a","Claude"]).arg(bundle).status();
-        #[cfg(target_os="windows")] let status=std::process::Command::new("rundll32.exe").arg("url.dll,FileProtocolHandler").arg(bundle).status();
         #[cfg(not(any(target_os="macos",target_os="windows")))]let status=std::process::Command::new("xdg-open").arg(bundle).status();
         if !status.is_ok_and(|s|s.success()){return Err("host_open_failed".into());}
+        }
     }else{
         let target=app.path().home_dir().map_err(|_|"install_path")?.join(".workbuddy/mcp.json");
         super::ai_client_install::install_workbuddy(&target,&config)?;
