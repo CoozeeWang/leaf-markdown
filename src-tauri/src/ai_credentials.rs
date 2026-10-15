@@ -128,7 +128,11 @@ pub fn read_private(path:&std::path::Path)->Result<String,String>{
  let user=Command::new("whoami.exe").args(["/user","/fo","csv","/nh"]).output().map_err(|_|"credential_permissions")?;
  let sid=String::from_utf8_lossy(&user.stdout).split(',').last().unwrap_or("").trim().trim_matches('"').to_string();
  if !sid.starts_with("S-1-")||!sid.bytes().all(|b|b.is_ascii_digit()||b==b'S'||b==b'-'){return Err("credential_permissions".into());}
- if !Command::new("icacls.exe").arg(path).args(["/inheritance:r","/grant:r",&format!("*{sid}:(F)")]).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s|s.success()){return Err("credential_permissions".into());}Ok(())
+ // Directories must pass the current user's access to files/subdirectories.
+ // A non-inheritable grant can strip inherited access from existing siblings
+ // when the master preference first protects their shared application folder.
+ let permission=if path.is_dir(){format!("*{sid}:(OI)(CI)F")}else{format!("*{sid}:F")};
+ if !Command::new("icacls.exe").arg(path).args(["/inheritance:r","/grant:r",&permission]).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s|s.success()){return Err("credential_permissions".into());}Ok(())
 }
 fn runtime_cache()->&'static std::sync::Mutex<HashMap<String,String>> {static CACHE:std::sync::OnceLock<std::sync::Mutex<HashMap<String,String>>>=std::sync::OnceLock::new();CACHE.get_or_init(Default::default)}
 // Keyring's macOS setter creates a caller-only ACL. For NEW Leaf entries use
@@ -644,6 +648,23 @@ pub mod tests {
             fn delete(&self,_:&CredentialRef)->Result<(),String>{Err("credential_unavailable".into())}
         }
         let mut s=store();let before=s.list();assert!(s.configure("chatgpt","synthetic","save",0,&Denied).is_err());assert_eq!(s.list(),before);
+    }
+    #[cfg(windows)]
+    #[test]
+    fn protecting_shared_app_directory_preserves_siblings_and_nested_access() {
+        let dir=tempfile::tempdir().unwrap();let root=dir.path().join("app-data");
+        std::fs::create_dir_all(root.join("mcp/nested")).unwrap();
+        let path=root.join("mcp-profiles-v1.json");let secrets=MemoryKeyring::default();
+        let mut profiles=AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(path.clone())).unwrap();
+        profiles.configure("workbuddy","synthetic-local-profile","save",0,&secrets).unwrap();
+        std::fs::write(root.join("mcp/nested/synthetic.json"),"{}").unwrap();
+        McpPreferences{enabled:true}.save(&root.join("mcp-preferences-v1.json")).unwrap();
+        assert!(AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(path)).unwrap().status("workbuddy").unwrap().configured);
+        assert_eq!(std::fs::read_dir(root.join("mcp/nested")).unwrap().count(),1);
+        write_private(&root.join("mcp/credentials/synthetic.json"),"{}").unwrap();
+        private_directory(&root).unwrap();
+        assert_eq!(read_private(&root.join("mcp/credentials/synthetic.json")).unwrap(),"{}");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
 

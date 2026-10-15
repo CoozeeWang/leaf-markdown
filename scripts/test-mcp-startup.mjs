@@ -9,6 +9,7 @@ import {createServer} from 'node:net';
 const root=resolve(import.meta.dirname,'..');
 const directory=await mkdtemp(join(tmpdir(),'leaf-startup-'));
 let executable=join(root,'src-tauri/target/debug/leaf'+(process.platform==='win32'?'.exe':''));
+let primaryFailure;
 try {
   if(process.platform==='darwin') {
     const staged=await stageDevBundle({source:executable,helper:join(root,'src-tauri/target/debug/leaf-mcp-adapter'),test:true,testBundlePath:join(directory,'Leaf Startup Test.app')});
@@ -26,7 +27,12 @@ try {
     const timeout=setTimeout(()=>child.kill(),45000);
     const code=await new Promise((res,rej)=>{child.on('error',rej);child.on('exit',res);});clearTimeout(timeout);
     const report=JSON.parse(await readFile(result,'utf8').catch(()=>JSON.stringify({pass:false,failure:'no native report: '+diagnostic.slice(-1000)})));
+    if(report.pass!==true)console.error('Native restart report:',JSON.stringify(report));
     assert.equal(report.pass,true,JSON.stringify(report));assert.equal(code,0);
     console.log('Actual native startup passed:',mode);
   }
-} finally {await rm(directory,{recursive:true,force:true});}
+} catch(error) {primaryFailure=error;throw error;}
+finally {
+  try {await rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
+  catch(error) {if(primaryFailure)console.error('Secondary native cleanup failure:',error.code);else throw error;}
+}

@@ -10,12 +10,13 @@ import {createServer} from 'node:net';
 import {stageDevBundle} from './desktop-dev-macos.mjs';
 import {Client} from '@modelcontextprotocol/client';
 import {StdioClientTransport} from '@modelcontextprotocol/client/stdio';
+import {delimiter} from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const mode = process.argv[2] || 'stdio-and-origin';
 assert(['stdio-and-origin', 'packaged'].includes(mode));
 const directory = await mkdtemp(join(tmpdir(), 'leaf-adapter-native-'));
-const env = { ...process.env, PATH: `${homedir()}/.cargo/bin:${process.env.PATH}`, LEAF_MCP_TEST_DIR: directory, LEAF_MCP_TEST_MODE: 'tracer', LEAF_MCP_ADAPTER_TEST: '1' };
+const env = { ...process.env, PATH: `${homedir()}/.cargo/bin${delimiter}${process.env.PATH}`, LEAF_MCP_TEST_DIR: directory, LEAF_MCP_TEST_MODE: 'tracer', LEAF_MCP_ADAPTER_TEST: '1' };
 if(process.platform==='win32') {
   const probe=createServer();await new Promise((res,rej)=>{probe.once('error',rej);probe.listen(0,'127.0.0.1',res);});
   env.LEAF_NATIVE_SMOKE_PORT=String(probe.address().port);await new Promise(res=>probe.close(res));
@@ -56,6 +57,7 @@ async function initialize(h) {
   assert(result.result?.capabilities?.tools, 'standard initialize must negotiate tools'); h.notify('notifications/initialized');
 }
 await test('standard MCP adapter with actual native keyring and broker', async () => {
+let primaryFailure;
 try {
   let binaries;let appExecutable=resolve(root,'src-tauri/target/debug/leaf'+(process.platform==='win32'?'.exe':''));
   if(mode!=='packaged'&&!process.argv.includes('--reuse-build')) await build(['--debug','--no-bundle','--features','native-smoke','--config','src-tauri/tauri.mcp-test.conf.json']);
@@ -172,12 +174,19 @@ try {
   await test('global disable rejects remaining client calls', async () => { const reply = await other.request('tools/call', { name: 'list_documents', arguments: {} }); assert(reply.error || reply.result?.isError); });
   for (const h of [...clients, other]) h.child.stdin.end();
   await writeFile(join(directory, 'done'), ''); const report = await waitJson('adapter-result.json'); assert.equal(report.pass, true, report.failure);
-} finally {
+} catch(error) {primaryFailure=error;throw error;}
+finally {
   const acl=await readFile(join(directory,'acl-effective.json'),'utf8').catch(()=>null);
   if(acl) console.log(`Effective synthetic entry ACL: ${acl}`);
   await writeFile(join(directory, 'abort'), '');
   if (existsSync(join(directory, 'adapter-ready.json'))) {try {await waitJson('adapter-result.json', 5000);}catch{}}
-  for (const child of processes) if (child.exitCode === null) child.kill('SIGTERM');
-  await new Promise(r => setTimeout(r, 300)); await rm(directory, { recursive: true, force: true });
+  await Promise.all(processes.map(child=>{
+    if(child.exitCode!==null||child.signalCode!==null)return;
+    return new Promise(resolve=>{
+      const timeout=setTimeout(resolve,5000);child.once('close',()=>{clearTimeout(timeout);resolve();});child.kill('SIGTERM');
+    });
+  }));
+  try {await rm(directory, { recursive: true, force: true, maxRetries:10, retryDelay:100 });}
+  catch(error) {if(primaryFailure)console.error('Secondary adapter cleanup failure:',error.code);else throw error;}
 }
 });
