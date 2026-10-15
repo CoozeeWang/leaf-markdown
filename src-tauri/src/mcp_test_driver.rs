@@ -40,10 +40,11 @@ pub fn start(app: &tauri::AppHandle) -> Result<(), String> {
 fn ensure(condition:bool,message:&str)->Result<(),String>{if condition {Ok(())}else{Err(message.into())}}
 
 async fn tool(client:&rmcp::service::Peer<rmcp::service::RoleClient>,name:&str,args:Value)->Result<Value,String> {
+    let request=args["request_id"].as_str().unwrap_or("no-request").to_owned();
     let params=serde_json::from_value(json!({"name":name,"arguments":args})).map_err(|_|"client parameters")?;
     let result=client.call_tool(params).await.map_err(|_|"MCP client call")?;
     let value=serde_json::to_value(result).map_err(|_|"client result")?;
-    if value["isError"]==true {return Err(value["structuredContent"]["error"].as_str().unwrap_or("tool_error").into());}Ok(value["structuredContent"].clone())
+    if value["isError"]==true {return Err(format!("{name}[{request}]: {}",value["structuredContent"]["error"].as_str().unwrap_or("tool_error")));}Ok(value["structuredContent"].clone())
 }
 
 #[tauri::command]
@@ -1020,10 +1021,19 @@ async fn history_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafM
             ensure(saved.is_err(),"native save failure injected without disk overwrite")?;
         }
         let mut end=binding.clone();end["task_id"]=task["task_id"].clone();end["reason"]=json!(reason);
-        tool(client,if reason=="normal"||reason=="zero-edits" {"finish_edit"}else{"stop_edit"},end.clone()).await?;
+        if reason=="save-failed" {
+            // This fixture attempts Save As from an unsaved buffer. The target
+            // boundary retires the task/grant before the subsequent I/O fails.
+            let retired=broker.window_binding(label).ok_or("save-failed window binding")?;
+            ensure(retired.task.is_none()&&retired.client.is_none()&&retired.authorization_epoch>d.authorization_epoch,"failed Save As retires its prior task and authorization")?;
+            ensure(matches!(tool(client,"stop_edit",end.clone()).await,Err(error) if error.ends_with(": not_authorized")),"old grant cannot stop after failed Save As")?;
+            ensure(matches!(tool(client,"finish_edit",end.clone()).await,Err(error) if error.ends_with(": not_authorized")),"old grant cannot finish after failed Save As")?;
+        } else {
+            tool(client,if reason=="normal"||reason=="zero-edits" {"finish_edit"}else{"stop_edit"},end.clone()).await.map_err(|error|format!("history {reason}: {error}"))?;
+        }
         let finished=broker.bridge(app,label,"snapshot",json!({})).await?;
         ensure(finished["content"]==final_text,"end retains linearized batches")?;
-        tool(client,"finish_edit",end).await?;
+        if reason!="save-failed" {tool(client,"finish_edit",end).await?;}
         if reason=="zero-edits" {
             let redo=broker.bridge(app,label,"test",json!({"action":"redo"})).await?;
             ensure(redo["content"]=="alpha omegaHX","zero edit preserves existing redo")?;continue;
