@@ -16,7 +16,7 @@ fn zip_stored(entries:&[(&str,Vec<u8>)])->Vec<u8>{
 pub fn claude_bundle(directory:&Path,command:&Value)->Result<PathBuf,String>{
  private_directory(directory)?;
  let manifest=json!({"manifest_version":"0.3","name":"leaf-mcp","display_name":"Leaf","version":env!("CARGO_PKG_VERSION"),"description":"Read and edit open Leaf documents while MCP is enabled.","author":{"name":"Leaf contributors"},"compatibility":{"platforms":[std::env::consts::OS.replace("macos","darwin").replace("windows","win32")]},"server":{"type":"node","entry_point":"server/index.js","mcp_config":{"command":"node","args":["${__dirname}/server/index.js"]}}});
- let script=format!("const {{spawn}}=require('node:child_process');\nconst c={};\nconst p=spawn(c.command,c.args,{{stdio:'inherit'}});\np.on('error',()=>{{console.error('Open Leaf and add its extension again.');process.exit(1);}});\np.on('exit',code=>process.exit(code??1));\nfor(const s of ['SIGTERM','SIGINT'])process.on(s,()=>p.kill(s));\n",serde_json::to_string(command).map_err(|_|"install_encoding")?);
+ let script=format!("const c={};\n{}",serde_json::to_string(command).map_err(|_|"install_encoding")?,include_str!("claude_stdio.cjs"));
  let bytes=zip_stored(&[("manifest.json",serde_json::to_vec(&manifest).unwrap()),("server/index.js",script.into_bytes())]);
  let path=directory.join("Leaf.mcpb");
  // A private export includes local executable paths, never a bearer or API key.
@@ -68,6 +68,10 @@ pub fn install_workbuddy(target:&Path,command:&Value)->Result<(),String>{
   let check=std::process::Command::new("/usr/bin/unzip").arg("-t").arg(&p).output().unwrap();assert!(check.status.success());
   let manifest=std::process::Command::new("/usr/bin/unzip").arg("-p").arg(&p).arg("manifest.json").output().unwrap();let v:Value=serde_json::from_slice(&manifest.stdout).unwrap();assert_eq!(v["server"]["type"],"node");assert!(v.get("user_config").is_none());
   let script=std::process::Command::new("/usr/bin/unzip").arg("-p").arg(&p).arg("server/index.js").output().unwrap();let script=String::from_utf8(script.stdout).unwrap();assert!(script.contains("synthetic-helper"));assert!(script.contains("synthetic.json"));assert!(!script.contains("api-key"));
+  let launcher=dir.path().join("launcher.cjs");std::fs::write(&launcher,script.split_once(";\n").unwrap().1).unwrap();
+  let harness=Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/claude-stdio-host.cjs");
+  let result=std::process::Command::new("node").arg(harness).arg(launcher).output().unwrap();assert!(result.status.success(),"{}",String::from_utf8_lossy(&result.stderr));
+
  }
 
 }
