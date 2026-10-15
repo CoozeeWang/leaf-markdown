@@ -16,6 +16,7 @@ let session;
 let draftTimer;
 let closing = false;
 let hooks;
+let restoreQueue=Promise.resolve(),restoreContext=null;
 
 export async function desktopOpen() {
   const selected = await open({ multiple: true, filters });
@@ -40,6 +41,8 @@ export async function desktopNew() {
 export function desktopSave(as = false, manual = true) {
   return session?.save({ as, manual }) ?? Promise.resolve(false);
 }
+export function desktopAiApplied(receipt) { session?.aiApplied(receipt); }
+export function desktopFileState() { return session ? {path:session.path,paused:session.paused,aiEditResult:session.aiEditResult} : null; }
 export function desktopRename(name) { return session.rename(name); }
 export function desktopRelocate() { return session?.relocate() ?? Promise.resolve(false); }
 export function desktopRun(action) { return session.run(action); }
@@ -60,12 +63,20 @@ export function desktopEdited() {
   clearTimeout(draftTimer);
   draftTimer = setTimeout(() => session?.checkpoint().catch(error => hooks.status(translatedMessage("desktop.could_not_protect_the_draft", {"error": error}), 'error')), 250);
 }
-export function desktopRestore(content) { return session.restore(content); }
+export function desktopRestore(content,context=hooks.captureMutation()) {
+  if (!hooks.mutationAllowed()) return Promise.reject(new Error('document_locked'));
+  const operation=restoreQueue.catch(()=>{}).then(async()=>{
+    hooks.assertMutationCurrent(context);restoreContext=context;
+    try {return await session.restore(content);}finally{restoreContext=null;}
+  });
+  restoreQueue=operation;return operation;
+}
 
 async function closeDocument() {
   if (closing) return;
   closing = true;
   try {
+    await invoke('mcp_document_boundary',{reason:'close'});
     clearTimeout(draftTimer);
     await session?.idle();
     if (session?.ready) {
@@ -99,8 +110,15 @@ export async function initDesktop(callbacks) {
   session = createDocumentSession({
     localizedMessages: true,
     content: hooks.content, status: hooks.status,
+    saveContext:hooks.saveContext,
+    aiActive:()=>!hooks.mutationAllowed(),
+    aiConflict:()=>invoke('mcp_document_boundary',{reason:'external-conflict'}),
+    aiSaveResult:async result=>{
+      const context=result.saveContext ?? hooks.saveContext?.();
+      if(context?.session_id && result.diskResult.state!=='saved')await invoke('mcp_save_result',{sessionId:context.session_id,revision:context.revision,checkpoint:result.checkpoint.state==='protected',failed:result.diskResult.state==='failed'});
+    },
     load: (content, source) => hooks.load(content, source ? fileNameFromPath(source) : t("desktop.untitled_md"), source),
-    restore: hooks.restore,
+    restore:content=>hooks.restore(content,restoreContext),
     select: path => save({ defaultPath: path || t("desktop.untitled_md"), filters }),
     selectExisting: () => open({ multiple: false, filters, title: t("desktop.locate_original_file") }),
     relocate: (path, expected) => invoke('relocate_document', { path, expected, loadedImages: hooks.loadedImages?.() ?? [] }),
@@ -118,7 +136,7 @@ export async function initDesktop(callbacks) {
     followed(content,path,previous,movedImages) {
       hooks.followed?.(content,fileNameFromPath(path),path,movedImages);
     },
-    write: (path, content, expected) => invoke('write_document', { path, content, expected, resources: localResourcePaths(content) }),
+    write: (path, content, expected,saveBinding) => invoke('write_document', { path, content, expected,saveBinding:saveBinding ? {session_id:saveBinding.session_id,document_id:saveBinding.document_id,revision:saveBinding.revision} : null, resources: localResourcePaths(content) }),
     checkpoint: (content, preserve = false) => invoke('recovery_checkpoint', { content, preserve }),
     saved(content, path) { hooks.saved(content, fileNameFromPath(path), path); },
   });
@@ -127,6 +145,10 @@ export async function initDesktop(callbacks) {
   await listen('leaf-close', closeDocument);
   await window.listen('leaf-native-rename',({payload})=>hooks.renameNative?.(payload));
   await window.listen('leaf-menu', async ({ payload }) => {
+    const command=typeof payload==='string'?payload:payload.command;
+    if (['cut','paste','paste-plain','add-comment','undo','redo','recovery'].includes(command) && typeof payload!=='string' && !hooks.menuCurrent(payload.binding))return;
+    if (['cut','paste','paste-plain','add-comment','undo','redo','recovery'].includes(command) && !hooks.mutationAllowed()) return;
+    payload=command;
     if (payload === 'new') {
       try { await desktopNew(); } catch (error) { hooks.status(translatedMessage("desktop.could_not_create_the_document", {"error": error}), 'error'); }
     }
@@ -144,6 +166,7 @@ export async function initDesktop(callbacks) {
     if (payload === 'cycle-mode') hooks.cycleMode?.();
     if (payload === 'undo') hooks.undo?.();
     if (payload === 'redo') hooks.redo?.();
+    if (payload === 'cut' || payload === 'paste') hooks.clipboard?.(payload);
   });
   let draggedPaths=[];
   await window.onDragDropEvent(async ({ payload }) => {

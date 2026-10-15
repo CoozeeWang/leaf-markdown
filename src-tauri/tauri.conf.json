@@ -1,20 +1,21 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Leaf",
-  "version": "0.4.0-beta.3",
+  "version": "0.4.0-beta.4",
   "identifier": "studio.leaf.editor",
   "build": {
-    "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --port 41731 --strictPort",
+    "beforeDevCommand": "node scripts/build-mcp-adapter.mjs --stage-only --debug && npm run dev -- --host 127.0.0.1 --port 41731 --strictPort",
     "devUrl": "http://127.0.0.1:41731",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "node scripts/build-mcp-adapter.mjs --stage-only && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [{ "label": "main", "title": "Leaf", "width": 1100, "height": 800, "minWidth": 900, "minHeight": 480 }],
-    "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob: https: http:; connect-src ipc: http://ipc.localhost" }
+    "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob: https: http:; connect-src ipc: http://ipc.localhost https://api.github.com/repos/openai/tunnel-client/releases/latest" }
   },
   "bundle": {
     "active": true,
+    "externalBin": ["binaries/leaf-mcp-adapter"],
     "icon": ["icons/icon.png", "icons/icon.icns"],
     "targets": ["app"],
     "fileAssociations": [{ "ext": ["md", "markdown", "mdown"], "name": "Markdown document", "role": "Editor", "mimeType": "text/markdown" }],

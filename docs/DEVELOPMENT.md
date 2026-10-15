@@ -157,3 +157,8 @@ NSIS 配置启用 English、SimpChinese、TradChinese 和语言选择器，直�
 正文缩放由 `body-zoom-browser.mjs` 检查八档比例、编辑坐标与真实鼠标输入、高亮快捷键区分、撤销、视图切换、长文位置、三语、菜单和独立导出预览。默认 Chromium，`LEAF_ZOOM_ENGINE=webkit` 可检查 WebKit；平台模拟不等于 Windows 实机。macOS 使用已有 `native-table-keys` 入口运行 `../tests/native-body-zoom.html` 与 `http://127.0.0.1:41732/tests/native-body-zoom.html`，加 `--foreground` 检查实际 WKWebView 的比例、坐标及 AppKit Shift 快捷键；后台窗口的帧测量可能暂停。正式安装版的真实输入法、保存重开、图片拖放、实际 PDF 和两平台验收仍分开记录。
 
 脚注编辑区由 `footnote-region-browser.mjs` 覆盖：中间定义的文末显示、打开不改原文、85% 字号、绘制光标、单击只读／双击与键盘编辑／离开恢复预览、键盘焦点外框与提示文字基线对齐、多段脚注、剪贴板粘贴、组合输入、正文续写、一次撤销／重做、搜索映射、CRLF、删除边界和全文删除；Chromium 使用 Mac/Windows 快捷键模拟，WebKit 使用 Mac 路径。`native-footnote-region.html` 配合 `native-table-keys` 检查实际 macOS WKWebView 的 AppKit Enter、文末区域、正文末尾自然续写与历史。原生夹具仍为合成文档，不能代替实际中文输入法、安装版保存和 Windows 实机验收。
+Windows「保存为 PDF」直接使用 WebView2 `PrintToPdf`，避免 Microsoft Print to PDF 的 Unicode 标题截断。输出先写入同目录临时文件，成功且签名正确后才替换目标；取消保存不写文件。`pdf_output` 的 Rust 测试覆盖 Unicode 文件名及失败保护。原生 smoke 使用带中文、重音和 emoji 的标题，通过 `tests/pdf-title-check.py` 检查实际 PDF 元数据、A4 分页及尾段，并测试再次覆盖。仅 `native-smoke` 构建支持用 `LEAF_NATIVE_SMOKE_PDF_DIR` 指定一次性输出目录以绕过保存窗口；正式构建始终显示系统保存窗口。该自动路径不代替 Windows 安装版保存窗口、取消和覆盖确认的人工验收。
+
+源码测试串行调度测试文件，因为多个 AI 契约用例会调用同一 Rust 工作目录；并行启动会在 Windows 冷构建时争用 Cargo 锁，导致等待锁被误判为三分钟超时。原生断言和各用例超时仍保留，未跳过失败项。
+
+Windows 安装包流程现在先构建启用 `native-smoke` 的本机测试应用，运行 `windows-native-smoke.mjs --pdf-only`：打开实际 Leaf 导出窗口，经 `print_export` 命令生成单行与多页 Unicode 标题 PDF，并重复覆盖后校验内容／元数据。保留临时路径的清理保护，但在交给外部渲染器前关闭 Leaf 的文件句柄；Windows 单元测试同时比较旧句柄阻塞与新路径允许独占写入。该检查不代替用户保存窗口与真实安装版验收。

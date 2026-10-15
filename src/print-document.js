@@ -20,14 +20,14 @@ const markdown = parser.configure(leafMarkdownExtensions);
 // its number inside a callout instead of starting a second, local numbering.
 export function renderPrintDocument(target, source, {
   name = t("desktop.untitled_md"), numbered = false, properties = false,
-  fallbackTitle = true, fileNameTitle = false, expandCallouts = true, sourcePositions = false, footnotes: shared, annotations = false, annotationNotes = [],
+  fallbackTitle = true, fileNameTitle = false, expandCallouts = true, sourcePositions = false, footnotes: shared, annotations = false, annotationNotes = [], resources = true,
 } = {}) {
   const root = !shared;
   const state = shared ?? createFootnoteState(source);
   target.replaceChildren();
   const model = analyzeMarkdown(source);
   const annotationIndex=indexComments(source).notes.map((n,i)=>({...n,id:annotationNotes[i]?.id??'reading-comment-'+n.from}));
-  const inline=(target,text,at=0)=>renderInline(target,text,state,{show:annotations,notes:annotationIndex,offset:at});
+  const inline=(target,text,at=0)=>renderInline(target,text,state,{show:annotations,notes:annotationIndex,offset:at,resources});
   const add = (tag, parent = target, text) => {
     const el = document.createElement(tag); if (text !== undefined) el.textContent = text; parent.append(el); return el;
   };
@@ -74,10 +74,10 @@ export function renderPrintDocument(target, source, {
       const title = add(box.tagName === 'DETAILS' ? 'summary' : 'div', box); title.className = 'leaf-callout-title';
       const badge = add('span', title); badge.className = 'leaf-callout-type-icon'; badge.innerHTML = calloutBadge(callout.type);
       const titleText = add('span', title);
-      if (callout.customTitle) renderInline(titleText, callout.title, state);
+      if (callout.customTitle) renderInline(titleText, callout.title, state, {resources});
       else setText(titleText, () => calloutLabels[callout.type]);
       const content = add('div', box); content.className = 'leaf-callout-body';
-      renderPrintDocument(content, callout.body, { fallbackTitle:false, expandCallouts, footnotes: state });
+      renderPrintDocument(content, callout.body, { fallbackTitle:false, expandCallouts, footnotes: state, resources });
       return;
     }
     const level = /^(?:ATX|Setext)Heading([1-6])$/.exec(node.name)?.[1];
@@ -104,7 +104,7 @@ export function renderPrintDocument(target, source, {
         const tr = add('tr', i ? tbody : head);
         for (let c = 0; c < block.columns; c++) {
           const cell = add(i ? 'td' : 'th', tr); cell.style.textAlign = block.align[c];
-          inline(cell, row.cells[c]?.raw ?? '', row.cells[c]?.from ?? 0);
+          inline(cell, row.cells[c]?.value ?? '', row.cells[c]?.from ?? 0);
         }
       }); return;
     }
@@ -128,7 +128,7 @@ export function renderPrintDocument(target, source, {
     }
     if (node.name === 'Task') {
       const p = markSource(add('p', parent), node, doc); p.textContent = /^\[[xX]\]/.test(text) ? '☑ ' : '☐ ';
-      renderInline(add('span', p), text.replace(/^\[[ xX]\]\s*/, ''), state); return;
+      renderInline(add('span', p), text.replace(/^\[[ xX]\]\s*/, ''), state, {resources}); return;
     }
     if (['ListMark', 'QuoteMark', 'CodeMark', 'CodeInfo'].includes(node.name)) return;
     const tags = { BulletList: 'ul', OrderedList: 'ol', ListItem: 'li', Blockquote: 'blockquote' };

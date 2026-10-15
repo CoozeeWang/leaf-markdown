@@ -1,8 +1,17 @@
 [package]
 name = "leaf"
-version = "0.4.0-beta.3"
+version = "0.4.0-beta.4"
 edition = "2021"
 license = "MIT"
+default-run = "leaf"
+
+[[bin]]
+name = "leaf"
+path = "src/main.rs"
+
+[[bin]]
+name = "leaf-mcp-adapter"
+path = "src/bin/leaf-mcp-adapter.rs"
 
 [features]
 # Enables a local CDP connection only in native CI probe builds.
@@ -22,11 +31,20 @@ tempfile = "3"
 # stays recoverable instead of destroying the original outright.
 trash = "5"
 sys-locale = "0.3.2"
+rmcp = { version = "=3.5.1", default-features = false, features = ["server", "macros", "transport-io", "transport-streamable-http-server", "client", "transport-streamable-http-client-reqwest", "reqwest"] }
+tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "io-std", "io-util", "process"] }
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio"] }
+keyring = { version = "=4.2.0", default-features = false, features = ["v1"] }
+getrandom = "=0.3.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "=3.7.0"
 objc2 = "0.6"
 block2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSString", "NSURL"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 tauri-plugin-single-instance = "2"
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+webview2-com = "0.38.2"
+windows = { version = "0.61", features = ["Win32_Foundation"] }

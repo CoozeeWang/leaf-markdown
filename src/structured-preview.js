@@ -41,6 +41,7 @@ function button(label, text, action) {
   return b;
 }
 function edit(view, change, userEvent = 'input') {
+  if(view.assertDocumentMutationAllowed?.()===false)return;
   view.dispatch({ changes: change, userEvent });
 }
 
@@ -439,7 +440,7 @@ class StructuredBlock extends WidgetType {
         requestAnimationFrame(resize);
       }
     });
-    tableEdgeControls(root,table,act);
+    tableEdgeControls(root,table,act,()=>view.assertDocumentMutationAllowed?.() ?? true);
     const after = button(translatedMessage("structured_preview.continue_writing_after_the_table"), translatedMessage("structured_preview.continue_writing"), () => leaveTable(root, view));
     after.classList.add('leaf-table-exit');
     root.append(after);

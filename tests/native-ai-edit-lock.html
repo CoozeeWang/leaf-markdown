@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Leaf AI lock</title></head><body>
+<main class="shell"><div class="format-toolbar"><button id="calloutButton">Callout</button><span class="toolbar-spacer"></span></div><div id="editor"></div></main>
+<script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import {setupWriting} from '/src/writing-tools.js';
+const assert=(condition,message)=>{if(!condition)throw new Error(message);};
+window.runTest=async()=>{
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:'Synthetic draft',onChange(){}});
+  let imports=0, clipboardReads=0;
+  const writing=setupWriting({editor,desktop:true,invoke:async()=>{imports++;return '.assets/synthetic.txt';},save:async()=>true,choose:async()=>['synthetic.txt'],serialized:action=>action(),editable:()=>true,status(){},icon:()=>''});
+  const original=editor.mcpSnapshot();
+  editor.beginAiTask({task_id:'synthetic-task',session_id:'synthetic-session',authorization_epoch:1,revision:original.revision,scope:{from:0,to:original.content.length}});
+  await writing.attachments(['synthetic.txt'],false);
+  assert(imports===0,'locked writing tools must refuse attachment I/O before import');
+  assert(editor.mcpSnapshot().revision===original.revision,'locked document revision unchanged');
+  assert(editor.view.contentDOM.getAttribute('aria-readonly')==='true','WK content has read-only semantics');
+  assert(document.querySelector('#attachmentInsert').disabled,'WK attachment control is disabled');
+  editor.finishAiTask({task_id:'synthetic-task'});
+  assert(!document.querySelector('#attachmentInsert').disabled,'WK attachment control resumes');
+  editor.view.dispatch({changes:{from:0,insert:'Human '},userEvent:'input'});
+  assert(editor.getValue().startsWith('Human '),'human editing resumes');
+  editor.view.destroy();
+  return {pass:true,layer:'WK-controls',imports,clipboardReads};
+};
+window.runLateTest=async()=>{
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:'Synthetic draft',onChange(){}});
+  let release;
+  const waiting=new Promise(resolve=>{release=resolve;});
+  let importing=false;
+  let importError='';
+  const writing=setupWriting({editor,desktop:true,invoke:async()=>{importing=true;return waiting;},save:async()=>true,choose:async()=>['synthetic.txt'],serialized:action=>action(),editable:()=>true,status:message=>{importError=String(message);},icon:()=>''});
+  const original=editor.mcpSnapshot();
+  const pending=writing.attachments(['synthetic.txt'],false);
+  for(let i=0;i<1000&&!importing;i++)await new Promise(resolve=>setTimeout(resolve,1));
+  assert(importing,'attachment delay must start: '+importError);
+  editor.beginAiTask({task_id:'late-task',session_id:'synthetic-session',authorization_epoch:2,revision:original.revision,scope:{from:0,to:original.content.length}});
+  editor.finishAiTask({task_id:'late-task'});
+  release('.assets/synthetic.txt');await pending;
+  assert(editor.mcpSnapshot().revision===original.revision,'pre-lock attachment completion must remain invalid after stop');
+  assert(editor.getValue()===original.content,'late attachment must preserve expected source');
+  editor.destroy();return {pass:true};
+};
+if(!new URLSearchParams(location.search).has('browser')) {
+  try {await window.runTest();document.title='LeafTest PASS AI lock controls';}
+  catch(error){document.title='LeafTest FAIL '+error.message;}
+}
+</script></body></html>

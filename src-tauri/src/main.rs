@@ -6,6 +6,10 @@ use std::collections::VecDeque;
 use tauri::{Emitter, Manager};
 #[cfg(target_os = "macos")]
 mod native_print;
+#[cfg(target_os = "windows")]
+mod windows_pdf;
+#[cfg(any(target_os = "windows", test))]
+mod pdf_output;
 #[cfg(target_os = "macos")]
 mod native_shortcuts;
 #[cfg(target_os = "macos")]
@@ -16,8 +20,20 @@ mod document_location;
 mod recent;
 mod new_markdown;
 mod i18n;
+mod mcp;
+mod ai_client_install;
+#[cfg(feature = "native-smoke")]
+mod mcp_test_driver;
 #[cfg(target_os = "macos")]
 mod native_services;
+
+fn application_data(app: &tauri::AppHandle) -> Result<PathBuf, tauri::Error> {
+    #[cfg(feature="native-smoke")]
+    if mcp_test_driver::enabled(app) {
+        return Ok(PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").expect("isolated test directory")).join("app-data"));
+    }
+    app.path().app_data_dir()
+}
 
 #[derive(Default)]
 struct RecoveryState { gate: Mutex<()>, drafts: Mutex<HashMap<String, String>>, initial: Mutex<HashMap<String, String>> }
@@ -176,6 +192,46 @@ fn menu_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
         })
 }
 
+const MUTATING_MENU_IDS:&[&str]=&["cut","paste","paste-plain","add-comment","undo","redo","recovery"];
+fn document_menu_item(app:&tauri::AppHandle,id:&str)->Option<tauri::menu::MenuItem<tauri::Wry>> {
+    fn find(items:Vec<tauri::menu::MenuItemKind<tauri::Wry>>,id:&str)->Option<tauri::menu::MenuItem<tauri::Wry>> {
+        for item in items {match item {
+            tauri::menu::MenuItemKind::MenuItem(item) if item.id().as_ref()==id=>return Some(item),
+            tauri::menu::MenuItemKind::Submenu(sub)=>{if let Some(item)=find(sub.items().ok()?,id){return Some(item);}},
+            _=>{}
+        }}None
+    }
+    find(app.menu()?.items().ok()?,id)
+}
+fn refresh_document_menu(app:&tauri::AppHandle) {
+    let locked=menu_window(app).is_some_and(|window|app.state::<mcp::LeafMcpBroker>().window_locked(window.label()));
+    for id in MUTATING_MENU_IDS {if let Some(item)=document_menu_item(app,id){let _=item.set_enabled(!locked);}}
+}
+fn dispatch_document_menu(app:&tauri::AppHandle,label:&str,command:&str)->Result<bool,String> {
+    let broker=app.state::<mcp::LeafMcpBroker>();
+    if MUTATING_MENU_IDS.contains(&command)&&broker.window_locked(label){return Ok(false);}
+    #[cfg(target_os="macos")]
+    if command=="cut"||command=="paste" {
+        let window=app.get_webview_window(label).ok_or("menu_window_unavailable")?;
+        let handle=app.clone();let target=label.to_owned();let paste=command=="paste";
+        app.run_on_main_thread(move||{
+            if handle.state::<mcp::LeafMcpBroker>().window_locked(&target){return;}
+            if let Ok(native)=window.ns_window(){unsafe{
+                use objc2::{class,msg_send,sel,runtime::AnyObject};
+                let native=native as *mut AnyObject;
+                let responder:*mut AnyObject=msg_send![native,firstResponder];
+                let application:*mut AnyObject=msg_send![class!(NSApplication),sharedApplication];
+                let action=if paste{sel!(paste:)}else{sel!(cut:)};
+                let _:bool=msg_send![application,sendAction:action,to:responder,from:std::ptr::null::<AnyObject>()];
+            }}
+        }).map_err(|_|"native_clipboard_unavailable")?;
+        return Ok(true);
+    }
+    let binding=broker.window_binding(label);
+    app.emit_to(label,"leaf-menu",serde_json::json!({"command":command,"binding":binding})).map_err(|_|"menu_event_unavailable")?;
+    Ok(true)
+}
+
 fn create_from_file_manager(app: tauri::AppHandle, target: impl FnOnce() -> Result<PathBuf, String> + Send + 'static) {
     use tauri_plugin_dialog::DialogExt;
     tauri::async_runtime::spawn_blocking(move || {
@@ -238,9 +294,7 @@ fn open_export(app: tauri::AppHandle, window: tauri::WebviewWindow, mut snapshot
     let builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html?export=1".into()))
         .title(i18n::app_text(&app, "NA0004")).inner_size(950., 800.).min_inner_size(720., 480.);
     let builder = development_window(&app, builder);
-    // The frontend reveals Windows document windows only after initial loading.
-    #[cfg(target_os = "windows")]
-    let builder = builder.visible(false);
+    // Export pages have no document-startup reveal step; keep their window visible.
     #[cfg(not(target_os = "macos"))]
     let builder = if let Some(menu) = app.menu() { builder.menu(menu) } else { builder };
     #[cfg(all(target_os = "windows", feature = "native-smoke"))]
@@ -275,7 +329,7 @@ fn import_attachment(app: tauri::AppHandle, window: tauri::WebviewWindow, name: 
     if !window.label().starts_with("document-") { return Err(crate::i18n::error("main.open_or_create_a_document_first", serde_json::json!({})).into()); }
     let doc = resource_document(&app, window.label())?;
     let data = match (data, source) { (Some(data), None) => data, (None, Some(path)) => resources::bytes(std::path::Path::new(&path))?, _ => return Err(crate::i18n::error("main.invalid_attachment_source", serde_json::json!({})).into()) };
-    resources::import_managed(&doc, &name, &data, Some(&app.path().app_data_dir().map_err(|e| e.to_string())?.join("removed-images-v1")))
+    resources::import_managed(&doc, &name, &data, Some(&application_data(&app).map_err(|e| e.to_string())?.join("removed-images-v1")))
 }
 fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -315,7 +369,7 @@ fn reveal_resource(app: tauri::AppHandle, window: tauri::WebviewWindow, relative
 #[tauri::command(async)]
 fn read_resource(app: tauri::AppHandle, window: tauri::WebviewWindow, relative: String) -> Result<Vec<u8>, String> {
     let doc = resource_document(&app, window.label())?;
-    resources::restore(&app.path().app_data_dir().map_err(|e| e.to_string())?.join("removed-images-v1"), &doc, &relative)?;
+    resources::restore(&application_data(&app).map_err(|e| e.to_string())?.join("removed-images-v1"), &doc, &relative)?;
     resources::bytes(&resources::resolve(&doc, &relative)?)
 }
 #[tauri::command(async)]
@@ -370,14 +424,50 @@ fn show_comment_context(window: tauri::WebviewWindow) -> Result<(), String> {
     window.popup_menu(&menu).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn print_export(window: tauri::WebviewWindow) -> Result<(), String> {
     if !window.label().starts_with("export-") { return Err(crate::i18n::error("main.open_the_pdf_export_preview_first", serde_json::json!({})).into()); }
     #[cfg(target_os = "macos")]
     return window.with_webview(|platform| unsafe {
         native_print::show(&*(platform.inner() as *const objc2::runtime::AnyObject));
     }).map_err(|e| e.to_string());
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        use tauri_plugin_dialog::DialogExt;
+        let name = window.app_handle().state::<Exports>().0.lock().unwrap()
+            .get(window.label()).map(|s| pdf_output::file_name(&s.name)).ok_or("Export snapshot unavailable.")?;
+        // Only the opt-in native CI probe can bypass the real Save dialog.
+        #[cfg(feature = "native-smoke")]
+        let probe = std::env::var_os("LEAF_NATIVE_SMOKE_PDF_DIR").map(|p| PathBuf::from(p).join(&name));
+        #[cfg(not(feature = "native-smoke"))]
+        let probe: Option<PathBuf> = None;
+        let target = if let Some(path) = probe { path } else {
+            let Some(path) = window.app_handle().dialog().file().set_parent(&window)
+                .add_filter("PDF", &["pdf"]).set_file_name(name).blocking_save_file() else { return Ok(()); };
+            path.into_path().map_err(|e| e.to_string())?
+        };
+        let temp = pdf_output::prepare(&target)?;
+        let output = temp.to_path_buf();
+        let (tx, rx) = std::sync::mpsc::channel();
+        window.with_webview(move |platform| {
+            let completed = tx.clone();
+            let started = unsafe {
+                platform.controller().CoreWebView2().and_then(|webview| {
+                    windows_pdf::start(platform.environment(), webview, &output, Box::new(move |result| {
+                        let result = result.map_err(|e| e.to_string()).and_then(|saved| {
+                            if saved { Ok(()) } else { Err("The PDF renderer could not save the document.".into()) }
+                        });
+                        let _ = completed.send(result);
+                    }))
+                })
+            };
+            if let Err(error) = started { let _ = tx.send(Err(error.to_string())); }
+        }).map_err(|e| e.to_string())?;
+        // This command runs on a worker; WebView2 completion stays on the UI thread.
+        rx.recv().map_err(|e| e.to_string())??;
+        pdf_output::finish(temp, &target)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     window.print().map_err(|e| e.to_string())
 }
 
@@ -434,7 +524,11 @@ fn create_document(app: tauri::AppHandle, path: Option<String>, recovered: Optio
         let docs = app.state::<Documents>();
         let docs = docs.0.lock().unwrap();
         for (label, existing) in docs.iter() {
-            if existing.as_ref() == Some(target) {
+            #[cfg(any(target_os="macos",target_os="windows"))]
+            let same_identity=anchor.as_ref().is_some_and(|candidate|app.state::<DocumentAnchors>().0.lock().unwrap().get(label).is_some_and(|existing|existing.token()==candidate.token()));
+            #[cfg(not(any(target_os="macos",target_os="windows")))]
+            let same_identity=false;
+            if existing.as_ref() == Some(target) || same_identity {
                 if let Some(window) = app.get_webview_window(label) {
                     window.unminimize().map_err(|e| e.to_string())?;
                     window.set_focus().map_err(|e| e.to_string())?;
@@ -522,7 +616,18 @@ fn moved_missing_images(source: &Path, target: &Path, loaded: &[String]) -> Vec<
 }
 
 #[tauri::command(async)]
-fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
+async fn observe_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<'_,Documents>, anchors: tauri::State<'_,DocumentAnchors>, recovery: tauri::State<'_,RecoveryState>, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
+    let broker=app.state::<mcp::LeafMcpBroker>();
+    let _serial=broker.inner.queue.lock().await;
+    let moved={
+        let source=docs.0.lock().unwrap().get(window.label()).cloned().flatten();
+        anchors.0.lock().unwrap().get(window.label()).and_then(|a|a.locate().ok()).is_some_and(|located|Some(located.path)!=source)
+    };
+    if moved {broker.identity_boundary(&app,window.label()).await?;}
+    observe_document_io(app.clone(),window,docs,anchors,recovery,loaded_images)
+}
+
+fn observe_document_io(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
     let _guard = recovery.gate.lock().unwrap();
     let mut documents = docs.0.lock().unwrap();
     let source = documents.get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})))?;
@@ -572,7 +677,14 @@ fn verify_relocation(path: &str, expected: &str) -> Result<RelocationCandidate, 
 }
 
 #[tauri::command(async)]
-fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, expected: String, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
+async fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<'_,Documents>, anchors: tauri::State<'_,DocumentAnchors>, recovery: tauri::State<'_,RecoveryState>, path: String, expected: String, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
+    let broker=app.state::<mcp::LeafMcpBroker>();let _serial=broker.inner.queue.lock().await;
+    broker.identity_boundary(&app,window.label()).await?;
+    let result=relocate_document_io(app.clone(),window.clone(),docs,anchors,recovery,path,expected,loaded_images);
+    if result.is_ok(){broker.saved_anchor(&app,window.label());}result
+}
+
+fn relocate_document_io(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, expected: String, loaded_images: Vec<String>) -> Result<DocumentObservation, String> {
     let _guard = recovery.gate.lock().unwrap();
     let mut documents = docs.0.lock().unwrap();
     let source = documents.get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})))?;
@@ -602,14 +714,14 @@ fn relocate_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: 
 }
 
 fn recovery_store(app: &tauri::AppHandle) -> Result<recovery::Store, String> {
-    Ok(recovery::Store::new(app.path().app_data_dir().map_err(|e| e.to_string())?.join("recovery-v1")))
+    Ok(recovery::Store::new(application_data(&app).map_err(|e| e.to_string())?.join("recovery-v1")))
 }
 fn recovery_key(window: &tauri::WebviewWindow, docs: &Documents, recovery: &RecoveryState) -> String {
     if let Some(Some(path)) = docs.0.lock().unwrap().get(window.label()) { return recovery::file_key(path); }
     recovery.drafts.lock().unwrap().entry(window.label().into()).or_insert_with(recovery::draft_key).clone()
 }
 fn retention_days(app: &tauri::AppHandle) -> Result<u32,String> {
-    let path=app.path().app_data_dir().map_err(|e|e.to_string())?.join("recovery-retention.json");
+    let path=application_data(&app).map_err(|e|e.to_string())?.join("recovery-retention.json");
     let days:u32=match fs::read(path) {Ok(bytes)=>serde_json::from_slice(&bytes).map_err(|e|crate::i18n::error("main.could_not_read_the_recovery_retention_setting", serde_json::json!({"error": (e).to_string()})))?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>30,Err(e)=>return Err(e.to_string())};
     if ![7,30,90].contains(&days){return Err(crate::i18n::error("main.invalid_recovery_retention_period", serde_json::json!({})).into());}Ok(days)
 }
@@ -618,7 +730,7 @@ fn recovery_retention(app:tauri::AppHandle,recovery:tauri::State<RecoveryState>,
     let _guard=recovery.gate.lock().unwrap();
     if let Some(days)=days {
         if ![7,30,90].contains(&days){return Err(crate::i18n::error("main.invalid_recovery_retention_period", serde_json::json!({})).into());}
-        let root=app.path().app_data_dir().map_err(|e|e.to_string())?;fs::create_dir_all(&root).map_err(|e|e.to_string())?;
+        let root=application_data(&app).map_err(|e|e.to_string())?;fs::create_dir_all(&root).map_err(|e|e.to_string())?;
         let mut temp=tempfile::NamedTempFile::new_in(&root).map_err(|e|e.to_string())?;
         temp.write_all(days.to_string().as_bytes()).map_err(|e|e.to_string())?;temp.as_file().sync_all().map_err(|e|e.to_string())?;
         temp.persist(root.join("recovery-retention.json")).map_err(|e|e.to_string())?;
@@ -722,7 +834,14 @@ fn rename_file(source: &std::path::Path, name: &str, expected: &str) -> Result<P
 #[derive(serde::Serialize)]
 struct ResourceWrite { path: String, content: String, mappings: Vec<(String,String)>, warning: Option<String> }
 #[tauri::command(async)]
-fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::State<Documents>,anchors:tauri::State<DocumentAnchors>,recovery:tauri::State<RecoveryState>,path:String,name:String,expected:String,content:String)->Result<ResourceWrite,String>{
+async fn rename_document(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::State<'_,Documents>,anchors:tauri::State<'_,DocumentAnchors>,recovery:tauri::State<'_,RecoveryState>,path:String,name:String,expected:String,content:String)->Result<ResourceWrite,String>{
+    let broker=app.state::<mcp::LeafMcpBroker>();let _serial=broker.inner.queue.lock().await;
+    broker.identity_boundary(&app,window.label()).await?;
+    let result=rename_document_io(app.clone(),window.clone(),docs,anchors,recovery,path,name,expected,content);
+    if result.is_ok(){broker.saved_anchor(&app,window.label());}result
+}
+
+fn rename_document_io(app:tauri::AppHandle,window:tauri::WebviewWindow,docs:tauri::State<Documents>,anchors:tauri::State<DocumentAnchors>,recovery:tauri::State<RecoveryState>,path:String,name:String,expected:String,content:String)->Result<ResourceWrite,String>{
     let _guard=recovery.gate.lock().unwrap();
     let mut documents=docs.0.lock().unwrap();
     let source=documents.get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})))?;
@@ -771,7 +890,28 @@ fn export_bundle(window:tauri::WebviewWindow,docs:tauri::State<Documents>,direct
     resources::export_bundle_localized(&source,std::path::Path::new(&directory),&content,&resources,&window.app_handle().state::<i18n::Language>().current()).map(|p|p.to_string_lossy().into_owned())
 }
 #[tauri::command(async)]
-fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>) -> Result<ResourceWrite, String> {
+async fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<'_,Documents>, anchors: tauri::State<'_,DocumentAnchors>, recovery: tauri::State<'_,RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>, save_binding: Option<serde_json::Value>) -> Result<ResourceWrite, String> {
+    let broker=app.state::<mcp::LeafMcpBroker>();let _serial=broker.inner.queue.lock().await;
+    let bound=if let Some(binding)=save_binding {
+        let d=broker.window_binding(window.label()).filter(|d|binding["session_id"]==d.session_id && binding["document_id"]==d.document_id).ok_or("stale_save_session")?;
+        let snapshot=broker.bridge(&app,window.label(),"snapshot",serde_json::json!({})).await?;
+        if binding["revision"]!=snapshot["revision"] || snapshot["content"].as_str()!=Some(content.replace("\r\n","\n").as_str()) {return Err("stale_save_snapshot".into());}
+        Some((d.session_id,binding["revision"].as_u64().ok_or("save_revision")?))
+    }else{None};
+    let target=fs::canonicalize(&path).unwrap_or_else(|_|PathBuf::from(&path));
+    let changed=docs.0.lock().unwrap().get(window.label()).cloned().flatten().as_ref()!=Some(&target);
+    if changed {broker.identity_boundary(&app,window.label()).await?;}
+    let result=write_document_io(app.clone(),window.clone(),docs,anchors,recovery,path,content,expected,resources);
+    if let Ok(saved)=&result {
+        broker.saved_anchor(&app,window.label());
+        if let Some((session,revision))=&bound {broker.disk_result(session,*revision,Some(&mcp::source_digest(&saved.content.replace("\r\n","\n"))),false,true)?;}
+    }else if let Some((session,revision))=&bound {
+        broker.disk_result(session,*revision,None,true,true)?;
+        if let Some(mut d)=broker.window_binding(window.label()){broker.finalize(&app,&mut d).await?;}
+    }result
+}
+
+fn write_document_io(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tauri::State<Documents>, anchors: tauri::State<DocumentAnchors>, recovery: tauri::State<RecoveryState>, path: String, content: String, expected: Option<String>, resources: Vec<String>) -> Result<ResourceWrite, String> {
     if !window.label().starts_with("document-") { return Err(crate::i18n::error("main.open_or_create_a_document_first", serde_json::json!({})).into()); }
     let _guard = recovery.gate.lock().unwrap();
     let old_key = recovery_key(&window, &docs, &recovery);
@@ -798,7 +938,7 @@ fn write_document(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: tau
     let store = recovery_store(&app)?;
     // If the local history cannot be protected, do not silently overwrite disk.
     store.before_save(&key, target_string.into(), expected.as_deref())?;
-    let image_store = app.path().app_data_dir().map_err(|e| e.to_string())?.join("removed-images-v1");
+    let image_store = application_data(&app).map_err(|e| e.to_string())?.join("removed-images-v1");
     resources::restore_references(&image_store, &target, &content)?;
     let mut previous = expected.clone();
     // Seed cleanup from this exact file's retained history, so a removal
@@ -1036,6 +1176,8 @@ fn configure_development(config: &mut tauri::utils::config::Config) {
 }
 
 fn development_window<'a>(app: &tauri::AppHandle, builder: tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle>) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle> {
+    #[cfg(all(feature="native-smoke",target_os="macos"))]
+    if mcp_test_driver::enabled(app) {return builder.title("Leaf MCP Test").incognito(true).data_store_identifier(app.config().app.windows[0].data_store_identifier.unwrap());}
     if app.config().identifier != "studio.leaf.editor.dev" { return builder; }
     let builder = builder.title("Leaf Dev");
     // Dynamic document and PDF windows must use the same isolated store as
@@ -1045,10 +1187,18 @@ fn development_window<'a>(app: &tauri::AppHandle, builder: tauri::WebviewWindowB
     builder
 }
 
+mod chatgpt_tunnel;
 fn main() {
+    if std::env::args().nth(1).as_deref()==Some("--leaf-build-identity") {println!("{}",mcp::ai_credentials::native_build_identity());return;}
+    #[cfg(feature="native-smoke")]
+    if std::env::var("LEAF_MCP_TEST_PROCESS_ROLE").ok().as_deref()==Some("chatgpt-tunnel-fixture") {
+        std::process::exit(chatgpt_tunnel::synthetic_fixture_main());
+    }
     #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
     configure_development(context.config_mut());
+    #[cfg(feature = "native-smoke")]
+    mcp_test_driver::configure(context.config_mut());
     #[cfg(all(target_os = "windows", feature = "native-smoke"))]
     for window in &mut context.config_mut().app.windows {
         window.additional_browser_args = Some(native_smoke_browser_args());
@@ -1060,12 +1210,31 @@ fn main() {
     }));
     #[cfg(target_os = "macos")]
     let builder = builder.manage(OpenRequests::default());
-    builder.manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
+    builder.manage(mcp::LeafMcpBroker::default()).manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, show_comment_context, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open])
+        .invoke_handler({
+            let production: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, show_comment_context, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open]);
+            move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+                if invoke.message.command().starts_with("mcp_") && !invoke.message.command().starts_with("mcp_test_") {
+                    let mcp: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp::mcp_register, mcp::mcp_authorize, mcp::mcp_retire_authorization, mcp::mcp_renderer_reply, mcp::mcp_profiles, mcp::mcp_configure_client, mcp::mcp_enable_client, mcp::mcp_revoke_client, mcp::mcp_set_enabled, mcp::mcp_export_stdio,mcp::mcp_add_client, mcp::mcp_stop_edit, mcp::mcp_save_result, mcp::mcp_document_boundary,mcp::mcp_tunnel_status,mcp::mcp_configure_tunnel,mcp::mcp_start_tunnel,mcp::mcp_stop_tunnel]);
+                    if invoke.message.command()=="mcp_connection_platform" {
+                        let platform: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp::mcp_connection_platform]);
+                        return platform(invoke);
+                    }
+                    return mcp(invoke);
+                }
+                #[cfg(feature = "native-smoke")]
+                if invoke.message.command().starts_with("mcp_test_") {
+                    let test: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp_test_driver::mcp_test_mode, mcp_test_driver::mcp_test_report, mcp_test_driver::mcp_test_run]);
+                    return test(invoke);
+                }
+                production(invoke)
+            }
+        })
         .setup(|app| {
-            app.manage(i18n::Language::load(app.path().app_data_dir()?.join("language-v1.json")));
-            let recent_path = app.path().app_data_dir()?.join("recent-files-v1.json");
+            app.state::<mcp::LeafMcpBroker>().initialize(app.handle()).map_err(std::io::Error::other)?;
+            app.manage(i18n::Language::load(application_data(app.handle())?.join("language-v1.json")));
+            let recent_path = application_data(app.handle())?.join("recent-files-v1.json");
             app.manage(recent::Recent::load(recent_path));
             #[cfg(target_os = "macos")]
             native_shortcuts::install(app.handle().clone());
@@ -1106,15 +1275,17 @@ fn main() {
             let cycle_mode = MenuItem::with_id(handle, "cycle-mode", "切换视图模式", true, Some("CmdOrCtrl+R"))?;
             let comment_shortcut = if cfg!(target_os="macos") { "Cmd+Alt+A" } else { "Ctrl+Alt+M" };
             let add_comment = MenuItem::with_id(handle, "add-comment", "添加批注", true, Some(comment_shortcut))?;
-            let edit = Submenu::with_items(handle, "编辑", true, &[&undo, &redo, &PredefinedMenuItem::cut(handle, None)?, &PredefinedMenuItem::copy(handle, None)?, &PredefinedMenuItem::paste(handle, None)?, &PredefinedMenuItem::select_all(handle, None)?, &find, &copy_rich, &paste_plain, &add_comment, &cycle_mode])?;
+            let cut=MenuItem::with_id(handle,"cut","Cut",true,Some("CmdOrCtrl+X"))?;
+            let paste=MenuItem::with_id(handle,"paste","Paste",true,Some("CmdOrCtrl+V"))?;
+            let edit = Submenu::with_items(handle, "编辑", true, &[&undo, &redo, &cut, &PredefinedMenuItem::copy(handle, None)?, &paste, &PredefinedMenuItem::select_all(handle, None)?, &find, &copy_rich, &paste_plain, &add_comment, &cycle_mode])?;
             let menu = Menu::with_items(handle, &[&app_menu, &file, &edit])?;
             app.state::<i18n::Language>().attach_menu(&menu)?;
             app.set_menu(menu)?;
             #[cfg(target_os = "macos")]
-            if app.config().identifier != "studio.leaf.editor.dev" { native_services::install(app.handle().clone()); }
+            if !app.config().identifier.starts_with("studio.leaf.editor.dev") { native_services::install(app.handle().clone()); }
             app.state::<recent::Recent>().set_menu(handle, recent_menu).map_err(std::io::Error::other)?;
             #[cfg(target_os = "macos")]
-            if app.config().identifier == "studio.leaf.editor.dev" {
+            if app.config().identifier.starts_with("studio.leaf.editor.dev") {
                 for config in &app.config().app.windows {
                     let builder = tauri::WebviewWindowBuilder::from_config(app.handle(), config)?;
                     development_window(app.handle(), builder).build()?;
@@ -1129,6 +1300,7 @@ fn main() {
             }
             if matches!(event, tauri::WindowEvent::Focused(true)) {
                 *window.app_handle().state::<MenuFocus>().0.lock().unwrap() = Some(window.label().into());
+                refresh_document_menu(window.app_handle());
             }
             // AppKit can return focus to an open panel's parent after the document
             // has opened. Enforce the same rule on that later focus transition.
@@ -1141,6 +1313,7 @@ fn main() {
                 }
             }
             if matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().state::<mcp::LeafMcpBroker>().unregister(window.label());
                 window.app_handle().state::<OpenBuffers>().0.lock().unwrap().remove(window.label());
                 window.app_handle().state::<Exports>().0.lock().unwrap().remove(window.label());
                 window.app_handle().state::<Documents>().0.lock().unwrap().remove(window.label());
@@ -1186,12 +1359,14 @@ fn main() {
                 if let Some(window) = target { let _ = window.emit_to(window.label(), "leaf-menu", "new"); }
             }
             else if let Some(window) = menu_window(app) {
-                let _ = window.emit_to(window.label(), "leaf-menu", event.id().as_ref());
+                let _ = dispatch_document_menu(app,window.label(),event.id().as_ref());
             }
         })
         .build(context).expect("Leaf could not start")
         .run(|app, event| match event {
             tauri::RunEvent::Ready => {
+                #[cfg(feature = "native-smoke")]
+                if let Err(_) = mcp_test_driver::start(app) { eprintln!("MCP test startup failed"); app.exit(1); }
                 #[cfg(target_os = "macos")]
                 if app.state::<OpenRequests>().mark_ready() { drain_open_requests(app.clone()); }
                 #[cfg(target_os = "windows")]
@@ -1223,9 +1398,12 @@ fn main() {
                 }
             }
             tauri::RunEvent::ExitRequested { api, .. } if !app.webview_windows().is_empty() => {
+                #[cfg(feature="native-smoke")]
+                if mcp_test_driver::enabled(app){return;}
                 api.prevent_exit();
                 let _ = app.emit("leaf-close", ());
             }
+            tauri::RunEvent::Exit => {let _=app.state::<mcp::LeafMcpBroker>().inner.tunnel.lock().unwrap().stop();}
             _ => {}
         });
 }

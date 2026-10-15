@@ -1,7 +1,7 @@
 // Exercise the shipped WebView2 runtime, including the IPC that creates windows.
 import { chromium } from 'playwright';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtemp, writeFile, mkdir, rename, readFile, realpath } from 'node:fs/promises';
+import { mkdtemp, writeFile, mkdir, rename, readFile, realpath, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import net from 'node:net';
@@ -15,8 +15,8 @@ const server = net.createServer();
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 await new Promise(r => server.close(r));
-const child = spawn(resolve('src-tauri/target/release/leaf.exe'), [], {
-  env: { ...process.env, LEAF_NATIVE_SMOKE_PORT: String(port), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: join(scratch, 'webview') },
+const child = spawn(resolve(process.env.LEAF_NATIVE_SMOKE_EXE || 'src-tauri/target/release/leaf.exe'), [], {
+  env: { ...process.env, LEAF_NATIVE_SMOKE_PORT: String(port), LEAF_NATIVE_SMOKE_PDF_DIR: scratch, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: join(scratch, 'webview') },
   stdio: 'inherit',
 });
 let browser;
@@ -86,6 +86,34 @@ try {
   }, 'WebView2 debugging endpoint');
   const launcher = await until(async () => pages().find(p => p.url().includes('tauri.localhost')), 'launcher');
   await launcher.locator('#welcomeNewButton').waitFor();
+  if (process.argv.includes('--pdf-only')) {
+    await mkdir('test-results/windows-pdf', { recursive: true });
+    for (const [name, source] of [
+      ['short', 'One synthetic line.'],
+      ['中文標題-é-😀', '# Windows export smoke\n\n中文正文。\n\n' + 'Pagination text.\n\n'.repeat(120) + 'FINAL-CONTENT-END'],
+    ]) {
+      const before = pages();
+      await invoke(launcher, 'open_export', { snapshot: { source, name: `${name}.md`, numbered: false } });
+      const preview = await until(async () => pages().find(p => !before.includes(p) && p.url().includes('export=1')), 'PDF export preview');
+      await preview.locator('.print-document').waitFor();
+      await until(async () => (await preview.title()) === name, 'PDF title ready');
+      assert.equal(await invoke(preview, 'plugin:window|is_visible', {
+        label: await preview.evaluate(() => window.__TAURI_INTERNALS__.metadata.currentWindow.label),
+      }), true, 'Export preview must be natively visible');
+      const exported = join(scratch, `${name}.pdf`);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await invoke(preview, 'print_export');
+        if (name === 'short') {
+          execFileSync('python', ['-c', "from pypdf import PdfReader; import sys; p=PdfReader(sys.argv[1]); assert len(p.pages)==1; assert 'One synthetic line.' in p.pages[0].extract_text()", exported], { stdio: 'inherit' });
+        } else {
+          execFileSync('python', ['tests/pdf-title-check.py', exported, name], { stdio: 'inherit' });
+        }
+      }
+      await copyFile(exported, join('test-results/windows-pdf', `${name}.pdf`));
+      await preview.screenshot({ path: `test-results/windows-pdf/${name}.png` });
+    }
+    console.log('PASS: actual Leaf short, Unicode multipage PDF export and overwrite.');
+  } else {
   let before = pages();
   const newPath = join(scratch, 'new.md');
   await invoke(launcher, 'new_document', { path: newPath });
@@ -103,11 +131,24 @@ try {
   before = pages();
   await invoke(existing, 'open_link', { target: 'linked.md' });
   assert.match(await (await nextDocument(before)).locator('.cm-content').innerText(), /Linked document/);
-  await invoke(existing, 'open_export', { snapshot: { source: '# Windows export smoke', name: 'Smoke', numbered: false } });
+  await invoke(existing, 'open_export', { snapshot: { source: '# Windows export smoke\n\n中文正文。\n\n' + 'Pagination text.\n\n'.repeat(120) + 'FINAL-CONTENT-END', name: '中文標題-é-😀.md', numbered: false } });
   const preview = await until(async () => pages().find(p => p.url().includes('export=1')), 'export window');
   await preview.locator('.print-document').waitFor();
   assert.match(await preview.locator('.print-document').innerText(), /Windows export smoke/);
+  // CDP can inspect and screenshot a hidden WebView. Check the native window,
+  // not only DOM visibility, so an invisible export preview cannot pass.
+  assert.equal(await invoke(preview, 'plugin:window|is_visible', {
+    label: await preview.evaluate(() => window.__TAURI_INTERNALS__.metadata.currentWindow.label),
+  }), true, 'PDF export preview must be visible to the user');
   await preview.screenshot({ path: 'test-results/windows-export.png' });
+  assert.equal(await preview.title(), '中文標題-é-😀');
+  await invoke(preview, 'print_export');
+  const exported = join(scratch, '中文標題-é-😀.pdf');
+  execFileSync('python', ['tests/pdf-title-check.py', exported, '中文標題-é-😀'], { stdio: 'inherit' });
+  // Save twice: the second render must safely replace the existing PDF.
+  await invoke(preview, 'print_export');
+  execFileSync('python', ['tests/pdf-title-check.py', exported, '中文標題-é-😀'], { stdio: 'inherit' });
+
   // Unsaved content must prompt, cancellation must keep the window usable.
   before = pages();
   await invoke(existing, 'open_document', { path: null });
@@ -158,6 +199,7 @@ try {
   assert.equal(launcher.isClosed(), true);
   assert.equal(preview.isClosed(), true);
   console.log('PASS: native Windows new, open, linked document, export, external rename/move with safe save, unsaved close/cancel/discard and exit.');
+  }
 } catch (error) {
   console.error('Last CDP connection error:', lastConnectionError);
   try { console.error(execFileSync('powershell.exe', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'leaf|msedgewebview2' } | Select-Object ProcessId,Name,CommandLine | Format-List | Out-String"], { timeout: 10000, encoding: 'utf8' })); } catch {}

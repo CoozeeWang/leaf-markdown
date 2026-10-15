@@ -95,6 +95,9 @@ jobs:
           Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile "$env:RUNNER_TEMP/webview2.exe"
           $installer = Start-Process "$env:RUNNER_TEMP/webview2.exe" -ArgumentList '/silent', '/install' -Wait -PassThru
           Write-Output "WebView2 installer exit code: $($installer.ExitCode)"
+      - name: Prepare PDF metadata verification
+        if: runner.os == 'Windows' && steps.probe.outputs.available == 'true'
+        run: python -m pip install pypdf==6.10.0
       - name: Windows native window smoke test
         if: runner.os == 'Windows' && steps.probe.outputs.available == 'true'
         timeout-minutes: 5

@@ -2,7 +2,7 @@ import { t, h, onLanguageChange, setAttr } from './i18n.js';
 import { leafSelection } from './selection.js';
 import { sourceMode, setSourceMode } from './view-mode.js';
 import { unfoldAll } from '@codemirror/language';
-import { Compartment, EditorSelection, EditorState, StateEffect, StateField } from '@codemirror/state';
+import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction } from '@codemirror/state';
 import { renderBlock, sourceBlock, propertiesFolded, toggleProperties } from './structured-preview.js';
 import { labels as calloutLabels, titleSlotInSource, bodyToSource } from './callout.js';
 import { footnoteIndex, footnoteLabelFollow, footnoteRenumber, footnoteReferenceDeletion, footnoteReferenceCompletion, footnoteLabelMap } from './footnote-state.js';
@@ -51,6 +51,9 @@ import { renderInline, citationSignature, citationLabel } from './inline-preview
 import { paragraphBlankLineChanges } from './blank-lines.js';
 import { insertPlainParagraphNewline } from './paragraph-enter.js';
 import { frontmatter, bodyStart } from './markdown-model.js';
+import {planSourceChanges,planStructureOperations,verifyStructureResult} from './ai-structure-operations.js';
+import {planMcpCommentBatch} from './ai-comment-operations.js';
+import {verifyFootnoteIntegrity} from './ai-footnote-operations.js';
 import { protectPropertyInsertions } from './properties-insert-guard.js';
 import { fileDropTarget, fileDropFeedback, setFileDropTarget, setFileDragging } from './file-drop.js';
 import { paragraphDeletion, selectedParagraphDeletion } from './paragraph-delete.js';
@@ -905,6 +908,7 @@ function placeFootnotePopup() {
 // The definition in the document is the only copy. An empty box still leaves a
 // definition behind, so the marker and the note stay paired.
 function applyFootnoteBody(view, label, body, composing = false, ordinal = 0, continuous = false) {
+  if(!assertDocumentMutationAllowed(view))return;
   const text = view.state.doc.toString();
   const note = view.state.field(footnoteIndex).notes.find(candidate => candidate.id === label);
   if (!note) return;
@@ -933,6 +937,9 @@ function openFootnotePopup(view, label, pos, anchor = null) {
   const input = document.createElement('textarea');
   input.rows = 1; setAttr(input, 'placeholder', () => t("editor.enter_footnote_content")); setAttr(input, 'aria-label', () => t("editor.footnote_content"));
   input.value = note?.def?.body ?? '';
+  input.readOnly=!assertDocumentMutationAllowed(view);
+  input.addEventListener('compositionstart',()=>input._leafComposing=true);
+  input.addEventListener('compositionend',()=>input._leafComposing=false);
   box.append(input);
   document.body.append(box);
   footnoteBox = box; footnoteBoxView = view; footnoteBoxAt = pos ?? 0; footnoteBoxAnchor = anchor; footnoteBoxLabel = label;
@@ -1061,8 +1068,55 @@ function selectionHeadingLevel(state) {
   return selected ?? 0;
 }
 
+export async function mcpDigest(value) {
+  const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(bytes),n=>n.toString(16).padStart(2,'0')).join('');
+}
+
+export function planMcpChanges(source, changes, scope,options={}) {
+  if(changes?.some(change=>change?.insert?.includes('\r')))throw new Error('invalid_patch');
+  return planSourceChanges(source,changes,scope,options);
+}
+
+class AiTaskHistory {
+  constructor(task) {
+    this.id=task.task_id;this.session=task.session_id;this.epoch=task.authorization_epoch;this.scope=task.scope;
+    this.historyTime=null;this.batches=0;
+  }
+}
+
+export class RendererMutationReceipts {
+  constructor() {this.entries=new Map();}
+  async apply(id,digest,mutate) {
+    if(!id||!digest)throw new Error('missing_mutation_identity');
+    const existing=this.entries.get(id);
+    if(existing) {
+      if(existing.digest!==digest)throw new Error('mutation_id_conflict');
+      if(existing.receipt)return existing.receipt;
+      if(existing.pending)return existing.pending;
+      throw new Error('mutation_outcome_unknown');
+    }
+    const entry={digest,receipt:null,pending:null};this.entries.set(id,entry);
+    entry.pending=Promise.resolve().then(mutate).then(receipt=>{entry.receipt=Object.freeze(receipt);return entry.receipt;}).finally(()=>{entry.pending=null;});
+    return entry.pending;
+  }
+  query(id) {return this.entries.get(id)?.receipt ?? null;}
+}
+
+// Every structure ultimately writes the owning document view. Read-only DOM
+// is feedback; this capability check is also enforced at final dispatch.
+export function assertDocumentMutationAllowed(documentView, capability) {
+  return documentView.assertDocumentMutationAllowed?.(capability) ?? true;
+}
+
 export function createLeafEditor(options) {
   const historyCompartment = new Compartment();
+  const aiTaskAnnotation = Annotation.define();
+  let aiTask = null;
+  const editability = new Compartment();
+  let taskFocus = null;
+  let bufferRevision = 0;
+  const mutationReceipts = new RendererMutationReceipts();
   const languageCompartment = new Compartment();
   const phrases = () => EditorState.phrases.of({
         Find: t("editor.find"),
@@ -1207,8 +1261,10 @@ export function createLeafEditor(options) {
     doc: options.doc || '',
     selection: {anchor: bodyStart(initialDoc)},
     extensions: [
+      editability.of([EditorState.readOnly.of(false),EditorView.contentAttributes.of({'aria-readonly':'false'})]),
       lineNumberCompartment.of(options.showLineNumbers ? leafLineNumbers() : []),
-      historyCompartment.of(history()),
+      historyCompartment.of(history({joinToEvent:(tr,adjacent)=>tr.annotation(aiTaskAnnotation)!==undefined || adjacent})),
+      EditorState.transactionExtender.of(tr=>aiTask && !tr.docChanged ? {annotations:Transaction.addToHistory.of(false)} : null),
       lineEnding,
       invertedEffects.of(tr => tr.effects.some(effect => effect.is(setLineEnding)) ? [setLineEnding.of(tr.startState.field(lineEnding))] : []),
       drawSelection(),
@@ -1312,6 +1368,7 @@ export function createLeafEditor(options) {
         return leading ? [tr, {changes:{from:0,to:leading[0].length},sequential:true}] : tr;
       }),
       EditorState.transactionFilter.of(tr => reading && tr.docChanged && !suppressChanges ? [] : tr),
+      EditorState.transactionFilter.of(tr => tr.docChanged && aiTask && tr.annotation(aiTaskAnnotation)!==aiTask ? [] : tr),
       keymap.of([...searchKeymap, ...historyKeymap, ...defaultKeymap]),
       livePreview,
       updateListener,
@@ -1320,7 +1377,36 @@ export function createLeafEditor(options) {
     ],
   });
 
-  const view = new EditorView({ state, parent: options.parent });
+  const view = new EditorView({ state, parent: options.parent,
+    dispatchTransactions(transactions, target) {
+      // filter:false (restore, async attachments, undo) still crosses here.
+      if (transactions.some(tr=>tr.docChanged && !assertDocumentMutationAllowed(target,tr.annotation(aiTaskAnnotation)))) return;
+      // Retire offsets before history/reload/recovery exposes the new buffer.
+      if (transactions.some(tr=>tr.docChanged && (!aiTask || tr.annotation(aiTaskAnnotation)!==aiTask))) options.onHumanMutation?.();
+      target.update(transactions);
+      bufferRevision += transactions.filter(tr=>tr.docChanged).length;
+      if(aiTask) syncLockedControls();
+    },
+  });
+  view.assertDocumentMutationAllowed=capability=>!aiTask||capability===aiTask;
+  view.dom.assertDocumentMutationAllowed=view.assertDocumentMutationAllowed;
+  const controlScope=options.mutationRoot ?? options.parent.closest('.shell') ?? options.parent;
+  const changedControls=new Map();
+  const syncLockedControls=()=>{
+    if(!aiTask)return;
+    for(const node of controlScope.querySelectorAll('.format-toolbar button:not(#displayButton), .leaf-property-body input, .leaf-property-body select, .leaf-property-body button, textarea.leaf-property-source, .leaf-table textarea, .leaf-table button, .leaf-callout-widget textarea, .leaf-callout-widget button, #notesList .note-delete, #commentsList textarea, #commentsList .comment-delete, #commentInsert, .outline-rename')) {
+      if(!changedControls.has(node))changedControls.set(node,{disabled:node.disabled,readOnly:node.readOnly,description:node.getAttribute('aria-description')});
+      if(node.matches('textarea,input:not([type=checkbox])'))node.readOnly=true;else node.disabled=true;
+      node.setAttribute('aria-description',options.lockDescription?.() ?? 'AI editing');
+    }
+    for(const node of controlScope.querySelectorAll('.cm-editor'))node._leafNoteEditor?.setDocumentLocked(true);
+    if(footnoteBoxView===view)for(const input of footnoteBox.querySelectorAll('textarea')){if(!changedControls.has(input))changedControls.set(input,{readOnly:input.readOnly,disabled:input.disabled,description:input.getAttribute('aria-description')});input.readOnly=true;}
+  };
+  const observer=new MutationObserver(()=>syncLockedControls());observer.observe(controlScope,{childList:true,subtree:true});
+  const composing=new Set();
+  const compositionStart=event=>composing.add(event.target),compositionEnd=event=>composing.delete(event.target);
+  controlScope.addEventListener('compositionstart',compositionStart,true);
+  controlScope.addEventListener('compositionend',compositionEnd,true);
   view.dom.addEventListener('leaf-comment-activate',event=>options.onCommentActivate?.(event.detail.id));
   view.dom.addEventListener("leaf-image-ready", () => view.requestMeasure());
   // Dragging a file over the property block must not offer a position there: the
@@ -1346,6 +1432,65 @@ export function createLeafEditor(options) {
 
   return {
     view,
+    mutationAllowed: capability=>assertDocumentMutationAllowed(view,capability),
+    aiTask:()=>aiTask,
+    mcpSnapshot() {
+      return {content:view.state.doc.toString(),revision:bufferRevision,coordinate_encoding:'utf-16',line_ending:view.state.field(lineEnding),selection:{from:view.state.selection.main.from,to:view.state.selection.main.to}};
+    },
+    beginAiTask(task) {
+      if (!task?.task_id || aiTask && aiTask.id!==task.task_id) throw new Error('document_locked');
+      if(!aiTask) {
+        if(view.compositionStarted || footnoteBoxView===view&&footnoteBox.querySelector('textarea')?._leafComposing || [...composing].some(node=>node.isConnected) || [...controlScope.querySelectorAll('.cm-editor')].some(node=>node._leafNoteEditor?.view.compositionStarted))throw new Error('composition_pending');
+        if([...controlScope.querySelectorAll('.leaf-property-body')].some(node=>node.hasPendingDraft?.()) || controlScope.querySelector('.outline-rename'))throw new Error('structural_draft_pending');
+        if(task.revision!==undefined&&task.revision!==bufferRevision)throw new Error('stale_revision');
+        taskFocus=document.activeElement;
+        aiTask=new AiTaskHistory(task);
+        view.dispatch({effects:editability.reconfigure([EditorState.readOnly.of(true),EditorView.contentAttributes.of({'aria-readonly':'true'})])});
+        syncLockedControls();options.onAiTaskChange?.(task);
+      }
+      return {task_id:aiTask.id,...this.mcpSnapshot()};
+    },
+    async applyMcpBatch(batch) {
+      return mutationReceipts.apply(batch.mutation_id,batch.request_digest || await mcpDigest(JSON.stringify(batch)),async()=>{
+      if(!aiTask || batch.task_id!==aiTask.id || batch.session_id!==aiTask.session || batch.authorization_epoch!==aiTask.epoch) throw new Error('stale_task');
+      if(batch.revision!==bufferRevision) throw new Error('stale_revision');
+      const before=view.state.doc.toString();
+      const sourceDigest=await mcpDigest(before);
+      if(!aiTask||batch.task_id!==aiTask.id||batch.session_id!==aiTask.session||batch.authorization_epoch!==aiTask.epoch||batch.revision!==bufferRevision)throw new Error('stale_task');
+      const commentBatch=batch.operations?.some(operation=>operation?.kind==='comment');
+      const structural=batch.operations===undefined||commentBatch?[]:planStructureOperations(before,batch.operations,aiTask.scope,{keepUnchanged:true,deferIntegrity:true});
+      const patches=batch.changes===undefined&&batch.operations!==undefined?[]:batch.changes;
+      const changes=commentBatch?planMcpCommentBatch(before,batch,{document_id:batch.document_id,session_id:batch.session_id,authorization_epoch:batch.authorization_epoch,revision:batch.revision,source_fingerprint:sourceDigest,scope:aiTask.scope}):planMcpChanges(before,[...planMcpChanges(before,patches,aiTask.scope,{keepUnchanged:true}),...structural].map(change=>({...change,expected:before.slice(change.from,change.to)})),aiTask.scope);
+      if(commentBatch&&changes.some(change=>change.insert.includes('\r')))throw new Error('invalid_patch');
+      if(batch.operations!==undefined&&!commentBatch)verifyStructureResult(before,changes,batch.operations);
+      const after=view.state.changes(changes).apply(view.state.doc).toString();
+      if(batch.operations===undefined)verifyFootnoteIntegrity(before,after);
+      const resultDigest=await mcpDigest(after),changesDigest=await mcpDigest(JSON.stringify(batch.operations===undefined?batch.changes:{changes:batch.changes??null,operations:batch.operations}));
+      if(!aiTask || batch.task_id!==aiTask.id || batch.revision!==bufferRevision)throw new Error('stale_task');
+      if(changes.length) {
+        aiTask.historyTime ??= Date.now();
+        const annotations=[aiTaskAnnotation.of(aiTask),Transaction.time.of(aiTask.historyTime)];
+        if(!aiTask.batches) annotations.push(isolateHistory.of('before'));
+        view.dispatch({changes,filter:false,userEvent:'input.type.ai',annotations});
+        aiTask.batches++;
+      }
+      aiTask.scope={from:aiTask.scope.from,to:aiTask.scope.to+changes.reduce((sum,c)=>sum+c.insert.length-(c.to-c.from),0)};
+      return {mutation_id:batch.mutation_id,task_id:batch.task_id,session_id:batch.session_id,request_id:batch.request_id,authorization_epoch:batch.authorization_epoch,request_digest:batch.request_digest,changes_digest:changesDigest,source_revision:batch.revision,applied_revision:bufferRevision,source_digest:sourceDigest,result_digest:resultDigest,changed:changes.length>0,scope:aiTask.scope,disk_status:'unsaved'};
+      });
+    },
+    finishAiTask(task) {
+      if(aiTask && task.task_id!==aiTask.id) throw new Error('stale_task');
+      if(aiTask?.batches) view.dispatch({annotations:isolateHistory.of('full')});
+      aiTask=null;
+      view.dispatch({effects:editability.reconfigure([EditorState.readOnly.of(false),EditorView.contentAttributes.of({'aria-readonly':'false'})])});
+      for(const [node,saved]of changedControls){node.disabled=saved.disabled;node.readOnly=saved.readOnly;if(saved.description===null)node.removeAttribute('aria-description');else node.setAttribute('aria-description',saved.description);}
+      changedControls.clear();
+      for(const node of controlScope.querySelectorAll('.cm-editor'))node._leafNoteEditor?.setDocumentLocked(false);
+      options.onAiTaskChange?.(null);
+      if(taskFocus?.isConnected&&!taskFocus.disabled)taskFocus.focus();else view.focus();taskFocus=null;
+      return this.mcpSnapshot();
+    },
+    queryRendererMutation(id) { return mutationReceipts.query(id); },
     setDropPoint,
     setReading(value) { reading = value; },
     visiblePosition() {
@@ -1397,6 +1542,7 @@ export function createLeafEditor(options) {
       if (view.state.field(structuredPreview).name !== name) view.dispatch({ effects: documentName.of(name) });
     },
     setValue(value) {
+      if(aiTask) throw new Error('document_locked');
       suppressChanges = true;
       // A newly opened/reloaded document must never undo into the previous file.
       // The replacement has to be dispatched before the history is dropped and
@@ -1413,7 +1559,7 @@ export function createLeafEditor(options) {
         scrollIntoView: true,
       });
       view.dispatch({ effects: historyCompartment.reconfigure([]) });
-      view.dispatch({ effects: historyCompartment.reconfigure(history()) });
+      view.dispatch({ effects: historyCompartment.reconfigure(history({joinToEvent:(tr,adjacent)=>tr.annotation(aiTaskAnnotation)!==undefined || adjacent})) });
       suppressChanges = false;
       options.onOutlineChange?.(value);
     },
@@ -1433,6 +1579,7 @@ export function createLeafEditor(options) {
     },
     focus: () => view.focus(),
     renameHeading(number, original, title) {
+      if(!assertDocumentMutationAllowed(view))return false;
       if(number<1||number>view.state.doc.lines||!title.trim()||/[\r\n]/.test(title))return false;
       const line=view.state.doc.line(number);
       if(line.text!==original)return false;
@@ -1444,6 +1591,7 @@ export function createLeafEditor(options) {
     },
     setBlankMarkers(show) { view.dispatch({effects:toggleBlankMarkers.of(show)}); },
     tidyBlankLines() {
+      if(!assertDocumentMutationAllowed(view))return 0;
       const changes=paragraphBlankLineChanges(view.state.doc.toString());
       if (changes.length && view.state.changes(changes).apply(view.state.doc).eq(view.state.doc)) return 0;
       if (changes.length) view.dispatch({changes, userEvent:'input', annotations:isolateHistory.of('full')});
@@ -1473,27 +1621,27 @@ export function createLeafEditor(options) {
     comments:()=>view.state.field(commentIndex),
     activateComment(id){view.dispatch({effects:activeComment.of(id)});},
     addComment(){
-      if(reading||view.compositionStarted)return {error:'selection'};
+      if(reading||!assertDocumentMutationAllowed(view)||view.compositionStarted)return {error:'selection'};
       const range=view.state.selection.main,plan=planCommentInsertion(view.state.doc.toString(),range.from,range.to);
       if(plan.error)return plan;
       view.dispatch({changes:plan.change,selection:{anchor:plan.anchor},userEvent:'input.comment',annotations:isolateHistory.of('full')});
       return {note:view.state.field(commentIndex).notes.find(n=>n.from===plan.commentFrom)};
     },
     setCommentBody(id,text){
-      if(reading)return false;const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;
+      if(reading||!assertDocumentMutationAllowed(view))return false;const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;
       const change=planCommentBody(view.state.doc.toString(),note,text);if(!change)return false;
       if(view.state.doc.sliceString(change.from,change.to)!==text)view.dispatch({changes:change,userEvent:'input.comment-body'});
       return true;
     },
     deleteComment(id){
-      if(reading)return false;const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;
+      if(reading||!assertDocumentMutationAllowed(view))return false;const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;
       const changes=planCommentDeletion(view.state.doc.toString(),note);if(!changes.length)return false;
       view.dispatch({changes,userEvent:'delete.comment',annotations:isolateHistory.of('full')});return true;
     },
     goToComment(id){const note=view.state.field(commentIndex).notes.find(n=>n.id===id);if(!note)return false;view.dispatch({effects:[activeComment.of(id),locateComment.of(note.kind==='hidden'?id:null),EditorView.scrollIntoView(note.kind==='hidden'?note.bodyFrom:note.range?.bodyFrom??note.from,{y:'center'})]});return true;},
     setFootnoteBody(label, body) { applyFootnoteBody(view, label, body); },
     deleteFootnote(label) {
-      if (reading) return false;
+      if (reading||!assertDocumentMutationAllowed(view)) return false;
       const changes = planFootnoteDeletion(view.state.doc.toString(), label);
       if (!changes.length) return false;
       closeFootnotePopup();
@@ -1514,6 +1662,8 @@ export function createLeafEditor(options) {
       return true;
     },
     destroy() {
+      observer.disconnect();
+      controlScope.removeEventListener('compositionstart',compositionStart,true);controlScope.removeEventListener('compositionend',compositionEnd,true);
       view.destroy();
     },
   };
@@ -1534,14 +1684,15 @@ const noteSearchDecoration = StateField.define({
 
 // A note uses the same Markdown grammar and live-preview decorations as the
 // document, but sends every edit through the document's history/save pipeline.
-export function createLeafNoteEditor({parent, doc, source = false, label, onChange, onUndo, onRedo, onLeave, multiline = false, onCompositionEnd, onFocus, onBlur, locked = false, onActivate, onEditingChange}) {
+export function createLeafNoteEditor({parent, doc, source = false, label, onChange, onUndo, onRedo, onLeave, multiline = false, onCompositionEnd, onFocus, onBlur, locked = false, onActivate, onEditingChange, mutationAllowed = ()=>true}) {
   let syncing = false;
+  let documentLocked=false;
   const editing = new Compartment();
-  const editability = enabled => [EditorState.readOnly.of(!enabled), EditorView.editable.of(enabled)];
-  const view = new EditorView({parent, doc, extensions: [
+  const editability = enabled => [EditorState.readOnly.of(!enabled||documentLocked), EditorView.editable.of(enabled&&!documentLocked)];
+  const view = new EditorView({parent, doc, dispatchTransactions(transactions,target){if(!syncing&&transactions.some(tr=>tr.docChanged)&&!mutationAllowed())return;target.update(transactions);}, extensions: [
     editing.of(editability(!locked)),
     drawSelection(),
-    EditorState.changeFilter.of(tr=>syncing||!tr.startState.readOnly),
+    EditorState.changeFilter.of(tr=>syncing||!tr.startState.readOnly&&mutationAllowed()),
     markdown({extensions: leafMarkdownExtensions, addKeymap: false}),
     sourceMode.init(() => source), blankMarkers, headingNumbers,
     fileNameTitle.init(() => false), propertiesFolded, structuredPreview,
@@ -1581,7 +1732,10 @@ export function createLeafNoteEditor({parent, doc, source = false, label, onChan
     view.dispatch({changes:{from,to:length-suffix,insert:text.slice(from,text.length-suffix)}});
     syncing = false;
   };
-  return {view, sync, setEditing(enabled,at){view.dispatch({effects:[editing.reconfigure(editability(enabled)),setNoteFocus.of(enabled)]});onEditingChange?.(enabled);if(enabled){if(at!=null)view.dispatch({selection:{anchor:Math.max(0,Math.min(at,view.state.doc.length))}});onFocus?.();view.focus();}}, highlightMatch(from,to){view.dispatch({effects:noteSearchRange.of(from==null?null:{from,to}),...(from==null?{}:{selection:{anchor:from,head:to}})});}, focus(){view.focus();view.dispatch({selection:{anchor:view.state.doc.length}});},
+  let locallyEditing=!locked;
+  const api={view, sync, setDocumentLocked(value){if(documentLocked===value)return;documentLocked=value;view.dispatch({effects:editing.reconfigure(editability(locallyEditing))});}, setEditing(enabled,at){if(enabled&&!mutationAllowed())return;locallyEditing=enabled;view.dispatch({effects:[editing.reconfigure(editability(enabled)),setNoteFocus.of(enabled)]});onEditingChange?.(enabled);if(enabled){if(at!=null)view.dispatch({selection:{anchor:Math.max(0,Math.min(at,view.state.doc.length))}});onFocus?.();view.focus();}}, highlightMatch(from,to){view.dispatch({effects:noteSearchRange.of(from==null?null:{from,to}),...(from==null?{}:{selection:{anchor:from,head:to}})});}, focus(){view.focus();view.dispatch({selection:{anchor:view.state.doc.length}});},
     value:()=>view.state.doc.toString(), format:type=>formatEditor(view,type),
     destroy:()=>view.destroy()};
+  view.dom._leafNoteEditor=api;
+  return api;
 }

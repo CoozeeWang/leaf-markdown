@@ -5,6 +5,19 @@ import {rewriteResourcePaths} from './resource-paths.js';
 export function createDocumentSession(io) {
   let path = null, disk = null, ready = false, revision = 0, paused = false;
   let pollFailure = null;
+  let aiResult = null;
+  const publishAi=async (result, update) => {
+    if (!result) return;
+    Object.assign(result,update);
+    await io.aiSaveResult?.(structuredClone(result));
+  };
+  const conflict=async () => {
+    if(paused)return;
+    paused=true;
+    await io.aiConflict?.();
+    await io.checkpoint(io.content(),true);
+    await publishAi(aiResult,{diskResult:{state:'conflict',revision:null},checkpoint:{state:'protected'}});
+  };
   const unavailable = error => ['NA0024','NA0025','NA0038'].some(id => errorCode(error)?.code === copyKeys[id]) || /\b(?:ENOENT|os error 2)\b|no such file or directory|the system cannot find the file specified|无法确认当前文件的位置|原文件在原位置找不到/i.test(String(error));
   let queue = Promise.resolve();
   const serialize = action => {
@@ -24,6 +37,10 @@ export function createDocumentSession(io) {
     get path() { return path; },
     get paused() { return paused; },
     get ready() { return ready; },
+    get aiEditResult() { return aiResult && structuredClone(aiResult); },
+    aiApplied(receipt) {
+      aiResult={session_id:receipt.session_id,mutation_id:receipt.mutation_id,bufferResult:{state:'applied',revision:receipt.applied_revision,changed:receipt.changed},diskResult:{state:receipt.changed?'pending':'unchanged',revision:null},checkpoint:{state:receipt.changed?'pending':'unchanged'}};
+    },
     edited() { revision++; },
     async initialize(source, content) {
       path = source; disk = content;
@@ -41,6 +58,7 @@ export function createDocumentSession(io) {
     save({ as = false, manual = true } = {}) {
       return serialize(async () => {
         if (!ready || (paused && !manual)) return false;
+        const ai=aiResult,context=io.saveContext?.();
         let locationCheckFailed = false;
         try {
           if (path && !as && io.observe) {
@@ -55,8 +73,9 @@ export function createDocumentSession(io) {
           }
           let content = io.content();
           await io.checkpoint(content);
+          await publishAi(ai,{checkpoint:{state:'protected'},diskResult:{state:'pending',revision:null},saveContext:context});
           status(translatedMessage("document_session.saving"), 'pending');
-          const result = await io.write(target, content, expected);
+          const result = await io.write(target, content, expected,context);
           const cleanupWarning = result && typeof result === 'object' ? result.warning : result;
           if (result && typeof result === 'object') {
             content = result.content;
@@ -65,9 +84,11 @@ export function createDocumentSession(io) {
           }
           path = target; disk = content; paused = false; pollFailure = null;
           io.saved(content, target);
+          await publishAi(ai,{diskResult:{state:'saved',revision:context?.revision ?? ai?.bufferResult.revision}});
           status(cleanupWarning || (io.content() === content ? translatedMessage("document_session.saved") : translatedMessage("document_session.waiting_to_autosave")), cleanupWarning ? 'error' : io.content() === content ? 'saved' : 'pending', { announce: manual });
           return true;
         } catch (error) {
+          await publishAi(ai,{diskResult:{state:'failed',revision:null},saveContext:context}).catch(()=>{});
           status(locationCheckFailed || unavailable(error)
             ? translatedMessage("document_session.the_original_file_is_unavailable_your_changes")
             : translatedMessage("document_session.your_changes_have_not_been_saved_try", {"error": error}),
@@ -126,13 +147,18 @@ export function createDocumentSession(io) {
             if (recovered) status(translatedMessage("document_session.reading_the_original_file_resumed"), 'saved', { announce: false });
             return;
           }
+          if(io.aiActive?.()) {
+            await conflict();status(translatedMessage("document_session.another_app_has_changed_this_file_use"));return;
+          }
           if (revision !== at || io.content() !== disk) {
+            await conflict();
             status(translatedMessage("document_session.another_app_has_changed_this_file_use")); return;
           }
           await io.load(current, path);
           disk = current;
           status(translatedMessage("document_session.external_changes_loaded"), 'saved');
         } catch (error) {
+          if(io.aiActive?.())await conflict().catch(()=>{});
           const detail = String(error);
           if (detail === pollFailure) return;
           pollFailure = detail;

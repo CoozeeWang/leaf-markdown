@@ -2,7 +2,8 @@ import { t, setText, setAttr } from './i18n.js';
 import {shortcutText} from './platform-shortcuts.js';
 import {uiIcon} from './ui-icons.js';
 // Controls live outside the scrolling table; they never take layout space.
-export function tableEdgeControls(root, table, act) {
+export function tableEdgeControls(root, table, act, mutationAllowed=()=>true) {
+  const apply=act;act=(...args)=>{if(mutationAllowed())apply(...args);};
   const control=(key,text)=>{
     const b=document.createElement('button'); b.type='button'; b.className='leaf-table-edge';
     setAttr(b, 'aria-label', () => t(key)); setAttr(b, 'title', () => t(key)); b.textContent=text; b.hidden=true;
@@ -53,6 +54,7 @@ export function tableEdgeControls(root, table, act) {
   });
   insert.onclick=()=>{if(target)act(target[0],target[1],false,currentRow,currentCol);};
   const open=(axis,handle,pointer=false)=>{
+    if(!mutationAllowed())return;
     menuTrigger=handle;
     menu.classList.toggle('pointer-open',pointer);
     const index=axis==='row'?currentRow:currentCol;

@@ -1,0 +1,27 @@
+{
+  "manifest_version": "0.3",
+  "name": "leaf-mcp",
+  "display_name": "Leaf",
+  "version": "0.4.0-beta.3",
+  "description": "Read and edit explicitly authorized open Leaf documents.",
+  "author": { "name": "Leaf contributors" },
+  "license": "MIT",
+  "server": {
+    "type": "binary",
+    "entry_point": "server/leaf-mcp-adapter",
+    "mcp_config": {
+      "command": "${__dirname}/server/leaf-mcp-adapter",
+      "args": ["--descriptor", "${user_config.descriptor}"],
+      "platform_overrides": { "win32": { "command": "${__dirname}/server/leaf-mcp-adapter.exe" } }
+    }
+  },
+  "user_config": {
+    "descriptor": {
+      "type": "file",
+      "title": "Leaf connection descriptor",
+      "description": "Choose the non-secret Claude Desktop descriptor exported by Leaf.",
+      "required": true
+    }
+  },
+  "compatibility": { "platforms": ["darwin", "win32"] }
+}

@@ -46,6 +46,8 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm test
+      - name: Claude extension transport regression
+        run: node tests/claude-stdio-host.cjs src-tauri/src/claude_stdio.cjs
       - name: Windows trilingual interface checks
         if: inputs.platform == 'windows'
         shell: bash
@@ -69,6 +71,17 @@ jobs:
         if: inputs.platform != 'windows'
         shell: bash
         run: node tests/document-icons-package.mjs "src-tauri/target/$LEAF_BUILD_TARGET/release/bundle/macos/Leaf.app"
+      - name: Verify actual Windows PDF rendering
+        if: inputs.platform == 'windows'
+        shell: pwsh
+        run: |
+          npm run desktop:build -- --debug --no-bundle --features native-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Native PDF probe build failed' }
+          python -m pip install pypdf==6.10.0
+          if ($LASTEXITCODE -ne 0) { throw 'PDF validation dependency failed' }
+          $env:LEAF_NATIVE_SMOKE_EXE = Join-Path $PWD 'src-tauri/target/debug/leaf.exe'
+          node tests/windows-native-smoke.mjs --pdf-only
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Leaf PDF export failed' }
       - name: Generate checksums
         shell: bash
         run: node scripts/package-checksums.mjs "$LEAF_BUILD_TARGET"
@@ -77,4 +90,11 @@ jobs:
           name: Leaf-${{ env.LEAF_BUILD_TARGET }}-${{ steps.source.outputs.sha }}
           path: test-results/packages/
           if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.platform == 'windows'
+        with:
+          name: Windows-PDF-${{ steps.source.outputs.sha }}
+          path: test-results/windows-pdf/
+          if-no-files-found: ignore
           retention-days: 7

@@ -1,7 +1,8 @@
 import { copyKeys, resolveMessage, onLanguageChange } from './i18n.js';
 // One visible message, one lifetime. Dismissing UI never changes file state.
-export function setupStatusNotices({ container, text, recovery, actions, dismiss, announcement, saveIndicator, format = value => value }) {
+export function setupStatusNotices({ container, text, recovery, actions, dismiss, announcement, saveIndicator, taskContainer, format = value => value }) {
   let current = null, persistent = null, recoveryAvailable = false, recoveryDismissed = false;
+  let task=null,taskText=null,taskStop=null;
   let timer, announcementTimer;
   let saveState = null;
   const routineSave = new Set(['main.saved','main.autosaved','main.waiting_to_autosave','main.saving','document_session.saved','document_session.saving','document_session.waiting_to_autosave']);
@@ -12,6 +13,14 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
   const quiet = message => message?.key ? quietKeys.has(copyKeys[message.key] || message.key) : quietSave.test(message);
   const quietSave = /^(已自动保存|已开启自动保存|已载入外部修改|已恢复读取原文件)/;
   const render = () => {
+    if(taskContainer){
+      taskContainer.hidden=!task;
+      if(task){
+        if(!taskText){taskText=document.createElement('span');taskStop=document.createElement('button');taskStop.type='button';taskStop.addEventListener('click',()=>{void task?.stop();});taskContainer.replaceChildren(taskText,taskStop);}
+        taskText.textContent=resolveMessage(typeof task.text==='function'?task.text():task.text);
+        taskStop.textContent=resolveMessage(typeof task.stopLabel==='function'?task.stopLabel():task.stopLabel);
+      }
+    }
     if (saveIndicator) {
       saveIndicator.textContent = saveState ? format(resolveMessage(saveState.text)) : '';
       saveIndicator.dataset.kind = saveState?.kind || '';
@@ -88,6 +97,7 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
   render();
   return {
     refresh: render,
+    setTask(value){task=value;render();},
     show,
     clear(message) {
       if (!message || !sameMessage(persistent?.text, message)) return;
