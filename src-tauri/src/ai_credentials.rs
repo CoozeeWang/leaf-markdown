@@ -662,7 +662,13 @@ pub mod tests {
         assert!(AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(path)).unwrap().status("workbuddy").unwrap().configured);
         assert_eq!(std::fs::read_dir(root.join("mcp/nested")).unwrap().count(),1);
         write_private(&root.join("mcp/credentials/synthetic.json"),"{}").unwrap();
+        let identity=std::process::Command::new("whoami.exe").args(["/user","/fo","csv","/nh"]).output().unwrap();
+        let sid=String::from_utf8_lossy(&identity.stdout).split(',').last().unwrap().trim().trim_matches('"').to_owned();
+        // Simulate the earlier directory grant, then repair it before reload.
+        assert!(std::process::Command::new("icacls.exe").arg(&root).args(["/inheritance:r","/grant:r",&format!("*{sid}:F")]).stdout(std::process::Stdio::null()).status().unwrap().success());
         private_directory(&root).unwrap();
+        let reloaded=AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(root.join("mcp-profiles-v1.json"))).unwrap();
+        assert!(reloaded.status("workbuddy").unwrap().configured);
         assert_eq!(read_private(&root.join("mcp/credentials/synthetic.json")).unwrap(),"{}");
         std::fs::remove_dir_all(&root).unwrap();
     }

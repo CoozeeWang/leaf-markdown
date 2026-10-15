@@ -60,7 +60,7 @@ impl MutationLedger {
             let mut file=tempfile::NamedTempFile::new_in(path.parent().unwrap()).map_err(|_|"ledger write")?;
             file.write_all(&serde_json::to_vec(&*records).map_err(|_|"ledger encoding")?).map_err(|_|"ledger write")?;
             file.as_file().sync_all().map_err(|_|"ledger sync")?;
-            file.persist(&path).map_err(|_|"ledger replace")?;
+            crate::atomic_file::persist(file,&path).map_err(|_|"ledger replace")?;
             #[cfg(unix)]
             std::fs::File::open(path.parent().unwrap()).and_then(|d|d.sync_all()).map_err(|_|"ledger directory sync")?;
             Ok(())
@@ -164,6 +164,9 @@ impl LeafMcpBroker {
     }
     pub fn initialize(&self,app:&tauri::AppHandle)->Result<(),String>{
         let directory=super::application_data(app).map_err(|_|"ledger directory")?;
+        // Repair the old non-inheritable Windows grant before reading existing
+        // profiles/ledger; otherwise a saved preference can make siblings unreadable.
+        #[cfg(windows)] ai_credentials::private_directory(&directory)?;
         #[cfg(feature="native-smoke")]
         if super::mcp_test_driver::enabled(app)&&std::env::var("LEAF_MCP_TEST_MODE").ok().as_deref()!=Some("chatgpt-tunnel-automatic-access"){self.inner.automatic_access.store(false,Ordering::Relaxed);}
         self.inner.ledger.initialize(directory.join("mcp-mutations-v1.json"))?;
@@ -298,7 +301,7 @@ impl LeafMcpBroker {
         let path=directory.join(format!("{client}.json"));
         let mut file=tempfile::NamedTempFile::new_in(&directory).map_err(|_|"descriptor_write")?;
         file.write_all(&serde_json::to_vec(&descriptor).map_err(|_|"descriptor_encoding")?).map_err(|_|"descriptor_write")?;
-        file.as_file().sync_all().map_err(|_|"descriptor_write")?;file.persist(&path).map_err(|_|"descriptor_write")?;Ok(path)
+        file.as_file().sync_all().map_err(|_|"descriptor_write")?;crate::atomic_file::persist(file,&path).map_err(|_|"descriptor_write")?;Ok(path)
     }
     pub fn tunnel_status(&self)->Result<Value,String>{
         let (profile,cleanup_errors)={let guard=self.inner.profiles.lock().unwrap();let store=guard.as_ref().ok_or("profiles_unavailable")?;(store.status("chatgpt")?,store.tunnel_cleanup_errors())};
