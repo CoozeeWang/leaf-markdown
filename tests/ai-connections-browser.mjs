@@ -130,8 +130,10 @@ try {
     assert.equal(await page.locator('#aiDevice').innerText(), '本机：macOS · Apple 芯片（arm64）');
     await page.waitForFunction(()=>document.querySelector('#aiDownload').textContent.includes('darwin-arm64.zip'));
     assert.equal(await page.locator('#aiRuntimeKey').getAttribute('placeholder'), '已保存（不显示）');
-    const position = await page.locator('#aiClear').evaluate(node=>({clear:node.getBoundingClientRect().toJSON(),select:document.querySelector('#aiClient').getBoundingClientRect().toJSON()}));
+    const position = await page.locator('#aiClear').evaluate(node=>({clear:node.getBoundingClientRect().toJSON(),select:document.querySelector('#aiClient').getBoundingClientRect().toJSON(),edit:document.querySelector('#aiEditSetup').getBoundingClientRect().toJSON()}));
     assert.ok(position.clear.top >= position.select.bottom);
+    assert.ok(position.edit.right < position.clear.left, 'edit belongs immediately left of clear');
+    assert.ok(Math.abs(position.edit.top-position.clear.top)<2, 'configuration actions share one row');
     assert.ok(Math.abs(position.clear.right-position.select.right)<2);
     await page.locator('.appearance-scroll').evaluate(node=>node.scrollTop=0);
     await page.screenshot({path:artifactPath('ai-settings-configured-720.png')});

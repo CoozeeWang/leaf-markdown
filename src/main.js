@@ -274,7 +274,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <label class="setting-check ai-master"><input id="mcpEnabled" type="checkbox" disabled>${h('ai.master')}</label>
         <p class="setting-hint">${h('ai.access_boundary')}</p>
         <label class="setting-row ai-client-row"><span>${h('ai.client')}</span><span class="ui-select"><select id="aiClient"><option value="chatgpt">ChatGPT</option><option value="claude-desktop">Claude Desktop</option><option value="workbuddy">WorkBuddy</option></select>${icon('chevron',16)}</span></label>
-        <div class="ai-actions ai-config-actions"><button id="aiClear" class="ai-button ai-danger" disabled></button></div>
+        <div class="ai-actions ai-config-actions"><button id="aiEditSetup" class="ai-button" hidden>${h('ai.edit_setup')}</button><button id="aiClear" class="ai-button ai-danger" disabled></button></div>
         <p id="aiConnectionError" class="setting-hint ai-error" role="alert"></p>
         <div id="aiLocalSetup" hidden><p id="aiLocalInstructions" class="setting-hint"></p><div class="ai-actions"><button id="aiLocalConfigure" class="ai-button">${h('ai.prepare')}</button><button id="aiCopyConfig" class="ai-button" disabled>${h('ai.copy_config')}</button></div><pre id="aiExported" hidden></pre></div>
         <div id="aiChatGPTSetup" class="ai-guided-card">
@@ -282,7 +282,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
           <ol class="ai-guided-steps">
             <li><label for="aiTunnelId">${h('ai.tunnel_id')}</label><p class="setting-hint">${h('ai.setup_at')} <a href="https://platform.openai.com/settings/organization/tunnels" data-ai-link>${h('ai.tunnel_link')}</a> ${h('ai.tunnel_help')}</p><input id="aiTunnelId" autocomplete="off" spellcheck="false" data-i18n-placeholder="ai.tunnel_placeholder" placeholder="${t('ai.tunnel_placeholder')}" disabled></li>
             <li><label for="aiTunnelProgram">${h('ai.program')}</label><div class="ai-input-row"><input id="aiTunnelProgram" readonly data-i18n-placeholder="ai.program_placeholder" placeholder="${t('ai.program_placeholder')}"><button id="aiPickProgram" class="ai-button" disabled>${h('ai.choose_program')}</button></div><div class="ai-device-row"><span id="aiDevice" class="setting-hint"></span><button id="aiRefreshDownload" class="ai-text-button">${h('ai.recheck')}</button></div><p id="aiDownloadStatus" class="setting-hint" role="status"></p><a id="aiDownload" href="https://github.com/openai/tunnel-client/releases/latest" data-ai-link>${h('ai.downloads')}</a><p id="aiProgramHelp" class="setting-hint"></p><details id="aiMacHelp" open><summary>${h('ai.mac_title')}</summary><p class="setting-hint">${h('ai.mac_help')}</p></details></li>
-            <li><label for="aiRuntimeKey">${h('ai.runtime_key')}</label><input id="aiRuntimeKey" type="password" autocomplete="off" spellcheck="false" disabled><p class="setting-hint">${h('ai.setup_at')} <a href="https://platform.openai.com/settings/organization/api-keys" data-ai-link>${h('ai.key_link')}</a> ${h('ai.key_help')}</p><p id="aiKeepKey" class="setting-hint" hidden>${h('ai.keep_key')}</p><div class="ai-actions"><button id="aiSaveSetup" class="ai-button ai-primary" disabled>${h('ai.save_setup')}</button><button id="aiEditSetup" class="ai-button" hidden>${h('ai.edit_setup')}</button><button id="aiCancelSetup" class="ai-button" hidden>${h('ai.cancel')}</button></div></li>
+            <li><label for="aiRuntimeKey">${h('ai.runtime_key')}</label><input id="aiRuntimeKey" type="password" autocomplete="off" spellcheck="false" disabled><p class="setting-hint">${h('ai.setup_at')} <a href="https://platform.openai.com/settings/organization/api-keys" data-ai-link>${h('ai.key_link')}</a> ${h('ai.key_help')}</p><p id="aiKeepKey" class="setting-hint" hidden>${h('ai.keep_key')}</p><div class="ai-actions"><button id="aiSaveSetup" class="ai-button ai-primary" disabled>${h('ai.save_setup')}</button><button id="aiCancelSetup" class="ai-button" hidden>${h('ai.cancel')}</button></div></li>
             <li><span class="ai-step-title">${h('ai.add_title')}</span><p class="setting-hint">${h('ai.add_help')}</p><p id="aiRuntimeStatus" class="setting-hint" role="status"></p><div class="ai-actions"><button id="aiAddChatGPT" class="ai-button ai-primary" disabled>${h('ai.add_button')}</button><button id="aiCopyTunnel" class="ai-button" disabled>${h('ai.copy_tunnel')}</button><button id="aiRetryTunnel" class="ai-text-button" hidden>${h('ai.retry_connection')}</button></div><details><summary>${h('ai.existing_title')}</summary><p class="setting-hint">${h('ai.existing_help')}</p></details></li>
           </ol>
         </div>
@@ -1886,7 +1886,7 @@ function renderAiConnections() {
   aiNode('aiKeepKey').hidden = !chatgpt?.has_runtime_key || !value.editing;
   aiNode('aiSaveSetup').hidden = !value.editing;
   aiNode('aiSaveSetup').disabled = !desktop || !chatgpt || value.busy || !value.executable || !aiNode('aiTunnelId').value.trim() || (!chatgpt?.has_runtime_key && !aiNode('aiRuntimeKey').value.trim());
-  aiNode('aiEditSetup').hidden = value.editing;
+  aiNode('aiEditSetup').hidden = value.selected !== 'chatgpt' || value.editing;
   aiNode('aiEditSetup').disabled = value.busy;
   aiNode('aiCancelSetup').hidden = !value.editing || !runtime?.saved_config;
   aiNode('aiCancelSetup').disabled = value.busy;
