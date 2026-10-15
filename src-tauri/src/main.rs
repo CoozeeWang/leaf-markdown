@@ -447,7 +447,7 @@ fn print_export(window: tauri::WebviewWindow) -> Result<(), String> {
             path.into_path().map_err(|e| e.to_string())?
         };
         let temp = pdf_output::prepare(&target)?;
-        let output = temp.path().to_owned();
+        let output = temp.to_path_buf();
         let (tx, rx) = std::sync::mpsc::channel();
         window.with_webview(move |platform| {
             let completed = tx.clone();

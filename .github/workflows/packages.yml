@@ -54,6 +54,26 @@ jobs:
           npm run test:browser -- i18n-browser.mjs
       - name: Native unit tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf
+      - name: Verify actual Windows PDF rendering
+        if: inputs.platform == 'windows'
+        shell: pwsh
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
+          python -m pip install pypdf==6.10.0
+          New-Item -ItemType Directory -Force test-results/windows-pdf | Out-Null
+          $short = Join-Path $PWD 'test-results/windows-pdf/short.pdf'
+          $long = Join-Path $PWD 'test-results/windows-pdf/中文標題-é-😀.pdf'
+          cargo run --locked --release --manifest-path src-tauri/Cargo.toml --target $env:LEAF_BUILD_TARGET --example windows-pdf-check -- $short short
+          if ($LASTEXITCODE -ne 0) { throw 'Short WebView2 PDF failed' }
+          python -c "from pypdf import PdfReader; import sys; p=PdfReader(sys.argv[1]); assert len(p.pages)==1; assert 'One synthetic line.' in p.pages[0].extract_text()" $short
+          if ($LASTEXITCODE -ne 0) { throw 'Short PDF validation failed' }
+          foreach ($attempt in 1..2) {
+            cargo run --locked --release --manifest-path src-tauri/Cargo.toml --target $env:LEAF_BUILD_TARGET --example windows-pdf-check -- $long long
+            if ($LASTEXITCODE -ne 0) { throw 'Long/overwrite WebView2 PDF failed' }
+            python tests/pdf-title-check.py $long '中文標題-é-😀'
+            if ($LASTEXITCODE -ne 0) { throw 'PDF metadata/content validation failed' }
+          }
       - name: Build installer
         shell: bash
         run: npm run desktop:build -- --target "$LEAF_BUILD_TARGET" --config "$LEAF_BUILD_CONFIG"
@@ -77,4 +97,11 @@ jobs:
           name: Leaf-${{ env.LEAF_BUILD_TARGET }}-${{ steps.source.outputs.sha }}
           path: test-results/packages/
           if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.platform == 'windows'
+        with:
+          name: Windows-PDF-${{ steps.source.outputs.sha }}
+          path: test-results/windows-pdf/
+          if-no-files-found: ignore
           retention-days: 7
