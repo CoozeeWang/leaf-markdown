@@ -277,7 +277,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <label class="setting-row ai-client-row"><span>${h('ai.client')}</span><span class="ui-select"><select id="aiClient"><option value="chatgpt">ChatGPT</option><option value="claude-desktop">Claude Desktop</option><option value="workbuddy">WorkBuddy</option></select>${icon('chevron',16)}</span></label>
         <div class="ai-actions ai-config-actions"><button id="aiEditSetup" class="ai-button" hidden>${h('ai.edit_setup')}</button><button id="aiClear" class="ai-button ai-danger" disabled></button></div>
         <p id="aiConnectionError" class="setting-hint ai-error" role="alert"></p>
-        <div id="aiLocalSetup" hidden><p id="aiLocalInstructions" class="setting-hint"></p><div class="ai-actions"><button id="aiLocalConfigure" class="ai-button">${h('ai.prepare')}</button><button id="aiCopyConfig" class="ai-button" disabled>${h('ai.copy_config')}</button></div><pre id="aiExported" hidden></pre></div>
+        <div id="aiLocalSetup" hidden><ol class="setting-hint ai-local-steps"><li id="aiLocalStep1"></li><li id="aiLocalStep2"></li><li id="aiLocalStep3"></li></ol><div class="ai-actions ai-config-actions"><button id="aiLocalConfigure" class="ai-button ai-primary"></button></div><p id="aiLocalResult" class="setting-hint" role="status"></p></div>
         <div id="aiChatGPTSetup" class="ai-guided-card">
           <h4>${h('ai.guided_title')}</h4><p id="aiSavedStatus" class="setting-hint" role="status"></p>
           <ol class="ai-guided-steps">
@@ -288,7 +288,6 @@ document.querySelector('#app').innerHTML = shortcutText(`
           </ol>
         </div>
         <details id="aiSetupHelp" class="ai-setup-help"><summary>${h('ai.help_title')}</summary><p class="setting-hint">${h('ai.help_hint')}</p><p class="setting-hint ai-setup-prompt">${h('ai.help_prompt')}</p><button id="aiCopyPrompt" class="ai-button">${h('ai.copy_prompt')}</button></details>
-        <div class="ai-document-access"><p class="setting-hint">${h('ai.document_access_help')}</p><button id="aiAuthorizeDocument" class="ai-button" disabled></button><p id="aiDocumentGrantStatus" class="setting-hint" role="status"></p></div>
         <p id="aiActionStatus" class="setting-hint" role="status"></p>
         </fieldset>
       </section>
@@ -992,7 +991,7 @@ const editor = createLeafEditor({
       notice.querySelector('button').disabled=false;
     }
     updateHistoryControls();
-    queueMicrotask(renderAiDocumentGrant);
+
   },
   onHumanMutation() {
     if(!mcpBinding||!mcpAuthorizationActive)return;
@@ -1000,7 +999,7 @@ const editor = createLeafEditor({
     mcpAuthorizationActive=false;
     mcpBinding={...mcpBinding,authorization_epoch:mcpBinding.authorization_epoch+1,client:null,scope:null};
     mutationGeneration++;
-    renderAiDocumentGrant();
+
     // Broker gates independently check the live renderer across this IPC gap.
     if(desktop)invoke('mcp_retire_authorization',{sessionId:retired.session_id,authorizationEpoch:retired.authorization_epoch}).catch(()=>{});
   },
@@ -1835,7 +1834,7 @@ document.querySelector('#settingsClose').onclick = closeSettings;
 const aiClients = ['chatgpt', 'claude-desktop', 'workbuddy'];
 const aiClientNames = {'chatgpt':'ChatGPT','claude-desktop':'Claude Desktop','workbuddy':'WorkBuddy'};
 const aiNode = id => document.getElementById(id);
-const aiConnection = {profiles:null, tunnel:null, selected:'chatgpt', editing:true, executable:'', busy:false, read:0, exported:null, platform:null};
+const aiConnection = {profiles:null, tunnel:null, selected:'chatgpt', editing:true, executable:'', busy:false, read:0, platform:null};
 const aiOperation = () => crypto.randomUUID();
 aiNode('aiConnectionControls').addEventListener('click',event=>{
   if(aiNode('aiConnectionControls').disabled) {event.preventDefault();event.stopImmediatePropagation();}
@@ -1883,11 +1882,9 @@ function renderAiConnections() {
   aiNode('aiChatGPTSetup').hidden = value.selected !== 'chatgpt';
   aiNode('aiSetupHelp').hidden = value.selected !== 'chatgpt';
   aiNode('aiLocalSetup').hidden = value.selected === 'chatgpt';
-  aiNode('aiLocalInstructions').textContent = t('ai.local_help', {client:aiClientNames[value.selected]});
-  aiNode('aiLocalConfigure').disabled = !desktop || !profile || value.busy;
-  aiNode('aiCopyConfig').disabled = value.busy || !value.exported;
-  aiNode('aiExported').hidden = !value.exported;
-  aiNode('aiExported').textContent = value.exported ? JSON.stringify(value.exported, null, 2) : '';
+  aiNode('aiLocalConfigure').textContent=t('ai.add_client',{client:value.selected==='claude-desktop'?'Claude':'WorkBuddy'});
+  aiNode('aiLocalConfigure').disabled=!desktop||!profile||value.busy;
+  for(const [index,key] of ['step1','step2','step3'].entries()) aiNode(`aiLocalStep${index+1}`).textContent=t(`ai.${value.selected==='claude-desktop'?'claude':'workbuddy'}_${key}`);
   aiNode('aiSavedStatus').textContent = runtime?.saved_config ? t('ai.saved') : '';
   aiNode('aiRuntimeStatus').textContent = t(runtime?.host_verified ? 'ai.host_verified' : runtime?.local_ready ? 'ai.local_ready' : runtime?.process ? 'ai.starting' : 'ai.stopped');
   aiNode('aiRuntimeStatus').dataset.state = runtime?.host_verified ? 'host-verified' : runtime?.local_ready ? 'local-ready' : runtime?.process ? 'starting' : 'stopped';
@@ -1917,28 +1914,9 @@ function renderAiConnections() {
   aiNode('aiProgramHelp').textContent=t(platform?.os==='windows'?'ai.program_help_windows':platform?'ai.program_help':'ai.program_help_unknown');
   if(value.downloadName)aiNode('aiDownload').textContent=t('ai.download_file',{file:value.downloadName});
   aiNode('aiMacHelp').hidden = platform && platform.os !== 'macos';
-  renderAiDocumentGrant();
+
   requestAnimationFrame(updateAppearanceScrollHint);
 }
-function renderAiDocumentGrant() {
-  const opened = desktop && welcomeScreen.hidden && !!mcpBinding;
-  const profile = aiConnection.profiles?.clients.find(p=>p.client===aiConnection.selected);
-  const client = aiClientNames[aiConnection.selected];
-  aiNode('aiAuthorizeDocument').textContent = t('ai.authorize_document',{client});
-  aiNode('aiAuthorizeDocument').disabled = !opened || aiConnection.busy || !aiConnection.profiles?.enabled || !profile?.enabled || !!editor.aiTask();
-  const grant=aiConnection.authorization;
-  aiNode('aiDocumentGrantStatus').textContent = grant && opened && aiConnection.profiles?.enabled && profile?.enabled && grant.session_id===mcpBinding.session_id && grant.authorization_epoch===mcpBinding.authorization_epoch && grant.client===aiConnection.selected ? t('ai.document_authorized',{client}) : '';
-}
-aiNode('aiAuthorizeDocument').onclick = () => {
-  if(aiNode('aiAuthorizeDocument').disabled)return;
-  const binding={...mcpBinding}, snapshot=editor.mcpSnapshot(), client=aiConnection.selected;
-  const scope={from:0,to:snapshot.content.length};
-  void runAiAction(async()=>{
-    const result=await invoke('mcp_authorize',{sessionId:binding.session_id,client,scope,revision:snapshot.revision});
-    if(result.document_id!==binding.document_id || result.session_id!==binding.session_id || mcpBinding?.session_id!==binding.session_id || mcpBinding?.document_id!==binding.document_id || mcpBinding.authorization_epoch!==result.authorization_epoch || editor.mcpSnapshot().revision!==snapshot.revision)throw new Error('stale_authorization');
-    aiConnection.authorization={...result,scopeKind:'document'};
-  });
-};
 function restoreAiFields() {
   const config = aiConnection.tunnel?.profile.tunnel;
   aiNode('aiTunnelId').value = config?.tunnel_id || '';
@@ -1979,7 +1957,7 @@ async function runAiAction(action) {
   finally {aiConnection.busy = false; renderAiConnections();}
 }
 aiNode('aiClient').addEventListener('change', () => {
-  aiConnection.selected = aiNode('aiClient').value; aiConnection.exported = null;
+  aiConnection.selected = aiNode('aiClient').value; aiNode('aiLocalResult').textContent='';
   aiNode('aiRuntimeKey').value = ''; aiNode('aiConnectionError').textContent = ''; aiNode('aiActionStatus').textContent = ''; renderAiConnections();
 });
 aiNode('mcpEnabled').addEventListener('change', () => {
@@ -2015,17 +1993,17 @@ async function enableConfiguredAiConnections() {
   if (aiConnection.tunnel?.runtime.saved_config) acceptAiTunnel(await invoke('mcp_start_tunnel'));
 }
 aiNode('aiRetryTunnel').onclick = () => {void runAiAction(enableConfiguredAiConnections);};
-aiNode('aiLocalConfigure').onclick = () => {const client = aiConnection.selected; void runAiAction(async () => {
-  let profile = aiConnection.profiles.clients.find(p => p.client === client);
-  if (!profile.configured) {profile = await invoke('mcp_configure_client', {client, operationId:aiOperation(), generation:profile.generation}); acceptAiProfile(profile);}
-  const value = await invoke('mcp_enable_client', {client, operationId:aiOperation(), generation:profile.generation}); acceptAiProfile(value.profile);
-  aiConnection.exported = await invoke('mcp_export_stdio', {client});
+aiNode('aiLocalConfigure').onclick = () => {const client=aiConnection.selected;void runAiAction(async()=>{
+  aiNode('aiLocalResult').textContent='';
+  const result=await invoke('mcp_add_client',{client,language:currentLanguage()});
+  if(result.cancelled)return;
+  acceptAiProfile(result.profile);
+  aiNode('aiLocalResult').textContent=t(client==='claude-desktop'?'ai.claude_added':'ai.workbuddy_added');
 });};
 async function copyAiText(text) {
   try {await navigator.clipboard.writeText(text); aiNode('aiActionStatus').textContent = t('ai.copied');}
   catch {aiNode('aiConnectionError').textContent = t('ai.copy_failed');}
 }
-aiNode('aiCopyConfig').onclick = () => {if (aiConnection.exported) void copyAiText(JSON.stringify({mcpServers:{Leaf:aiConnection.exported}}, null, 2));};
 aiNode('aiCopyTunnel').onclick = () => {void copyAiText(aiConnection.tunnel.profile.tunnel.tunnel_id);};
 aiNode('aiCopyPrompt').onclick = () => {void copyAiText(t('ai.help_prompt'));};
 function validAiSetupLink(url) {
@@ -2087,7 +2065,7 @@ aiNode('aiClear').onclick = () => {
     const success = await runAiAction(async () => {
       acceptAiProfile(await invoke('mcp_revoke_client', {client, clear:true, operationId:aiOperation()}));
       if (client === 'chatgpt') {acceptAiTunnel(await invoke('mcp_tunnel_status')); aiConnection.editing = true; restoreAiFields();}
-      aiConnection.exported = null;
+
     });
     deleting = false;
     if (success) close(); else {dialog.querySelector('#aiClearError').textContent = t('ai.clear_failed'); for (const button of dialog.querySelectorAll('button')) button.disabled = false; dialog.querySelector('[data-ai-cancel]').focus();}
@@ -2590,10 +2568,14 @@ if (desktop) {
         }
         if(['binding','begin','finish'].includes(operation)&&mcpBinding?.session_id===args.session_id&&args.authorization_epoch<mcpBinding.authorization_epoch)throw new Error('stale_projection');
         if(operation==='authorization'){result={authorized:true};if(testMode&&nativeTestRetirement)nativeTestRetirement.checked=true;}
+        else if(operation==='access_snapshot'){
+          if(mcpBinding?.document_id!==args.document_id||mcpBinding?.session_id!==args.session_id)throw new Error('stale_session');
+          result={...editor.mcpSnapshot(),name:state.fileName,binding_epoch:mcpBinding.authorization_epoch,access_active:mcpAuthorizationActive};
+        }
         else if(operation==='snapshot')result=editor.mcpSnapshot();
         else if(operation==='reader_snapshot')result={...editor.mcpSnapshot(),name:state.fileName,saved:state.savedContent===editor.getValue(),language:currentLanguage(),theme:currentTheme()};
         else if(operation==='comment_query')result=await handleMcpCommentQuery(args);
-        else if(operation==='binding'){if(args.revision!==undefined&&args.revision!==editor.mcpSnapshot().revision)throw new Error('stale_revision');mcpBinding=args;mcpAuthorizationActive=args.revision!==undefined;mutationGeneration++;result=editor.mcpSnapshot();renderAiDocumentGrant();}
+        else if(operation==='binding'){if(args.revision!==undefined&&args.revision!==editor.mcpSnapshot().revision)throw new Error('stale_revision');mcpBinding=args;mcpAuthorizationActive=args.revision!==undefined;mutationGeneration++;result=editor.mcpSnapshot();}
         else if(operation==='begin'){if(desktopFileState()?.paused)throw new Error('document_conflict_pending');result=editor.beginAiTask(args);mcpBinding=args;}
         else if(operation==='apply') {
           if(testMode && args.test_fault==='before-dispatch')throw new Error('test_before_dispatch');
@@ -2640,10 +2622,9 @@ if (desktop) {
             while(aiConnection.busy) await new Promise(resolve=>setTimeout(resolve,10));
             if (aiNode('aiConnectionError').textContent) throw new Error(`native_ui_configure_failed: ${aiNode('aiConnectionError').dataset.failure}`);
             for(const client of ['claude-desktop','workbuddy']) {
-              aiNode('aiClient').value=client; aiNode('aiClient').dispatchEvent(new Event('change'));
-              aiNode('aiLocalConfigure').click();
-              while(aiConnection.busy) await new Promise(resolve=>setTimeout(resolve,10));
-              if(aiNode('aiConnectionError').textContent) throw new Error('native_ui_local_configure_failed');
+              const old=aiConnection.profiles.clients.find(p=>p.client===client);
+              const configured=await invoke('mcp_configure_client',{client,operationId:aiOperation(),generation:old.generation});acceptAiProfile(configured);
+              const result=await invoke('mcp_enable_client',{client,operationId:aiOperation(),generation:configured.generation});acceptAiProfile(result.profile);
             }
             aiNode('aiClient').value='chatgpt'; aiNode('aiClient').dispatchEvent(new Event('change'));
             result={key_empty:aiNode('aiRuntimeKey').value==='',master:aiNode('mcpEnabled').checked,state:aiNode('aiRuntimeStatus').dataset.state,configured_badges:[...aiNode('aiClient').options].filter(option=>option.textContent.endsWith(t('ai.configured'))).length};
@@ -2656,14 +2637,8 @@ if (desktop) {
           else if(args.action==='close-ai-settings') {closeSettings();result={closed:appearancePopover.hidden};}
           else if(args.action==='selection') editor.view.dispatch({selection:{anchor:args.anchor,head:args.head??args.anchor}});
           else if(args.action==='ai-settings-authorize') {
-            openSettings('ai');await refreshAiConnections();
-            aiNode('aiClient').value=args.client;aiNode('aiClient').dispatchEvent(new Event('change'));
-            if(args.scope_kind && args.scope_kind!=='document')throw new Error('native_ui_scope_document_only');
-            if(aiNode('aiAuthorizeDocument').disabled)throw new Error('native_ui_authorize_disabled');
-            aiNode('aiAuthorizeDocument').click();
-            while(aiConnection.busy)await new Promise(resolve=>setTimeout(resolve,10));
-            if(aiNode('aiConnectionError').textContent)throw new Error('native_ui_authorize_failed');
-            result={...mcpBinding,status:aiNode('aiDocumentGrantStatus').textContent};
+            const snapshot=editor.mcpSnapshot();
+            result=await invoke('mcp_authorize',{sessionId:mcpBinding.session_id,client:args.client,scope:{from:0,to:snapshot.content.length},revision:snapshot.revision});
           }
           else if(args.action==='delay-attachment') {
             let release;const promise=new Promise(resolve=>{release=resolve;});

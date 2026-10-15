@@ -1151,8 +1151,6 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .ai-retry { display: block; margin-left: auto; }
 .ai-actions:not(:has(> :not([hidden]))) { display: none; }
 .ai-primary { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--canvas); }
-.ai-document-access { margin: 12px 0; }
-#settingsPanel-ai .ai-document-access .setting-hint { overflow-wrap: anywhere; }
 .ai-guided-card { padding: 14px; border: 1px solid var(--line); border-radius: 8px; margin: 14px 0; }
 .ai-guided-card h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
 .ai-guided-steps { margin: 12px 0 0; padding-left: 20px; }
@@ -1168,7 +1166,6 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .ai-error:empty, #aiActionStatus:empty, #aiSavedStatus:empty, #aiDownloadStatus:empty, #aiDocumentGrantStatus:empty { display: none; }
 .ai-setup-prompt { white-space: pre-wrap; user-select: text; }
 #settingsPanel-ai :is(p, pre, button, label, h4) { overflow-wrap: anywhere; }
-#aiExported { font: 11px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .ai-clear-dialog { margin: auto; }
 .ai-clear-dialog::backdrop { background: rgba(20,24,20,.3); }
 .appearance-scroll-hint { height: 24px; border-top: 0; }
@@ -1273,3 +1270,7 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .leaf-endnote:not(.is-editing) .cm-content { cursor:default; }
 .leaf-endnote.is-editing .leaf-footnote-body { background:color-mix(in srgb, var(--accent-soft) 65%, transparent); box-shadow:inset 0 -1px var(--accent); }
 .leaf-endnote:has(.cm-content:focus-visible) { outline:2px solid var(--accent); outline-offset:4px; border-radius:5px; }
+
+.ai-local-steps { padding-left: 20px; }
+.ai-local-steps > li { margin: 8px 0; line-height: 1.7; }
+#aiLocalResult:empty { display: none; }

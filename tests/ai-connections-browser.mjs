@@ -53,6 +53,7 @@ async function nativePage() {
         }
         const profile = clients.find(p=>p.client===args.client) || clients[0];
         if (command === 'mcp_configure_tunnel') {clients[0].configured=true;clients[0].has_runtime_key=true;clients[0].generation++;clients[0].tunnel={tunnel_id:args.tunnelId,executable:args.executable};runtime.saved_config=runtime.runtime_present=true;runtime.generation=clients[0].generation;runtime.epoch++;return copy({profile:clients[0],runtime});}
+        if (command === 'mcp_add_client') {if(aiMock.cancelAdd)return {cancelled:true};profile.configured=profile.enabled=true;profile.generation++;return {profile:copy(profile),cancelled:false};}
         if (command === 'mcp_configure_client') {profile.configured=true;profile.generation++;return copy(profile);}
         if (command === 'mcp_enable_client') {profile.enabled=true;profile.generation++;return {profile:copy(profile),descriptor:'/synthetic/descriptor.json'};}
         if (command === 'mcp_revoke_client') {profile.configured=false;profile.enabled=false;profile.generation++;if(profile.client==='chatgpt'){profile.has_runtime_key=false;profile.tunnel=null;runtime.saved_config=runtime.process=runtime.local_ready=false;runtime.epoch++;}return copy(profile);}
@@ -95,32 +96,26 @@ try {
     assert.ok(await group.locator('a').evaluateAll(nodes=>nodes.every(n=>!n.hasAttribute('href'))));
     await page.close();
   });
-  await test('current-document authorization defaults to the whole document and still requires an explicit action', async () => {
-    const page = await nativePage();
-    assert.equal(await page.locator('#aiAuthorizeDocument').count(), 1, 'normal settings must expose document authorization');
-    assert.ok(await page.locator('#aiAuthorizeDocument').isDisabled());
+  await test('MCP enabling uses open-document access without a second grant or copied configuration', async () => {
+    const page=await nativePage();
+    assert.equal(await page.locator('#aiAuthorizeDocument').count(),0);
+    assert.equal(await page.locator('#aiCopyConfig').count(),0);
     await page.locator('#mcpEnabled').check();
-    await page.locator('#aiClient').selectOption('workbuddy');
+    await page.locator('#aiClient').selectOption('claude-desktop');
+    assert.equal(await page.locator('#aiLocalConfigure').innerText(),'添加到 Claude');
     await page.locator('#aiLocalConfigure').click();
-    await page.waitForFunction(()=>aiMock.clients.find(p=>p.client==='workbuddy').enabled);
+    await page.waitForFunction(()=>aiMock.clients[1].enabled);
+    assert.match(await page.locator('#aiLocalResult').innerText(),/Claude/);
+    await page.locator('#aiClient').selectOption('workbuddy');
+    await page.evaluate(()=>aiMock.cancelAdd=true);
+    await page.locator('#aiLocalConfigure').click();
+    await page.waitForFunction(()=>!document.querySelector('#aiConnectionControls').disabled);
+    assert.equal(await page.evaluate(()=>aiMock.clients[2].configured),false);
+    await page.evaluate(()=>aiMock.cancelAdd=false);
+    await page.locator('#aiLocalConfigure').click();
+    await page.waitForFunction(()=>aiMock.clients[2].enabled);
+    assert.match(await page.locator('#aiLocalStep2').innerText(),/备份/);
     assert.equal(await page.evaluate(()=>aiMock.calls.filter(c=>c.command==='mcp_authorize').length),0);
-    assert.equal(await page.locator('#aiDocumentScope').count(),0);
-    assert.equal(await page.locator('#aiDocumentTarget').count(),0);
-    await page.waitForFunction(()=>!document.querySelector('#aiAuthorizeDocument').disabled);
-    await page.locator('#aiAuthorizeDocument').click();
-    await page.waitForFunction(()=>aiMock.calls.some(c=>c.command==='mcp_authorize'));
-    const call=await page.evaluate(()=>aiMock.calls.find(c=>c.command==='mcp_authorize'));
-    assert.equal(call.args.client,'workbuddy');
-    assert.equal(call.args.sessionId,'session-ui');
-    assert.deepEqual(call.args.scope,{from:0,to:'# Synthetic\n\nUnchanged body.'.length});
-    assert.ok(Number.isSafeInteger(call.args.revision));
-    await page.waitForFunction(()=>document.querySelector('#aiDocumentGrantStatus').textContent.includes('WorkBuddy'));
-    await page.evaluate(()=>{aiMock.grantStale=true;});
-    await page.locator('#aiAuthorizeDocument').click();
-    await page.waitForFunction(()=>document.querySelector('#aiConnectionError').textContent.length>0);
-    assert.equal(await page.locator('#aiDocumentGrantStatus').textContent(),'','retired result cannot claim a current grant');
-    await page.locator('#mcpEnabled').uncheck();
-    assert.ok(await page.locator('#aiAuthorizeDocument').isDisabled());
     await page.close();
   });
   await test('AI settings are the third tab and require native confirmed connection state', async () => {
@@ -172,8 +167,8 @@ try {
     assert.doesNotMatch(await page.locator('#aiRuntimeStatus').innerText(), /成功调用/);
     for (const client of ['claude-desktop','workbuddy']) {
       await page.locator('#aiClient').selectOption(client); await page.locator('#aiLocalConfigure').click();
-      await page.waitForFunction(()=>!document.querySelector('#aiCopyConfig').disabled);
-      assert.match(await page.locator('#aiExported').innerText(), /leaf-mcp-adapter/);
+      await page.waitForFunction(()=>!document.querySelector('#aiConnectionControls').disabled);
+      assert.match(await page.locator('#aiLocalResult').innerText(), /Leaf|Claude|WorkBuddy/);
     }
     assert.equal(await page.evaluate(()=>aiMock.clients.filter(p=>p.enabled).length), 3);
     const before = await page.evaluate(()=>aiMock.calls.length);

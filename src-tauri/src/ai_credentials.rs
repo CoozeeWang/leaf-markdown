@@ -1,4 +1,4 @@
-//! The only persistent secret store is the operating system keyring.
+//! OpenAI keys stay in the GUI-only OS keyring. Local session bearers use owner-only files.
 //! Serialized profiles and descriptors contain opaque references, never secrets.
 use std::{collections::HashMap, path::PathBuf, io::Write};
 use serde::{Serialize, Deserialize};
@@ -7,14 +7,14 @@ use sha2::{Digest, Sha256};
 pub const CLIENTS: [&str; 3] = ["chatgpt", "claude-desktop", "workbuddy"];
 pub fn native_build_identity()->String {
     let mut hash=Sha256::new();
-    for source in [include_str!("ai_credentials.rs"),include_str!("mcp.rs"),include_str!("chatgpt_tunnel.rs"),include_str!("main.rs"),include_str!("bin/leaf-mcp-adapter.rs"),include_str!("../Cargo.toml")] {hash.update(source.as_bytes());}
+    for source in [include_str!("ai_credentials.rs"),include_str!("ai_client_install.rs"),include_str!("mcp.rs"),include_str!("chatgpt_tunnel.rs"),include_str!("main.rs"),include_str!("bin/leaf-mcp-adapter.rs"),include_str!("../Cargo.toml")] {hash.update(source.as_bytes());}
     format!("{}:{:x}:{}:{}:{}:{}",env!("CARGO_PKG_VERSION"),hash.finalize(),std::env::consts::OS,std::env::consts::ARCH,if cfg!(feature="native-smoke"){"native-smoke"}else{"production"},if cfg!(debug_assertions){"debug"}else{"release"})
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CredentialRef { pub service: String, pub account: String }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct BrokerDescriptor {pub uri:String,pub client:String,pub generation:u64,pub instance:String,pub credential_ref:CredentialRef}
+pub struct BrokerDescriptor {pub uri:String,pub client:String,pub generation:u64,pub instance:String,#[serde(default)]pub credential_file:Option<PathBuf>,pub credential_ref:CredentialRef}
 #[derive(Clone,Serialize,Deserialize)]
 pub struct BoundCredential {pub token:String,pub uri:String,pub instance:String,pub generation:u64,#[serde(default)]pub external_secret:Option<String>}
 impl BrokerDescriptor {
@@ -24,10 +24,10 @@ impl BrokerDescriptor {
     }
     pub fn load_token(&self)->Result<String,String> {
         self.validate()?;
-        // Let the OS evaluate its exact per-entry ACL. Disabling Keychain
-        // interaction globally rejects legitimate ad-hoc helpers as well.
-        // The helper applies a bounded startup timeout around this OS call.
-        let bound:BoundCredential=serde_json::from_str(&self.credential_ref.load()?).map_err(|_|"credential_unbound")?;
+        // Current descriptors use a private, instance-bound local bearer file.
+        // Only legacy descriptors retain the bounded Keychain migration path.
+        let payload=if let Some(path)=&self.credential_file {read_private(path)?}else{self.credential_ref.load()?};
+        let bound:BoundCredential=serde_json::from_str(&payload).map_err(|_|"credential_unbound")?;
         if bound.uri!=self.uri||bound.instance!=self.instance||bound.generation!=self.generation {return Err("stale_broker_descriptor".into());}Ok(bound.token)
     }
 }
@@ -69,6 +69,52 @@ impl SecretStore for OsKeyring {
     }
 }
 
+// Local broker bearers live only in this process and in owner-only session files.
+// They are unrelated to the user's OpenAI API key and never need Keychain ACLs.
+#[derive(Default)]pub struct SessionSecrets;
+fn session_secrets()->&'static std::sync::Mutex<HashMap<String,String>> {static CACHE:std::sync::OnceLock<std::sync::Mutex<HashMap<String,String>>>=std::sync::OnceLock::new();CACHE.get_or_init(Default::default)}
+fn secret_id(r:&CredentialRef)->String {format!("{}:{}",r.service,r.account)}
+impl SecretStore for SessionSecrets {
+ fn set(&self,r:&CredentialRef,s:&str)->Result<(),String>{session_secrets().lock().unwrap().insert(secret_id(r),s.into());Ok(())}
+ fn get(&self,r:&CredentialRef)->Result<String,String>{session_secrets().lock().unwrap().get(&secret_id(r)).cloned().ok_or("credential_unavailable".into())}
+ fn delete(&self,r:&CredentialRef)->Result<(),String>{session_secrets().lock().unwrap().remove(&secret_id(r));Ok(())}
+}
+pub fn private_directory(path:&std::path::Path)->Result<(),String>{
+ if std::fs::symlink_metadata(path).is_ok_and(|m|m.file_type().is_symlink()){return Err("unsafe_credential_path".into());}
+ std::fs::create_dir_all(path).map_err(|_|"credential_write")?;
+ #[cfg(unix)]{use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(path,std::fs::Permissions::from_mode(0o700)).map_err(|_|"credential_write")?;}
+ #[cfg(windows)]protect_windows(path)?;
+ Ok(())
+}
+pub fn write_private(path:&std::path::Path,text:&str)->Result<(),String>{
+ let parent=path.parent().ok_or("credential_write")?;private_directory(parent)?;
+ write_private_existing_parent(path,text)
+}
+// Host configuration directories belong to the host; preserve their permissions.
+pub fn write_private_existing_parent(path:&std::path::Path,text:&str)->Result<(),String>{
+ let parent=path.parent().ok_or("credential_write")?;
+ let metadata=std::fs::symlink_metadata(parent).map_err(|_|"credential_write")?;
+ if !metadata.is_dir()||metadata.file_type().is_symlink(){return Err("unsafe_credential_path".into());}
+ if std::fs::symlink_metadata(path).is_ok_and(|m|m.file_type().is_symlink()){return Err("unsafe_credential_path".into());}
+ let mut f=tempfile::NamedTempFile::new_in(parent).map_err(|_|"credential_write")?;
+ #[cfg(unix)]{use std::os::unix::fs::PermissionsExt;f.as_file().set_permissions(std::fs::Permissions::from_mode(0o600)).map_err(|_|"credential_write")?;}
+ #[cfg(windows)]protect_windows(f.path())?;
+ f.write_all(text.as_bytes()).and_then(|_|f.as_file().sync_all()).map_err(|_|"credential_write")?;f.persist(path).map_err(|_|"credential_write")?;Ok(())
+}
+pub fn read_private(path:&std::path::Path)->Result<String,String>{
+ let metadata=std::fs::symlink_metadata(path).map_err(|_|"credential_unavailable")?;
+ if !metadata.is_file()||metadata.file_type().is_symlink()||metadata.len()>65536{return Err("unsafe_credential_path".into());}
+ #[cfg(unix)]{use std::os::unix::fs::MetadataExt;unsafe extern "C"{fn getuid()->u32;}if metadata.mode()&0o077!=0||metadata.uid()!=unsafe{getuid()}{return Err("unsafe_credential_path".into());}}
+ std::fs::read_to_string(path).map_err(|_|"credential_unavailable".into())
+}
+#[cfg(windows)]fn protect_windows(path:&std::path::Path)->Result<(),String>{
+ use std::process::{Command,Stdio};
+ let user=Command::new("whoami.exe").args(["/user","/fo","csv","/nh"]).output().map_err(|_|"credential_permissions")?;
+ let sid=String::from_utf8_lossy(&user.stdout).split(',').last().unwrap_or("").trim().trim_matches('"').to_string();
+ if !sid.starts_with("S-1-")||!sid.bytes().all(|b|b.is_ascii_digit()||b==b'S'||b==b'-'){return Err("credential_permissions".into());}
+ if !Command::new("icacls.exe").arg(path).args(["/inheritance:r","/grant:r",&format!("*{sid}:(F)")]).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s|s.success()){return Err("credential_permissions".into());}Ok(())
+}
+fn runtime_cache()->&'static std::sync::Mutex<HashMap<String,String>> {static CACHE:std::sync::OnceLock<std::sync::Mutex<HashMap<String,String>>>=std::sync::OnceLock::new();CACHE.get_or_init(Default::default)}
 // Keyring's macOS setter creates a caller-only ACL. For NEW Leaf entries use
 // Apple's public creation API with exactly the GUI and its sibling helper.
 // Existing entries keep their ACL; no login keychain or other item is changed.
@@ -184,10 +230,10 @@ impl RuntimeVault for GuiRuntimeSecretStore {
     fn set(&self,r:&RuntimeCredentialRef,key:&str)->Result<(),String>{
         let entry=Self::entry(r)?;
         #[cfg(target_os="macos")] create_mac_gui_only_entry(r,key)?;
-        entry.set_password(key).map_err(|_|"runtime_key_unavailable".into())
+        entry.set_password(key).map_err(|_|"runtime_key_unavailable".to_string())?;runtime_cache().lock().unwrap().insert(format!("{}:{}",r.service,r.account),key.into());Ok(())
     }
-    fn get(&self,r:&RuntimeCredentialRef)->Result<String,String>{Self::entry(r)?.get_password().map_err(|_|"runtime_key_unavailable".into())}
-    fn delete(&self,r:&RuntimeCredentialRef)->Result<(),String>{match Self::entry(r)?.delete_credential(){Ok(())|Err(keyring::Error::NoEntry)=>Ok(()),Err(_)=>Err("runtime_key_unavailable".into())}}
+    fn get(&self,r:&RuntimeCredentialRef)->Result<String,String>{r.validate()?;let id=format!("{}:{}",r.service,r.account);if let Some(key)=runtime_cache().lock().unwrap().get(&id).cloned(){return Ok(key);}let key=Self::entry(r)?.get_password().map_err(|_|"runtime_key_unavailable".to_string())?;runtime_cache().lock().unwrap().insert(id,key.clone());Ok(key)}
+    fn delete(&self,r:&RuntimeCredentialRef)->Result<(),String>{runtime_cache().lock().unwrap().remove(&format!("{}:{}",r.service,r.account));match Self::entry(r)?.delete_credential(){Ok(())|Err(keyring::Error::NoEntry)=>Ok(()),Err(_)=>Err("runtime_key_unavailable".into())}}
 }
 impl AiClientProfile {
     pub fn masked(&self)->serde_json::Value {let mut value=serde_json::to_value(self).unwrap();value.as_object_mut().unwrap().remove("runtime_ref");value.as_object_mut().unwrap().remove("runtime_pending");value}
@@ -372,6 +418,7 @@ impl AiClientProfileStore {
     }
     pub(crate) fn migrate_runtime(&mut self,shared:&dyn SecretStore,runtime:&dyn RuntimeVault)->Result<(),String>{
         let old=self.status("chatgpt")?;
+        if old.runtime_ref.is_some()&&!old.runtime_pending{return Ok(());}
         let Some(shared_ref)=old.credential_ref.clone() else{return Ok(());};
         let mut bound:BoundCredential=serde_json::from_str(&shared.get(&shared_ref)?).map_err(|_|"runtime_key_migration_required")?;
         let index=self.profiles.iter().position(|p|p.client=="chatgpt").unwrap();
@@ -445,7 +492,7 @@ pub mod tests {
         assert_eq!(s.status("workbuddy").unwrap(),buddy);
         let exported=next.masked().to_string();assert!(!exported.contains("runtime-sentinel")&&!exported.contains("runtime_ref")&&!exported.contains("chatgpt-runtime"));assert!(next.has_runtime_key);
         let forged=CredentialRef{service:original.service.clone(),account:original.account.clone()};assert!(forged.load().is_err());
-        let descriptor=BrokerDescriptor{uri:"http://127.0.0.1:1234/mcp".into(),client:"chatgpt".into(),generation:next.generation,instance:"a".repeat(64),credential_ref:forged};assert!(descriptor.load_token().is_err());
+        let descriptor=BrokerDescriptor{uri:"http://127.0.0.1:1234/mcp".into(),client:"chatgpt".into(),generation:next.generation,instance:"a".repeat(64),credential_file:None,credential_ref:forged};assert!(descriptor.load_token().is_err());
         assert!(shared.0.lock().unwrap().values().all(|v|!v.contains("runtime-sentinel")));
         s.clear_runtime(&runtime).unwrap();assert!(runtime.0.lock().unwrap().is_empty());assert_eq!(s.status("workbuddy").unwrap(),buddy);
     }
@@ -571,4 +618,18 @@ pub mod tests {
         }
         let mut s=store();let before=s.list();assert!(s.configure("chatgpt","synthetic","save",0,&Denied).is_err());assert_eq!(s.list(),before);
     }
+}
+
+#[cfg(test)]mod session_secret_tests {
+ use super::*;
+ #[test]fn session_credentials_and_helper_binding_need_no_keychain(){
+  let dir=tempfile::tempdir().unwrap();let path=dir.path().join("credentials/client.json");
+  let r=CredentialRef{service:"studio.leaf.synthetic.mcp".into(),account:"chatgpt-synthetic".into()};
+  let bound=BoundCredential{token:"synthetic-local-bearer".into(),uri:"http://127.0.0.1:1234/mcp".into(),instance:"a".repeat(64),generation:7,external_secret:None};
+  let text=serde_json::to_string(&bound).unwrap();SessionSecrets.set(&r,&text).unwrap();assert_eq!(SessionSecrets.get(&r).unwrap(),text);
+  write_private(&path,&text).unwrap();let mut d=BrokerDescriptor{uri:bound.uri.clone(),client:"chatgpt".into(),generation:7,instance:bound.instance.clone(),credential_file:Some(path.clone()),credential_ref:r.clone()};
+  assert_eq!(d.load_token().unwrap(),bound.token);d.generation=8;assert_eq!(d.load_token().unwrap_err(),"stale_broker_descriptor");SessionSecrets.delete(&r).unwrap();assert!(SessionSecrets.get(&r).is_err());
+  #[cfg(unix)]{use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o644)).unwrap();assert!(read_private(&path).is_err());}
+ }
+ #[test]fn runtime_session_cache_avoids_reopening_the_os_item(){let r=RuntimeCredentialRef{service:"studio.leaf.synthetic.chatgpt-runtime".into(),account:"runtime-synthetic-cache".into()};let id=format!("{}:{}",r.service,r.account);runtime_cache().lock().unwrap().insert(id.clone(),"synthetic-api-key".into());for _ in 0..3{assert_eq!(GuiRuntimeSecretStore.get(&r).unwrap(),"synthetic-api-key");}runtime_cache().lock().unwrap().remove(&id);}
 }

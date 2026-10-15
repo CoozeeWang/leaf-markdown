@@ -76,6 +76,7 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     let _=broker.bridge(app,label,"test",json!({"action":"reset","content":""})).await?;
     let original=broker.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).cloned().ok_or("renderer registration absent")?;
     ensure(original.client.is_none(),"default authorization must be closed")?;
+    if mode=="chatgpt-tunnel-automatic-access" {return automatic_access(app,label,broker).await;}
     if mode=="chatgpt-tunnel-tracer" {return tunnel_tracer(app,label,broker,mode).await;}
     if mode=="chatgpt-tunnel-dev-bundle" {return tunnel_lifecycle(app,label,broker).await;}
     if mode=="chatgpt-tunnel-ui" {return connections_ui(app,label,broker).await;}
@@ -274,7 +275,7 @@ async fn tunnel_tracer(app:&tauri::AppHandle,label:&str,broker:&super::mcp::Leaf
     let d=broker.authorize(app,label,&session,"chatgpt",json!({"from":0,"to":source.encode_utf16().count()})).await?;
     let reference=CredentialRef{service:format!("{}.mcp",app.config().identifier),account:format!("chatgpt-{}",random_token()?)};
     let instance=random_token()?;
-    let descriptor=BrokerDescriptor{uri:format!("http://127.0.0.1:{port}/mcp"),client:"chatgpt".into(),generation:1,instance:instance.clone(),credential_ref:reference.clone()};
+    let descriptor=BrokerDescriptor{uri:format!("http://127.0.0.1:{port}/mcp"),client:"chatgpt".into(),generation:1,instance:instance.clone(),credential_file:None,credential_ref:reference.clone()};
     let payload=BoundCredential{token,uri:descriptor.uri.clone(),instance,generation:1,external_secret:None};
     let r=reference.clone();
     tauri::async_runtime::spawn_blocking(move||OsKeyring.set(&r,&serde_json::to_string(&payload).unwrap())).await.map_err(|_|"test keyring")??;
@@ -1048,4 +1049,38 @@ async fn history_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafM
         let previous=broker.bridge(app,label,"test",json!({"action":"undo"})).await?;ensure(previous["content"]=="alpha omega","prior human history preserved")?;
     }
     Ok(())
+}
+
+async fn automatic_access(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker)->Result<(),String>{
+ use rmcp::{ServiceExt,model::CallToolRequestParams};
+ for client in ["claude-desktop","workbuddy"]{let p=broker.configure_client(app,client,"local-profile".into(),&super::mcp::ai_credentials::random_token()?,0).await?;broker.enable_client(client,&super::mcp::ai_credentials::random_token()?,p.generation).await?;}
+ broker.set_enabled(app,true).await?;
+ let descriptor=broker.publish_descriptor(app,"claude-desktop").await?;
+ let helper=std::env::current_exe().map_err(|_|"native_helper")?.parent().unwrap().join("leaf-mcp-adapter");
+ let mut child=tokio::process::Command::new(helper).args(["--descriptor",descriptor.to_str().ok_or("descriptor_path")?]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).kill_on_drop(true).spawn().map_err(|_|"native_helper")?;
+ let peer=tokio::time::timeout(std::time::Duration::from_secs(8),().serve((child.stdout.take().unwrap(),child.stdin.take().unwrap()))).await.map_err(|_|"native_helper_start_timeout")?.map_err(|_|"native_helper_initialize")?;
+ ensure(peer.list_tools(None).await.map_err(|_|"native_helper_tools")?.tools.len()>=14,"actual helper returns tools without Keychain")?;
+ let raw=peer.call_tool(CallToolRequestParams::new("list_documents")).await.map_err(|_|"native_helper_list")?;
+ let raw=serde_json::to_value(raw).map_err(|_|"native_helper_response")?;
+ let d=raw["structuredContent"]["documents"][0].clone();ensure(d["client"]=="*","MCP enabled exposes the open document without a manual grant")?;
+ let base=json!({"document_id":d["document_id"],"session_id":d["session_id"],"authorization_epoch":d["authorization_epoch"]});
+ let read=base.clone();let snapshot=broker.call(app,"claude-desktop","read_document",read.clone()).await?;
+ let others=broker.call(app,"workbuddy","list_documents",json!({})).await?;ensure(others["documents"][0]["authorization_epoch"]==d["authorization_epoch"],"idle access is shared without invalidating another client")?;
+ let mut begin=base.clone();begin["revision"]=snapshot["revision"].clone();begin["request_id"]=json!("auto-begin");let task=broker.call(app,"claude-desktop","begin_edit",begin.clone()).await?;
+ ensure(broker.call(app,"workbuddy","begin_edit",begin).await.is_err(),"second client cannot edit a locked document")?;
+ let mut batch=base.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!("automatic-batch");batch["revision"]=snapshot["revision"].clone();batch["changes"]=json!([{"from":0,"to":0,"expected":"","insert":"AI created synthetic text"}]);
+ let receipt=broker.call(app,"claude-desktop","apply_edit_batch",batch.clone()).await?;ensure(receipt["applied_revision"].is_number(),"automatic access edits the live buffer")?;
+ ensure(broker.call(app,"claude-desktop","apply_edit_batch",batch).await?==receipt,"automatic batch remains idempotent")?;
+ let mut finish=base.clone();finish["task_id"]=task["task_id"].clone();broker.call(app,"claude-desktop","finish_edit",finish).await?;
+ broker.bridge(app,label,"test",json!({"action":"undo"})).await?;let undone=broker.bridge(app,label,"snapshot",json!({})).await?;ensure(undone["content"]==snapshot["content"],"automatic task is one undo")?;
+ broker.bridge(app,label,"test",json!({"action":"human","content":"Human changed the open document"})).await?;
+ ensure(broker.call(app,"claude-desktop","read_document",read).await.is_err(),"old epoch cannot read or edit after human mutation")?;
+ let fresh=broker.call(app,"claude-desktop","list_documents",json!({})).await?;let fresh=fresh["documents"][0].clone();
+ let mut args=json!({"document_id":fresh["document_id"],"session_id":fresh["session_id"],"authorization_epoch":fresh["authorization_epoch"]});
+ ensure(broker.call(app,"claude-desktop","read_document",args.clone()).await?["content"]=="Human changed the open document","human edits need no second authorization button")?;
+ broker.set_enabled(app,false).await?;ensure(broker.call(app,"claude-desktop","list_documents",json!({})).await.is_err(),"master off blocks document discovery")?;
+ broker.set_enabled(app,true).await?;let current=broker.call(app,"claude-desktop","list_documents",json!({})).await?;ensure(current["documents"].as_array().is_some_and(|v|v.len()==1),"re-enabling restores open-document discovery")?;
+ args["authorization_epoch"]=current["documents"][0]["authorization_epoch"].clone();broker.call(app,"claude-desktop","read_document",args.clone()).await?;
+ broker.unregister(label);ensure(broker.call(app,"claude-desktop","read_document",args).await.is_err(),"closed session is inaccessible")?;
+ let _=peer.cancel().await;let _=child.kill().await;Ok(())
 }

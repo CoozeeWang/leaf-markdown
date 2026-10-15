@@ -17,6 +17,7 @@ mod recent;
 mod new_markdown;
 mod i18n;
 mod mcp;
+mod ai_client_install;
 #[cfg(feature = "native-smoke")]
 mod mcp_test_driver;
 #[cfg(target_os = "macos")]
@@ -1177,7 +1178,7 @@ fn main() {
             let production: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, show_comment_context, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open]);
             move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
                 if invoke.message.command().starts_with("mcp_") && !invoke.message.command().starts_with("mcp_test_") {
-                    let mcp: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp::mcp_register, mcp::mcp_authorize, mcp::mcp_retire_authorization, mcp::mcp_renderer_reply, mcp::mcp_profiles, mcp::mcp_configure_client, mcp::mcp_enable_client, mcp::mcp_revoke_client, mcp::mcp_set_enabled, mcp::mcp_export_stdio, mcp::mcp_stop_edit, mcp::mcp_save_result, mcp::mcp_document_boundary,mcp::mcp_tunnel_status,mcp::mcp_configure_tunnel,mcp::mcp_start_tunnel,mcp::mcp_stop_tunnel]);
+                    let mcp: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp::mcp_register, mcp::mcp_authorize, mcp::mcp_retire_authorization, mcp::mcp_renderer_reply, mcp::mcp_profiles, mcp::mcp_configure_client, mcp::mcp_enable_client, mcp::mcp_revoke_client, mcp::mcp_set_enabled, mcp::mcp_export_stdio,mcp::mcp_add_client, mcp::mcp_stop_edit, mcp::mcp_save_result, mcp::mcp_document_boundary,mcp::mcp_tunnel_status,mcp::mcp_configure_tunnel,mcp::mcp_start_tunnel,mcp::mcp_stop_tunnel]);
                     if invoke.message.command()=="mcp_connection_platform" {
                         let platform: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![mcp::mcp_connection_platform]);
                         return platform(invoke);
