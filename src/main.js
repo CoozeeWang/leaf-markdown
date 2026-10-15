@@ -1814,7 +1814,10 @@ function selectSettingsTab(tab) {
   for (const panel of appearancePopover.querySelectorAll('[data-settings-panel]')) panel.hidden = panel.dataset.settingsPanel !== tab;
   appearanceScroll.scrollTop = 0;
   requestAnimationFrame(updateAppearanceScrollHint);
-  if (tab === 'ai') void refreshAiConnections();
+  if (tab === 'ai') {
+    void refreshAiConnections();
+    if (!aiDownloadStarted) {aiDownloadStarted=true;void refreshAiDownload();}
+  }
 }
 function openSettings(tab) {
   settingsReturnFocus = welcomeScreen.hidden ? document.querySelector('#appearanceButton') : document.querySelector('#welcomeSettings');
@@ -2046,7 +2049,6 @@ async function refreshAiDownload() {
 }
 aiNode('aiRefreshDownload').onclick = () => {void refreshAiDownload();};
 let aiDownloadStarted = false;
-aiNode('settingsTab-ai').addEventListener('click', () => {if (!aiDownloadStarted) {aiDownloadStarted = true; void refreshAiDownload();}});
 setInterval(() => {if (!appearancePopover.hidden && !aiNode('settingsPanel-ai').hidden) void refreshAiConnections();}, 4000);
 window.addEventListener('focus', () => {if (!appearancePopover.hidden && !aiNode('settingsPanel-ai').hidden) void refreshAiConnections();});
 onLanguageChange(renderAiConnections);

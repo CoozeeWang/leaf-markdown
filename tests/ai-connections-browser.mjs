@@ -9,6 +9,7 @@ async function nativePage() {
   await page.route('https://api.github.com/**', route => route.fulfill({json:{draft:false,prerelease:false,tag_name:'v0.0.16',assets:[{name:'tunnel-client-v0.0.16-darwin-arm64.zip',state:'uploaded',browser_download_url:'https://github.com/openai/tunnel-client/releases/download/v0.0.16/tunnel-client-v0.0.16-darwin-arm64.zip'}]}}));
   await page.addInitScript(() => {
     window.isTauri = true;
+    localStorage.setItem('leaf-settings-tab','ai');
     const callbacks = {}, handlers = {}; let id = 0;
     let language = {preference:'zh-Hans',language:'zh-Hans',revision:0};
     const clients = ['chatgpt','claude-desktop','workbuddy'].map(client => ({client,configured:false,enabled:false,generation:0,tunnel:null,has_runtime_key:false}));
@@ -63,7 +64,8 @@ async function nativePage() {
     };
   });
   await page.goto(`${process.env.LEAF_TEST_BASE_URL || 'http://127.0.0.1:41732'}/?document=1`);
-  await page.locator('#appearanceButton').click(); await page.locator('#settingsTab-ai').click();
+  await page.locator('#appearanceButton').click();
+  assert.equal(await page.locator('#settingsTab-ai').getAttribute('aria-selected'),'true', 'restoring the AI tab must run its setup checks without another click');
   await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled, null, {timeout:5000});
   await page.waitForFunction(()=>aiEditorReady(), null, {timeout:5000});
   return page;
