@@ -57,6 +57,10 @@ jobs:
       - name: Verify actual Windows PDF rendering
         if: inputs.platform == 'windows'
         shell: pwsh
+        env:
+          # The isolated PDF probe does not bundle or launch the MCP sidecar.
+          # Keep this override scoped here; the installer validates its sidecar.
+          TAURI_CONFIG: '{"bundle":{"externalBin":[]}}'
         run: |
           npm run build
           if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
