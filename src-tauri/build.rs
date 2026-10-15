@@ -8,5 +8,14 @@ fn main() {
     {
         std::env::set_var("TAURI_CONFIG", r#"{"bundle":{"externalBin":[]}}"#);
     }
-    tauri_build::build()
+    tauri_build::build();
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        // tauri-winres embeds Common Controls v6 into bins, but not examples.
+        // The native PDF example needs the same activation context to start.
+        let manifest = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("examples/windows-pdf-check.manifest");
+        println!("cargo:rerun-if-changed={}", manifest.display());
+        println!("cargo:rustc-link-arg-examples=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg-examples=/MANIFESTINPUT:{}", manifest.display());
+    }
 }
