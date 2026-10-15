@@ -2030,7 +2030,7 @@ async function refreshAiDownload() {
     const platform = desktop ? await invoke('mcp_connection_platform') : null;
     aiConnection.platform = platform;
     aiNode('aiDevice').textContent = t('ai.device', {device:platform ? `${platform.os} · ${platform.arch}` : t('ai.device_unknown')});
-    const response = await fetch('https://api.github.com/repos/openai/tunnel-client/releases/latest', {credentials:'omit',cache:'no-store',signal:controller.signal,headers:{Accept:'application/vnd.github+json'}});
+    const response = await fetch('https://api.github.com/repos/openai/tunnel-client/releases/latest', {credentials:'omit',referrerPolicy:'no-referrer',redirect:'error',cache:'no-store',signal:controller.signal,headers:{Accept:'application/vnd.github+json'}});
     if (!response.ok) throw new Error('release_unavailable');
     const release = await response.json();
     if (serial !== aiDownloadRead) return;

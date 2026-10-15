@@ -11,7 +11,7 @@
   },
   "app": {
     "windows": [{ "label": "main", "title": "Leaf", "width": 1100, "height": 800, "minWidth": 900, "minHeight": 480 }],
-    "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob: https: http:; connect-src ipc: http://ipc.localhost" }
+    "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob: https: http:; connect-src ipc: http://ipc.localhost https://api.github.com/repos/openai/tunnel-client/releases/latest" }
   },
   "bundle": {
     "active": true,
