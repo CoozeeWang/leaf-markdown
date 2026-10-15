@@ -273,6 +273,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <h3 class="mcp-heading">${h('ai.heading')}</h3>
         <label class="setting-check ai-master"><input id="mcpEnabled" type="checkbox" disabled>${h('ai.master')}</label>
         <p class="setting-hint">${h('ai.access_boundary')}</p>
+        <fieldset id="aiConnectionControls" class="ai-connection-controls" disabled>
         <label class="setting-row ai-client-row"><span>${h('ai.client')}</span><span class="ui-select"><select id="aiClient"><option value="chatgpt">ChatGPT</option><option value="claude-desktop">Claude Desktop</option><option value="workbuddy">WorkBuddy</option></select>${icon('chevron',16)}</span></label>
         <div class="ai-actions ai-config-actions"><button id="aiEditSetup" class="ai-button" hidden>${h('ai.edit_setup')}</button><button id="aiClear" class="ai-button ai-danger" disabled></button></div>
         <p id="aiConnectionError" class="setting-hint ai-error" role="alert"></p>
@@ -289,6 +290,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <details id="aiSetupHelp" class="ai-setup-help"><summary>${h('ai.help_title')}</summary><p class="setting-hint">${h('ai.help_hint')}</p><p class="setting-hint ai-setup-prompt">${h('ai.help_prompt')}</p><button id="aiCopyPrompt" class="ai-button">${h('ai.copy_prompt')}</button></details>
         <div class="ai-document-access"><p class="setting-hint">${h('ai.document_access_help')}</p><button id="aiAuthorizeDocument" class="ai-button" disabled></button><p id="aiDocumentGrantStatus" class="setting-hint" role="status"></p></div>
         <p id="aiActionStatus" class="setting-hint" role="status"></p>
+        </fieldset>
       </section>
       </div>
       <div class="appearance-scroll-hint" hidden aria-hidden="true">${h("main.scroll_down_for_more")}</div>
@@ -1835,6 +1837,9 @@ const aiClientNames = {'chatgpt':'ChatGPT','claude-desktop':'Claude Desktop','wo
 const aiNode = id => document.getElementById(id);
 const aiConnection = {profiles:null, tunnel:null, selected:'chatgpt', editing:true, executable:'', busy:false, read:0, exported:null, platform:null};
 const aiOperation = () => crypto.randomUUID();
+aiNode('aiConnectionControls').addEventListener('click',event=>{
+  if(aiNode('aiConnectionControls').disabled) {event.preventDefault();event.stopImmediatePropagation();}
+},true);
 function acceptAiProfile(profile) {
   if (!profile || !aiClients.includes(profile.client) || !Number.isSafeInteger(profile.generation)) return;
   const old = aiConnection.profiles?.clients.find(p => p.client === profile.client);
@@ -1856,6 +1861,17 @@ function renderAiConnections() {
   const chatgpt = value.tunnel?.profile, runtime = value.tunnel?.runtime;
   aiNode('mcpEnabled').checked = !!profiles?.enabled;
   aiNode('mcpEnabled').disabled = !desktop || !profiles || value.busy;
+  const controls=aiNode('aiConnectionControls');
+  controls.disabled=!desktop || !profiles?.enabled || value.busy;
+  for(const target of controls.querySelectorAll('a, summary')) {
+    if(controls.disabled) {
+      target.setAttribute('aria-disabled','true');target.tabIndex=-1;
+      if(target.hasAttribute('href')) {target.dataset.aiHref=target.getAttribute('href');target.removeAttribute('href');}
+    } else {
+      target.removeAttribute('aria-disabled');target.removeAttribute('tabindex');
+      if(target.dataset.aiHref) {target.setAttribute('href',target.dataset.aiHref);delete target.dataset.aiHref;}
+    }
+  }
   aiNode('aiClient').disabled = value.busy;
   for (const option of aiNode('aiClient').options) {
     const item = profiles?.clients.find(p => p.client === option.value);

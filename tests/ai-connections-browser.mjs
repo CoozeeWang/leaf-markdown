@@ -71,6 +71,30 @@ async function nativePage() {
   return page;
 }
 try {
+  await test('master off disables every setup control and link until explicitly enabled', async () => {
+    const page=await nativePage();
+    const group=page.locator('#aiConnectionControls');
+    assert.equal(await group.evaluate(node=>node.disabled),true);
+    assert.ok(await group.locator('input,select,button').evaluateAll(nodes=>nodes.every(n=>n.matches(':disabled'))));
+    assert.ok(await group.locator('a,summary').evaluateAll(nodes=>nodes.every(n=>n.getAttribute('aria-disabled')==='true' && n.tabIndex===-1 && !n.hasAttribute('href'))));
+    await page.locator('#aiSetupHelp').evaluate(node=>node.querySelector('summary').click());
+    assert.equal(await page.locator('#aiSetupHelp').getAttribute('open'),null);
+    await page.locator('#aiCopyPrompt').evaluate(node=>node.click());
+    assert.equal(await page.evaluate(()=>aiMock.calls.some(c=>['mcp_configure_tunnel','mcp_configure_client','mcp_authorize'].includes(c.command))),false);
+    await page.locator('#mcpEnabled').check();
+    await page.waitForFunction(()=>!document.querySelector('#aiConnectionControls').disabled);
+    assert.equal(await page.locator('#aiClient').isDisabled(),false);
+    assert.equal(await page.locator('[data-ai-link]').first().getAttribute('aria-disabled'),null);
+    assert.ok(await page.locator('[data-ai-link]').first().getAttribute('href'));
+    await page.locator('#aiTunnelId').fill('tunnel_synthetic_retained');
+    await page.locator('#mcpEnabled').uncheck();
+    await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
+    assert.equal(await group.evaluate(node=>node.disabled),true);
+    assert.ok(await page.locator('#aiTunnelId').isDisabled());
+    assert.equal(await page.locator('#aiTunnelId').inputValue(),'tunnel_synthetic_retained');
+    assert.ok(await group.locator('a').evaluateAll(nodes=>nodes.every(n=>!n.hasAttribute('href'))));
+    await page.close();
+  });
   await test('current-document authorization defaults to the whole document and still requires an explicit action', async () => {
     const page = await nativePage();
     assert.equal(await page.locator('#aiAuthorizeDocument').count(), 1, 'normal settings must expose document authorization');
