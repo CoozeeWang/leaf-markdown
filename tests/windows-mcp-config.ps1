@@ -18,7 +18,9 @@ $env:LEAF_TEST_TUNNEL_CLIENT = $client.FullName
 cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf official_tunnel_client_prepares_profile_with_spaces_and_unicode -- --nocapture
 if ($LASTEXITCODE -ne 0) { throw 'Production profile preparation failed against official tunnel-client' }
 Remove-Item Env:LEAF_TEST_TUNNEL_CLIENT
+$nativeFailures = @()
 node scripts/test-mcp-startup.mjs
-if ($LASTEXITCODE -ne 0) { throw 'Native consent restart regression failed' }
+if ($LASTEXITCODE -ne 0) { $nativeFailures += 'Native consent restart regression failed' }
 node scripts/test-mcp-adapter.mjs stdio-and-origin --reuse-build
-if ($LASTEXITCODE -ne 0) { throw 'Generated Claude/WorkBuddy host transport regression failed' }
+if ($LASTEXITCODE -ne 0) { $nativeFailures += 'Generated Claude/WorkBuddy host transport regression failed' }
+if ($nativeFailures.Count) { throw ($nativeFailures -join '; ') }

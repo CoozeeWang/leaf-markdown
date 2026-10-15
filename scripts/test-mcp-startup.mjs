@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import assert from 'node:assert/strict';
 import {stageDevBundle} from './desktop-dev-macos.mjs';
+import {createServer} from 'node:net';
 const root=resolve(import.meta.dirname,'..');
 const directory=await mkdtemp(join(tmpdir(),'leaf-startup-'));
 let executable=join(root,'src-tauri/target/debug/leaf'+(process.platform==='win32'?'.exe':''));
@@ -15,7 +16,12 @@ try {
   }
   for(const mode of ['cold','on','off']) {
     const result=join(directory,'result.json');await rm(result,{force:true});
-    const child=spawn(executable,[],{cwd:root,env:{...process.env,LEAF_MCP_TEST_DIR:directory,LEAF_MCP_TEST_MODE:'connection-restart-'+mode},stdio:['ignore','ignore','pipe']});
+    const smokeEnv={};
+    if(process.platform==='win32') {
+      const probe=createServer();await new Promise((res,rej)=>{probe.once('error',rej);probe.listen(0,'127.0.0.1',res);});
+      smokeEnv.LEAF_NATIVE_SMOKE_PORT=String(probe.address().port);await new Promise(res=>probe.close(res));
+    }
+    const child=spawn(executable,[],{cwd:root,env:{...process.env,...smokeEnv,LEAF_MCP_TEST_DIR:directory,LEAF_MCP_TEST_MODE:'connection-restart-'+mode},stdio:['ignore','ignore','pipe']});
     let diagnostic='';child.stderr.on('data',chunk=>diagnostic+=chunk);
     const timeout=setTimeout(()=>child.kill(),45000);
     const code=await new Promise((res,rej)=>{child.on('error',rej);child.on('exit',res);});clearTimeout(timeout);
