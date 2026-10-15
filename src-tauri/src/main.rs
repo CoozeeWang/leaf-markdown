@@ -6,6 +6,10 @@ use std::collections::VecDeque;
 use tauri::{Emitter, Manager};
 #[cfg(target_os = "macos")]
 mod native_print;
+#[cfg(target_os = "windows")]
+mod windows_pdf;
+#[cfg(any(target_os = "windows", test))]
+mod pdf_output;
 #[cfg(target_os = "macos")]
 mod native_shortcuts;
 #[cfg(target_os = "macos")]
@@ -290,9 +294,7 @@ fn open_export(app: tauri::AppHandle, window: tauri::WebviewWindow, mut snapshot
     let builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html?export=1".into()))
         .title(i18n::app_text(&app, "NA0004")).inner_size(950., 800.).min_inner_size(720., 480.);
     let builder = development_window(&app, builder);
-    // The frontend reveals Windows document windows only after initial loading.
-    #[cfg(target_os = "windows")]
-    let builder = builder.visible(false);
+    // Export pages have no document-startup reveal step; keep their window visible.
     #[cfg(not(target_os = "macos"))]
     let builder = if let Some(menu) = app.menu() { builder.menu(menu) } else { builder };
     #[cfg(all(target_os = "windows", feature = "native-smoke"))]
@@ -422,14 +424,50 @@ fn show_comment_context(window: tauri::WebviewWindow) -> Result<(), String> {
     window.popup_menu(&menu).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn print_export(window: tauri::WebviewWindow) -> Result<(), String> {
     if !window.label().starts_with("export-") { return Err(crate::i18n::error("main.open_the_pdf_export_preview_first", serde_json::json!({})).into()); }
     #[cfg(target_os = "macos")]
     return window.with_webview(|platform| unsafe {
         native_print::show(&*(platform.inner() as *const objc2::runtime::AnyObject));
     }).map_err(|e| e.to_string());
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        use tauri_plugin_dialog::DialogExt;
+        let name = window.app_handle().state::<Exports>().0.lock().unwrap()
+            .get(window.label()).map(|s| pdf_output::file_name(&s.name)).ok_or("Export snapshot unavailable.")?;
+        // Only the opt-in native CI probe can bypass the real Save dialog.
+        #[cfg(feature = "native-smoke")]
+        let probe = std::env::var_os("LEAF_NATIVE_SMOKE_PDF_DIR").map(|p| PathBuf::from(p).join(&name));
+        #[cfg(not(feature = "native-smoke"))]
+        let probe: Option<PathBuf> = None;
+        let target = if let Some(path) = probe { path } else {
+            let Some(path) = window.app_handle().dialog().file().set_parent(&window)
+                .add_filter("PDF", &["pdf"]).set_file_name(name).blocking_save_file() else { return Ok(()); };
+            path.into_path().map_err(|e| e.to_string())?
+        };
+        let temp = pdf_output::prepare(&target)?;
+        let output = temp.path().to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        window.with_webview(move |platform| {
+            let completed = tx.clone();
+            let started = unsafe {
+                platform.controller().CoreWebView2().and_then(|webview| {
+                    windows_pdf::start(platform.environment(), webview, &output, Box::new(move |result| {
+                        let result = result.map_err(|e| e.to_string()).and_then(|saved| {
+                            if saved { Ok(()) } else { Err("The PDF renderer could not save the document.".into()) }
+                        });
+                        let _ = completed.send(result);
+                    }))
+                })
+            };
+            if let Err(error) = started { let _ = tx.send(Err(error.to_string())); }
+        }).map_err(|e| e.to_string())?;
+        // This command runs on a worker; WebView2 completion stays on the UI thread.
+        rx.recv().map_err(|e| e.to_string())??;
+        pdf_output::finish(temp, &target)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     window.print().map_err(|e| e.to_string())
 }
 

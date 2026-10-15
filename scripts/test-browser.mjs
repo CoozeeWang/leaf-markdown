@@ -14,7 +14,7 @@ const core = [
   'body-fonts',
   'comments',
   'list-images', 'clipboard-images',
-  'recovery-notice', 'file-feedback', 'status-notices',
+  'recovery-notice', 'file-feedback', 'status-notices', 'pdf-export-native',
 ].map(name => `${name}-browser.mjs`);
 const available = (await readdir('tests')).filter(name => name.endsWith('-browser.mjs')).sort();
 const args = process.argv.slice(2);

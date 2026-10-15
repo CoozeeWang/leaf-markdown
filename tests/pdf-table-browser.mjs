@@ -36,6 +36,7 @@ try {
   await page.goto('http://127.0.0.1:41732/?export=fixture-pdf');
   await page.locator('article h1').waitFor();
   assert.equal(await page.locator('article h1').innerText(),'1. 导出测试');
+  assert.equal(await page.title(), '导出测试');
   assert.equal(await page.locator('.print-properties').count(),0);
   await page.check('#properties');
   assert.ok((await page.locator('.print-properties').innerText()).includes('v1'));
