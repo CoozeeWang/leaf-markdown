@@ -1115,7 +1115,7 @@ export function createLeafEditor(options) {
   let aiTask = null;
   const editability = new Compartment();
   let taskFocus = null;
-  let bufferRevision = 0;
+  let bufferRevision = 0, mutationDocumentGeneration = 0;
   const mutationReceipts = new RendererMutationReceipts();
   const languageCompartment = new Compartment();
   const phrases = () => EditorState.phrases.of({
@@ -1536,6 +1536,7 @@ export function createLeafEditor(options) {
       view.dom.classList.toggle('cm-source-mode', value); view.focus();
     },
     getValue: () => sourceOf(view.state),
+    mutationDocumentGeneration: () => mutationDocumentGeneration,
     setHeadingNumbers(show) { view.dispatch({ effects: toggleHeadingNumbers.of(show) }); },
     setFileNameTitle(show) { view.dispatch({effects:toggleFileNameTitle.of(show)}); },
     setFileName(name) {
@@ -1543,6 +1544,7 @@ export function createLeafEditor(options) {
     },
     setValue(value) {
       if(aiTask) throw new Error('document_locked');
+      mutationDocumentGeneration++;
       suppressChanges = true;
       // A newly opened/reloaded document must never undo into the previous file.
       // The replacement has to be dispatched before the history is dropped and
@@ -1564,6 +1566,7 @@ export function createLeafEditor(options) {
       options.onOutlineChange?.(value);
     },
     restoreValue(value) {
+      mutationDocumentGeneration++;
       // Restoration is one edit in this document, never a fresh document load.
       // Filters must not renumber or otherwise normalize the stored source.
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value },

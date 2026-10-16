@@ -23,7 +23,7 @@ try {
    assert.ok(geometry.rects.length>=3);
    assert.ok(Math.abs(geometry.rects[0].left-geometry.start.left)<1,'partial first row remains exact');
    for(const rect of geometry.rects.slice(1)) assert.ok(Math.abs(rect.left-geometry.left)<1,`continuation inherits indentation: ${JSON.stringify({prefix,geometry})}`);
-   assert.ok(Math.abs(geometry.rects.at(-1).right-geometry.end.right)<1,'partial last row remains exact');
+   assert.ok(Math.abs(geometry.rects.at(-1).right-geometry.end.right)<1,`partial last row remains exact: ${JSON.stringify({prefix,reverse,geometry})}`);
   }
  }
  await page.screenshot({path:artifactPath('selection-edges-fixed.png')});

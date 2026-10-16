@@ -56,7 +56,12 @@ try {
     ed.view.dispatch({ selection: { anchor: ed.view.state.doc.length }, scrollIntoView: true }); ed.focus();
   });
   await page.keyboard.type('END_MARKER');
-  assert.equal(await page.evaluate(() => ed.getValue()), longDocument + 'END_MARKER');
+  const boundary=longDocument.indexOf('[^note-1]:');
+  const bodyEnd=boundary-1;
+  assert.equal(await page.evaluate(() => ed.getValue()),longDocument.slice(0,bodyEnd)+'END_MARKER'+longDocument.slice(bodyEnd),'typing at document end continues the body before protected definitions');
+  assert.equal((await page.evaluate(() => ed.getValue())).slice(-longDocument.slice(boundary).length),longDocument.slice(boundary),'every note remains byte-for-byte unchanged');
+  await page.evaluate(()=>ed.undo());
+  assert.equal(await page.evaluate(()=>ed.getValue()),longDocument,'one undo restores the end-of-body input');
   await page.screenshot({ path: artifactPath('leaf-long-document.png') });
   await writeFile(artifactPath('long-document-metrics.json'), JSON.stringify(timings, null, 2) + '\n');
   assert.deepEqual(errors, []);

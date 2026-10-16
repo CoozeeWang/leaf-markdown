@@ -24,7 +24,7 @@ try {
  await page.waitForFunction(()=>document.querySelector('.note-body').textContent.includes('**粗体**'));
  await page.keyboard.insertText('新');
  assert.ok((await text()).includes('**新粗体**'));
- await page.keyboard.press('Meta+z');assert.equal(await text(),source,'note undo uses the document history');
+ await page.keyboard.press('ControlOrMeta+z');assert.equal(await text(),source,'note undo uses the document history');
  assert.ok(!(await note.evaluate(el=>el.value)).includes('新粗体'),'undo must restore the sidebar buffer too');
  await page.click('#redoButton');assert.ok((await text()).includes('**新粗体**'));
  await page.click('#undoButton');assert.equal(await text(),source);

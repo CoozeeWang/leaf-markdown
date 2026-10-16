@@ -88,7 +88,7 @@ class FootnoteRegion extends WidgetType {
 // A collapsed main-document caret cannot edit an invisible definition. Full
 // document selections and explicit note edits still use normal document history.
 export const footnoteBoundaryGuard = EditorState.transactionFilter.of(tr=>{
-  if(tr.startState.field(sourceMode) || !tr.startState.selection.main.empty || !tr.isUserEvent('delete'))return tr;
+  if(tr.startState.field(sourceMode) || !tr.startState.selection.main.empty || !tr.isUserEvent('delete') || tr.isUserEvent('delete.footnote'))return tr;
   const defs=tr.startState.field(footnoteIndex).definitions;
   let blocked=false;
   tr.changes.iterChangedRanges((from,to)=>{
@@ -152,9 +152,14 @@ export function footnoteRegion(createEditor, applyBody) {
       const defs=indexFootnotes(tr.newDoc.toString()).definitions;
       const at=tr.newSelection.main.head;
       if(!defs.some(def=>at>=def.lineFrom&&at<=def.to))return tr;
-      const def=defs.find(def=>at>=def.lineFrom&&at<=def.to);
-      const line=tr.newDoc.lineAt(def.lineFrom);
-      const anchor=line.number>1?tr.newDoc.line(line.number-1).to:0;
+      let anchor=at, def;
+      // Consecutive definitions form one protected region. Stepping back just
+      // one line can strand the caret inside the previous invisible note.
+      while((def=defs.find(def=>anchor>=def.lineFrom&&anchor<=def.to))) {
+        const line=tr.newDoc.lineAt(def.lineFrom);
+        if(line.number===1){anchor=0;break;}
+        anchor=tr.newDoc.line(line.number-1).to;
+      }
       return [tr,{selection:{anchor},sequential:true}];
     }),
     // Layout follows actual edits, never loading, source mode, history or an IME

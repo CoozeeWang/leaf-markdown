@@ -53,7 +53,7 @@ for (const engine of process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGIN
     const codeFont=await page.locator('.cm-leaf-inline-code').evaluate(el=>getComputedStyle(el).fontFamily);
     const choose=async (script,candidates)=>{
       for(const id of candidates) if(!await page.locator(`#${script}FontSelect option[value="${id}"]`).evaluate(option=>option.disabled)) {
-        await pick(page,`#${script}FontSelect`,id); return id;
+        await pick(page,`#${script}FontSelect`,id); return page.locator(`#${script}FontSelect`).inputValue();
       }
       throw new Error('No usable body preset');
     };

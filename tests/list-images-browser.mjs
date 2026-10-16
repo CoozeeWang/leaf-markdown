@@ -48,7 +48,7 @@ for (const [name, engine, options] of [['chromium',chromium,launchOptions],['web
    await page.keyboard.press('ControlOrMeta+z');
    if(steps===1)assert.equal(await get(),source,'one undo restores indentation and inserted separator together');
    await page.keyboard.press('ControlOrMeta+Shift+z');
-   assert.equal(await get(),detached);
+   assert.equal(await get(),detached,`redo restores the outdent: ${name}, steps=${steps}, source=${JSON.stringify(source)}`);
    await page.evaluate(()=>{const at=v.state.doc.toString().indexOf('![');v.dispatch({selection:{anchor:at}});v.focus();});
    await page.keyboard.press('Shift+Tab');
    assert.equal(await get(),detached,'repeated outdent adds no blank lines');

@@ -5,7 +5,7 @@ const engines=process.env.LEAF_REGION_ENGINE?[process.env.LEAF_REGION_ENGINE]:['
 for(const [engine,platform] of engines.flatMap(engine=>(engine==='chrome'?['MacIntel','Win32']:['MacIntel']).map(platform=>[engine,platform]))) {
  const browser=await(engine==='webkit'?webkit.launch({headless:true}):chromium.launch(launchOptions));
  try {
-  const page=await browser.newPage({viewport:{width:1200,height:950}}),errors=[];
+  const page=await browser.newPage({locale:'zh-CN',viewport:{width:1200,height:950}}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(platform=>{Object.defineProperty(navigator,'platform',{get:()=>platform});Object.defineProperty(navigator,'userAgentData',{get:()=>undefined});},platform);
   await page.goto('http://127.0.0.1:41732/tests/native-footnote-region.html');

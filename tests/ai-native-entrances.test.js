@@ -14,7 +14,7 @@ function writingHarness(importAttachment) {
     if(spec.changes){const {from,to,insert}=spec.changes;content=content.slice(0,from)+insert+content.slice(to);revision++;}
     update?.({docChanged:!!spec.changes,changes:{mapPos:value=>value}});
   },focus(){}};
-  const editor={view,mutationAllowed:()=>!locked,mcpSnapshot:()=>({content,revision})};
+  const editor={view,mutationDocumentGeneration:()=>0,mutationAllowed:()=>!locked,mcpSnapshot:()=>({content,revision})};
   const context=vm.createContext({document:{querySelector:()=>node(),createElement:node,addEventListener(){}},window:node(),setTimeout,clearTimeout,AbortController,StateEffect:{appendConfig:{of:value=>value}},EditorView:{updateListener:{of:value=>value}},setResourceReader(){},setResourceRevealer(){},setAttr(){},shortcutText:value=>value,t:value=>value,translatedMessage:(_key,{error})=>error,isolateHistory:{of:value=>value},bodyStart:()=>0,markdownLink:(label,target)=>`[${label}](${target})`,attachmentInsertion:(_source,b,links)=>({text:links.join(' '),anchor:b.from+links.join(' ').length}),refreshImages(){},getCurrentWindow:()=>({label:'synthetic-window'})});
   vm.runInContext(source.replace(/^import .*$/gm,'').replace(/^export /gm,''),context);
   const writing=context.setupWriting({editor,desktop:true,invoke:importAttachment,save:async()=>true,choose:async()=>['synthetic.txt'],serialized:action=>action(),editable:()=>true,status(){},icon:()=>''});

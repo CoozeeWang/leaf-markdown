@@ -42,7 +42,8 @@ try{
  await page.waitForFunction(()=>!document.querySelector('.close-document-dialog'));
  assert.equal(await page.evaluate(()=>calls.filter(c=>c.command==='plugin:window|destroy').length),0,'failed save leaves window open');
  await page.evaluate(async()=>{saveMode='ok';const {desktopSave}=await import('/src/desktop.js');await desktopSave();});
- assert.equal(await page.locator('#saveStatus').innerText(),'已保存');
+ assert.equal(await page.locator('#saveIndicator').innerText(),'已保存');
+ assert.equal(await page.locator('#saveStatus').innerText(),'','a successful save clears the error notice');
  await page.evaluate(async()=>{const {desktopRestore}=await import('/src/desktop.js');await desktopRestore('# 第二次修改');handlers['leaf-close']({});});
  await page.getByRole('alertdialog').waitFor();
  await page.evaluate(()=>document.documentElement.dataset.theme='dark');

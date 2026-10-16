@@ -46,5 +46,29 @@ try{
  assert.equal(await page.evaluate(()=>reveals.length),1,'pressing the card asks the desktop to reveal the file');
  assert.equal(await page.evaluate(()=>reveals[0].relative),'assets/IMG_1234.HEIC','the reveal names the card\'s own file');
  assert.ok(await page.$('.leaf-image-status[data-kind="missing"]'),'pressing the card keeps the card instead of switching to source');
+ // Pending imports follow ordinary edits, but never cross document identity,
+ // recovery, or an AI lock/unlock cycle even when the final bytes are equal.
+ for(const action of ['load','restore','lock','authorization']) {
+  await page.evaluate(action=>{
+   ed.setValue('abc');ed.view.dispatch({selection:{anchor:3}});
+   window.contextGeneration=0;
+   if(action==='authorization') {
+    ed.captureMutation=()=>({generation:contextGeneration,...ed.mcpSnapshot()});
+    ed.assertMutationCurrent=token=>{const now=ed.captureMutation();if(!ed.mutationAllowed()||['generation','content','revision'].some(k=>token[k]!==now[k]))throw Error('stale_mutation_context');};
+   }
+   delay=true;delete window.resume;window.pending=writing.attachments(['/source/photo.png']);
+  },action);
+  await page.waitForFunction(()=>typeof resume==='function');
+  await page.evaluate(action=>{
+   if(action==='load')ed.setValue('abc');
+   if(action==='restore')ed.restoreValue('abc');
+   if(action==='lock'){const task={task_id:'pending-import',session_id:'synthetic-session',authorization_epoch:1,scope:{from:0,to:3}};ed.beginAiTask(task);ed.finishAiTask(task);}
+   if(action==='authorization'){contextGeneration++;ed.view.dispatch({changes:{from:0,insert:'X'}});}
+   resume();
+  },action);
+  await page.evaluate(()=>pending);
+  assert.equal(await page.evaluate(()=>ed.getValue()),action==='authorization'?'Xabc':'abc',`${action} cancels a pending import`);
+  assert.match(await page.evaluate(()=>statuses.at(-1).values.error),/stale_mutation_context/);
+ }
  assert.deepEqual(errors,[]);console.log('PASS attachment initial save cancellation, write failure, pending edits and undo preserving files');
 }finally{await browser.close();}

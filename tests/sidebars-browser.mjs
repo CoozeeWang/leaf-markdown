@@ -13,7 +13,10 @@ try {
   v.dispatch({changes:{from:0,to:v.state.doc.length,insert:'# 阅读与思考\n\n这是一篇带有注释的文档[^1]。\n\n## 行业观察\n\n左右边栏可以独立展开、调整宽度。\n\n## 延伸阅读\n\n[^1]: '+ '这条较长的注释用来检查调整宽度后的换行和高度。'.repeat(10)}});
  });
  assert.equal(await page.locator('.topbar #outlineButton, .topbar #notesButton').count(),0);
- for (const id of ['outline','notes']) assert.equal((await page.locator(`#${id}Button`).boundingBox()).width,32);
+ for (const id of ['outline','notes','comments']) {
+  const geometry=await page.locator(`#${id}Button`).evaluate(button=>{const rail=button.closest('.sidebar-rail'),r=rail.getBoundingClientRect(),b=button.getBoundingClientRect();return {rail:r.width,button:b.width,fits:b.left>=r.left&&b.right<=r.right,usable:rail.clientWidth};});
+  assert.equal(geometry.rail,32);assert.equal(geometry.button,id==='outline'?geometry.rail:geometry.usable);assert.ok(geometry.fits,`${id} control fits its rail including the border`);
+ }
  await page.click('#outlineButton');await page.click('#notesButton');
  for (const id of ['outline','notes']) assert.equal(await page.locator(`#${id}Button`).isVisible(),false);
  const width=async id=>(await page.locator(`#${id}Drawer`).boundingBox()).width;

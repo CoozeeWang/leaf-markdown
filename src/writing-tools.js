@@ -20,8 +20,12 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
   const view = editor.view, bookmarks = new Set();
   const canWrite=()=>editable() && editor.mutationAllowed();
   let lockGeneration=0,locked=!editor.mutationAllowed();
-  const capture=()=>editor.captureMutation?.() ?? {generation:lockGeneration,...editor.mcpSnapshot()};
+  const capture=()=>({
+    ...(editor.captureMutation?.() ?? {generation:lockGeneration,...editor.mcpSnapshot()}),
+    documentGeneration:editor.mutationDocumentGeneration(),
+  });
   const validate=token=>{
+    if(token.documentGeneration!==editor.mutationDocumentGeneration())throw new Error('stale_mutation_context');
     if(editor.assertMutationCurrent)return editor.assertMutationCurrent(token);
     const now=editor.mcpSnapshot();
     if(!canWrite()||token.generation!==lockGeneration||token.revision!==now.revision||token.content!==now.content)throw new Error('stale_mutation_context');
@@ -29,7 +33,16 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
   let insertionFollow=null;
   view.dispatch({ effects: StateEffect.appendConfig.of(EditorView.updateListener.of(update => {
     const next=!editor.mutationAllowed();if(next!==locked){locked=next;lockGeneration++;}
-    if (update.docChanged) for (const b of bookmarks) { b.from=update.changes.mapPos(b.from,1); b.to=update.changes.mapPos(b.to,-1); if(b.to<b.from)b.to=b.from; }
+    if (update.docChanged) for (const b of bookmarks) {
+      b.from=update.changes.mapPos(b.from,1); b.to=update.changes.mapPos(b.to,-1); if(b.to<b.from)b.to=b.from;
+      const now=capture();
+      // Follow edits only in the same live document and authorization. A load,
+      // restoration or lock/authorization change permanently invalidates it.
+      const identity=['generation','documentGeneration','document_id','session_id','authorization_epoch','native_generation'];
+      if(canWrite() && identity.every(key=>b.context[key]===now[key]) && b.context.content===update.startState.doc.toString()) {
+        b.context={...b.context,content:update.state.doc.toString(),revision:b.context.revision+update.transactions.filter(tr=>tr.docChanged).length};
+      }
+    }
     if(insertionFollow&&(update.docChanged||update.selectionSet||(update.focusChanged&&!view.hasFocus)))insertionFollow.stop();
   })) });
   if (desktop) {

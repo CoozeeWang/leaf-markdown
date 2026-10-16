@@ -29,9 +29,9 @@ try {
  assert.equal(await page.locator('.note-card[data-state="undefined"]').count(),0);
  assert.equal(await page.locator('#notesCount').textContent(),'2');
  assert.ok((await doc()).endsWith('[^2]:'));
- await page.keyboard.press('Meta+z');assert.equal(await doc(),missing);
+ await page.keyboard.press('ControlOrMeta+z');assert.equal(await doc(),missing);
  assert.equal(await page.locator('.note-card[data-state="undefined"]').count(),1);
- await page.keyboard.press('Meta+Shift+z');assert.ok((await doc()).endsWith('[^2]:'));
+ await page.keyboard.press('ControlOrMeta+Shift+z');assert.ok((await doc()).endsWith('[^2]:'));
  await page.screenshot({path:artifactPath('footnote-completion.png')});
  assert.deepEqual(errors,[]);console.log('footnote-completion-browser: PASS');
 } finally {await browser.close();}

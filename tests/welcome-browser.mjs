@@ -7,8 +7,8 @@ try {
  await page.goto('http://127.0.0.1:41732');
  await page.locator('.welcome-mark').evaluate(el=>el.decode());
  await page.screenshot({path:artifactPath('leaf-welcome-light.png')});
- const buttons=await page.locator('.welcome-actions button').evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect();return {height:r.height,top:r.top,right:r.right}}));
- assert.equal(buttons.length,3);assert.ok(buttons.every(b=>b.height===44&&b.top===buttons[0].top));
+ const buttons=await page.locator('.welcome-actions button').evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect();return {id:el.id,height:r.height,width:r.width,top:r.top,right:r.right}}));
+ assert.deepEqual(buttons.map(b=>b.id),['welcomeNewButton','welcomeOpenButton','welcomeRecentButton','welcomeLanguageSelect']);assert.ok(buttons.every(b=>b.height===44&&b.top===buttons[0].top));assert.ok(buttons.slice(2).every(b=>b.width===44),'recent and language controls stay square');
  assert.equal(await page.locator('.welcome-title').textContent(),'Leaf轻量 Markdown 编辑器');
  assert.ok(await page.locator('.welcome-name').evaluate(el=>getComputedStyle(el).fontFamily.startsWith('Palatino')));
  assert.ok(await page.locator('.welcome-card').evaluate(el=>Math.abs((el.getBoundingClientRect().top+el.getBoundingClientRect().bottom)/2-innerHeight/2)<60),'welcome content stays near the window center');
@@ -38,7 +38,7 @@ try {
  const before=await page.locator('.welcome-actions').boundingBox();
  await page.evaluate(()=>{window.drafts=[{key:'draft',id:'one',kind:'draft',timestamp:Date.now(),bytes:20}];window.dispatchEvent(new Event('focus'));});
  await page.locator('.welcome-recovery-hint').waitFor({state:'visible'});
- assert.equal(await page.locator('.welcome-actions button').count(),3);
+ assert.equal(await page.locator('.welcome-actions button').count(),4);
  assert.deepEqual(await page.locator('.welcome-actions').boundingBox(),before);
  await page.screenshot({path:artifactPath('leaf-welcome-recovery-dark.png')});
  await page.emulateMedia({colorScheme:'light'});
@@ -135,7 +135,7 @@ try {
  await native.waitForFunction(()=>nativeCalls.some(c=>c.command==='open_document'&&c.args.path==='/Users/test/新建.md'));
  assert.ok(await native.evaluate(()=>nativeCalls.some(c=>c.command==='new_document'&&c.args.path==='/Users/test/新建.md')));
  assert.equal(await native.locator('#welcomeScreen').isVisible(),true,'native new must open a real document window, not turn the welcome buffer into an unsavable document');
- assert.equal(await native.locator('.welcome-actions button').count(),3);
+ assert.equal(await native.locator('.welcome-actions button').count(),4);
  assert.deepEqual(errors,[]);
  console.log('PASS welcome layout, recent tooltip/popover, narrow/dark, new document and file drop');
 }finally{await browser.close()}

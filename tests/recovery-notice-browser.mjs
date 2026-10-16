@@ -31,7 +31,7 @@ try {
  await page.clock.runFor(60);assert.equal(await page.locator('#statusAnnouncement').textContent(),'已保存');
  await page.clock.runFor(4100);assert.equal(await page.locator('#saveStatus').textContent(),'');
  await page.evaluate(async()=>{saveFails=true;const {desktopSave}=await import('/src/desktop.js');await desktopSave();});await page.clock.runFor(4100);assert.match(await page.locator('#saveStatus').textContent(),/尚未保存/);
- await page.evaluate(async()=>{saveFails=false;const {desktopSave}=await import('/src/desktop.js');await desktopSave();});assert.equal(await page.locator('#saveStatus').textContent(),'已保存');await page.clock.runFor(4100);assert.equal(await page.locator('#saveStatus').textContent(),'');
+ await page.evaluate(async()=>{saveFails=false;const {desktopSave}=await import('/src/desktop.js');await desktopSave();});assert.equal(await page.locator('#saveIndicator').textContent(),'已保存');assert.equal(await page.locator('#saveStatus').textContent(),'');await page.clock.runFor(4100);assert.equal(await page.locator('#saveIndicator').textContent(),'已保存','saved state stays in the footer');
 
  // All messages use one top slot, including recovery fallback and errors.
  const notice=page.locator('#statusNotice'), close=page.getByRole('button',{name:'关闭提示',exact:true});
