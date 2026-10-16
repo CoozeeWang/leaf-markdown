@@ -9,8 +9,10 @@ $otherDir = Join-Path $root 'other installation'
 $adapter = Join-Path $installDir 'leaf-mcp-adapter.exe'
 $exe = Join-Path $installDir 'leaf.exe'
 $config = Get-Content "$PSScriptRoot/../src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+$manufacturer = if ($config.bundle.publisher) { $config.bundle.publisher } else { $config.identifier.Split('.')[1] }
+$installerKey = "HKCU:\Software\$manufacturer\$($config.productName)"
 $appData = Join-Path $env:APPDATA $config.identifier
-if ((Test-Path $root) -or (Test-Path $appData)) { throw 'Existing test or application data; refusing to overwrite' }
+if ((Test-Path $root) -or (Test-Path $appData) -or (Test-Path $installerKey)) { throw 'Existing test or application data; refusing to overwrite' }
 New-Item -ItemType Directory -Path $root, $otherDir, $appData | Out-Null
 $sentinel = Join-Path $appData 'synthetic-upgrade-settings.json'
 [IO.File]::WriteAllText($sentinel, '{"enabled":true,"synthetic":"preserve saved connection settings"}')
@@ -36,6 +38,16 @@ try {
   Invoke-Installer
   $expectedAdapter = (Get-FileHash $adapter).Hash
   $expectedMain = (Get-FileHash $exe).Hash
+  $pe = [IO.File]::ReadAllBytes($adapter)
+  $header = [BitConverter]::ToInt32($pe, 0x3c)
+  if ([BitConverter]::ToUInt16($pe, $header + 92) -ne 2) { throw 'Installed helper would allocate a console window' }
+  $probe = [Diagnostics.ProcessStartInfo]::new($adapter, '--leaf-build-identity')
+  $probe.UseShellExecute = $false; $probe.RedirectStandardOutput = $true
+  $identityProcess = [Diagnostics.Process]::Start($probe)
+  if (!$identityProcess.WaitForExit(10000)) { $identityProcess.Kill(); throw 'Installed no-console helper did not exit' }
+  $identity = $identityProcess.StandardOutput.ReadToEnd().Trim()
+  if ($identityProcess.ExitCode -ne 0 -or $identity -notmatch ':windows:x86_64:production:release$') { throw 'Installed no-console helper lost its inherited stdout pipe' }
+  Write-Output 'PASS installed no-console helper PE subsystem and inherited output pipe'
   # A mapped executable has the same Windows replacement lock regardless of
   # MCP authentication. This fixture requires no real broker or credentials.
   $source = Join-Path $root 'SyntheticAdapter.cs'
@@ -99,5 +111,8 @@ try {
     if (!$p.WaitForExit(30000)) { $p.Kill() }
   }
   Remove-Item $appData -Recurse -Force -ErrorAction SilentlyContinue
+  # NSIS intentionally retains its language preference after uninstall. This
+  # key was absent before this test; do not leave it for the next clean-install test.
+  Remove-Item $installerKey -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
 }

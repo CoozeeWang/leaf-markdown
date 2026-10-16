@@ -1272,6 +1272,7 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .leaf-endnote.is-editing .leaf-footnote-body { background:color-mix(in srgb, var(--accent-soft) 65%, transparent); box-shadow:inset 0 -1px var(--accent); }
 .leaf-endnote:has(.cm-content:focus-visible) { outline:2px solid var(--accent); outline-offset:4px; border-radius:5px; }
 
+.ai-local-title { margin: 14px 0 8px; font-size: 14px; font-weight: 600; }
 .ai-local-steps { padding-left: 20px; }
 .ai-local-steps > li { margin: 8px 0; line-height: 1.7; }
 #aiLocalResult:empty { display: none; }

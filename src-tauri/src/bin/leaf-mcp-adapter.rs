@@ -1,4 +1,5 @@
-//! Console MCP process on every platform, including Windows. No GUI subsystem.
+#![cfg_attr(target_os="windows", windows_subsystem="windows")]
+//! MCP process with inherited protocol pipes. Windows must not allocate a console.
 //! The adapter owns no documents: every operation goes to the live Leaf broker.
 #[path = "../ai_credentials.rs"]
 mod ai_credentials;
@@ -83,7 +84,14 @@ fn main() {
     std::env::remove_var("CONTROL_PLANE_API_KEY");
     if std::env::args().nth(1).as_deref()==Some("--leaf-build-identity") {println!("{}",ai_credentials::native_build_identity());return;}
     #[cfg(feature="native-smoke")]
-    if let Some(path)=std::env::var_os("LEAF_MCP_TEST_ADAPTER_ENV_TRACE"){let _=std::fs::write(path,serde_json::to_vec(&serde_json::json!({"has_runtime_key":std::env::var_os("CONTROL_PLANE_API_KEY").is_some()})).unwrap());}
+    if let Some(path)=std::env::var_os("LEAF_MCP_TEST_ADAPTER_ENV_TRACE"){
+        let mut proof=serde_json::json!({"has_runtime_key":std::env::var_os("CONTROL_PLANE_API_KEY").is_some()});
+        #[cfg(windows)] {
+            #[link(name="kernel32")] extern "system" {fn GetConsoleWindow()->*mut std::ffi::c_void;}
+            proof["has_console"]=serde_json::json!(unsafe{!GetConsoleWindow().is_null()});
+        }
+        let _=std::fs::write(path,serde_json::to_vec(&proof).unwrap());
+    }
     let runtime=tokio::runtime::Runtime::new().expect("MCP runtime unavailable");
     if let Err(category)=runtime.block_on(run()) {eprintln!("Leaf MCP: {category}");std::process::exit(1);}
 }

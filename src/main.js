@@ -277,7 +277,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <label class="setting-row ai-client-row"><span>${h('ai.client')}</span><span class="ui-select"><select id="aiClient"><option value="chatgpt">ChatGPT</option><option value="claude-desktop">Claude Desktop</option><option value="workbuddy">WorkBuddy</option></select>${icon('chevron',16)}</span></label>
         <div class="ai-actions ai-config-actions"><button id="aiEditSetup" class="ai-button" hidden>${h('ai.edit_setup')}</button><button id="aiClear" class="ai-button ai-danger" disabled></button></div>
         <p id="aiConnectionError" class="setting-hint ai-error" role="alert"></p>
-        <div id="aiLocalSetup" hidden><ol class="setting-hint ai-local-steps"><li id="aiLocalStep1"></li><li id="aiLocalStep2"></li><li id="aiLocalStep3"></li></ol><div class="ai-actions ai-config-actions"><button id="aiLocalConfigure" class="ai-button ai-primary"></button></div><p id="aiLocalResult" class="setting-hint" role="status"></p></div>
+        <div id="aiLocalSetup" hidden><h4 id="aiClaudeManualTitle" class="ai-local-title" hidden></h4><ol class="setting-hint ai-local-steps"><li id="aiLocalStep1"></li><li id="aiLocalStep2"></li><li id="aiLocalStep3"></li></ol><div class="ai-actions ai-config-actions"><button id="aiLocalConfigure" class="ai-button ai-primary"></button></div><p id="aiLocalResult" class="setting-hint" role="status"></p></div>
         <div id="aiChatGPTSetup" class="ai-guided-card">
           <h4>${h('ai.guided_title')}</h4><p id="aiSavedStatus" class="setting-hint" role="status"></p>
           <ol class="ai-guided-steps">
@@ -1883,6 +1883,8 @@ function renderAiConnections() {
   aiNode('aiSetupHelp').hidden = value.selected !== 'chatgpt';
   aiNode('aiLocalSetup').hidden = value.selected === 'chatgpt';
   const windowsClaude=value.selected==='claude-desktop'&&value.platform?.os==='windows';
+  aiNode('aiClaudeManualTitle').hidden=!windowsClaude;
+  aiNode('aiClaudeManualTitle').textContent=t('ai.claude_manual_title');
   aiNode('aiLocalConfigure').textContent=windowsClaude?t('ai.claude_save_bundle'):t('ai.add_client',{client:value.selected==='claude-desktop'?'Claude':'WorkBuddy'});
   aiNode('aiLocalConfigure').disabled=controls.disabled||!profile;
   for(const [index,key] of ['step1','step2','step3'].entries()) aiNode(`aiLocalStep${index+1}`).textContent=t(`ai.${value.selected==='claude-desktop'?'claude':'workbuddy'}_${key}${windowsClaude&&index<2?'_windows':''}`);

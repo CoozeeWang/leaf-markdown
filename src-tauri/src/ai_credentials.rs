@@ -123,16 +123,22 @@ pub fn read_private(path:&std::path::Path)->Result<String,String>{
  #[cfg(unix)]{use std::os::unix::fs::MetadataExt;unsafe extern "C"{fn getuid()->u32;}if metadata.mode()&0o077!=0||metadata.uid()!=unsafe{getuid()}{return Err("unsafe_credential_path".into());}}
  std::fs::read_to_string(path).map_err(|_|"credential_unavailable".into())
 }
+#[cfg(windows)]fn hidden_windows_command(program:impl AsRef<std::ffi::OsStr>)->std::process::Command {
+ use std::os::windows::process::CommandExt;
+ let mut command=std::process::Command::new(program);
+ command.creation_flags(0x08000000); // CREATE_NO_WINDOW; preserve redirected handles.
+ command
+}
 #[cfg(windows)]fn protect_windows(path:&std::path::Path)->Result<(),String>{
- use std::process::{Command,Stdio};
- let user=Command::new("whoami.exe").args(["/user","/fo","csv","/nh"]).output().map_err(|_|"credential_permissions")?;
+ use std::process::Stdio;
+ let user=hidden_windows_command("whoami.exe").args(["/user","/fo","csv","/nh"]).output().map_err(|_|"credential_permissions")?;
  let sid=String::from_utf8_lossy(&user.stdout).split(',').last().unwrap_or("").trim().trim_matches('"').to_string();
  if !sid.starts_with("S-1-")||!sid.bytes().all(|b|b.is_ascii_digit()||b==b'S'||b==b'-'){return Err("credential_permissions".into());}
  // Directories must pass the current user's access to files/subdirectories.
  // A non-inheritable grant can strip inherited access from existing siblings
  // when the master preference first protects their shared application folder.
  let permission=if path.is_dir(){format!("*{sid}:(OI)(CI)F")}else{format!("*{sid}:F")};
- if !Command::new("icacls.exe").arg(path).args(["/inheritance:r","/grant:r",&permission]).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s|s.success()){return Err("credential_permissions".into());}Ok(())
+ if !hidden_windows_command("icacls.exe").arg(path).args(["/inheritance:r","/grant:r",&permission]).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s|s.success()){return Err("credential_permissions".into());}Ok(())
 }
 fn runtime_cache()->&'static std::sync::Mutex<HashMap<String,String>> {static CACHE:std::sync::OnceLock<std::sync::Mutex<HashMap<String,String>>>=std::sync::OnceLock::new();CACHE.get_or_init(Default::default)}
 // Keyring's macOS setter creates a caller-only ACL. For NEW Leaf entries use
@@ -475,6 +481,22 @@ impl AiClientProfileStore {
 pub mod tests {
     use super::*;
     use std::sync::Mutex;
+    #[cfg(windows)]
+    #[test]
+    fn windows_permission_commands_keep_pipes_without_a_console() {
+        if std::env::var_os("LEAF_TEST_HIDDEN_PERMISSION_CHILD").is_some() {
+            #[link(name="kernel32")] extern "system" {fn GetConsoleWindow()->*mut std::ffi::c_void;}
+            assert!(unsafe{GetConsoleWindow().is_null()},"permission child allocated a console");
+            println!("synthetic redirected permission output");
+            return;
+        }
+        let result=hidden_windows_command(std::env::current_exe().unwrap())
+            .args(["windows_permission_commands_keep_pipes_without_a_console","--nocapture","--test-threads=1"])
+            .env("LEAF_TEST_HIDDEN_PERMISSION_CHILD","1").output().unwrap();
+        assert!(result.status.success(),"{}",String::from_utf8_lossy(&result.stderr));
+        let stdout=String::from_utf8_lossy(&result.stdout);
+        assert!(stdout.contains("synthetic redirected permission output")&&stdout.contains("1 passed"));
+    }
     #[derive(Default)]
     struct MemoryKeyring(Mutex<HashMap<String, String>>);
     impl SecretStore for MemoryKeyring {

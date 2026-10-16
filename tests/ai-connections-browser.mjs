@@ -76,7 +76,10 @@ try {
     const page=await nativePage('windows');
     await page.locator('#mcpEnabled').check();
     await page.locator('#aiClient').selectOption('claude-desktop');
-    assert.equal(await page.locator('#aiLocalConfigure').innerText(),'保存 Claude 扩展');
+    assert.equal(await page.locator('#aiLocalConfigure').innerText(),'导出 Claude 扩展包');
+    assert.equal(await page.locator('#aiClaudeManualTitle').innerText(),'手动安装 Claude 扩展');
+    assert.equal(await page.locator('#aiClaudeManualTitle').isVisible(),true);
+    assert.match(await page.locator('#aiLocalStep1').innerText(),/导出 Claude 扩展包.*Leaf\.mcpb.*保存/);
     assert.match(await page.locator('#aiLocalStep2').innerText(),/高级设置.*安装扩展/);
     await page.evaluate(()=>aiMock.cancelAdd=true);
     await page.locator('#aiLocalConfigure').click();
@@ -169,6 +172,7 @@ try {
     await page.locator('#mcpEnabled').check();
     await page.locator('#aiClient').selectOption('claude-desktop');
     assert.equal(await page.locator('#aiLocalConfigure').innerText(),'添加到 Claude');
+    assert.equal(await page.locator('#aiClaudeManualTitle').isVisible(),false);
     await page.locator('#aiLocalConfigure').click();
     await page.waitForFunction(()=>aiMock.clients[1].enabled);
     assert.match(await page.locator('#aiLocalResult').innerText(),/Claude/);

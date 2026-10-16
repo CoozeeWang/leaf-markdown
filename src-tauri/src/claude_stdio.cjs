@@ -4,6 +4,7 @@ const {spawn} = require('node:child_process');
 const child = spawn(c.command, c.args, {
   env: {...process.env, ...c.env},
   stdio: 'pipe',
+  windowsHide: true,
 });
 process.stdin.pipe(child.stdin);
 child.stdout.pipe(process.stdout);

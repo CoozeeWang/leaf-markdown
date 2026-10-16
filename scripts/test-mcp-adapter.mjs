@@ -86,6 +86,8 @@ try {
     const installed=join(directory,'Public Example 中文');await mkdir(installed);
     const gui=join(installed,'leaf.exe'),helper=join(installed,'leaf-mcp-adapter.exe');
     await copyFile(appExecutable,gui);await copyFile(binaries[0],helper);appExecutable=gui;binaries=[helper];
+    const pe=await readFile(helper),header=pe.readUInt32LE(0x3c);
+    assert.equal(pe.readUInt16LE(header+92),2,'Windows helper uses the no-console Windows subsystem');
   }
   const server = start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '41731', '--strictPort']);
   for (let i = 0; i < 100; i++) { try { if ((await fetch('http://127.0.0.1:41731')).ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
@@ -108,11 +110,13 @@ try {
     const workbuddy=JSON.parse(await readFile(ready.workbuddy_config,'utf8')).mcpServers.Leaf;
     assert.equal(workbuddy.type,'stdio');
     for(const [name,config] of [['claude',{command:process.execPath,args:[launcher]}],['workbuddy',workbuddy]]) {
-      const transport=new StdioClientTransport({...config,stderr:'pipe'});
+      const trace=join(directory,`${name}-console-proof.json`);
+      const transport=new StdioClientTransport({...config,env:{...config.env,LEAF_MCP_TEST_ADAPTER_ENV_TRACE:trace},stderr:'pipe'});
       const client=new Client({name:'Synthetic '+name+' host',version:'1.0.0'},{capabilities:{},versionNegotiation:{mode:{pin:'2026-07-28'}}});
       try {
         await client.connect(transport);const tools=await client.listTools();assert(tools.tools.some(t=>t.name==='apply_edit_batch'));
         const documents=await client.callTool({name:'list_documents',arguments:{}});assert.equal(documents.isError,false);
+        if(process.platform==='win32') assert.equal(JSON.parse(await readFile(trace,'utf8')).has_console,false,`${name} helper must not allocate a console`);
         if(name==='claude') {
           const read=await client.callTool({name:'read_document',arguments:ready.binding});assert.equal(read.structuredContent.content,'synthetic alpha omega');
         }

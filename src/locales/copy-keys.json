@@ -811,5 +811,6 @@
   "AI0105": "ai.claude_step1_windows",
   "AI0106": "ai.claude_step2_windows",
   "AI0107": "ai.claude_bundle_saved",
-  "AI0108": "ai.claude_save_failed"
+  "AI0108": "ai.claude_save_failed",
+  "AI0109": "ai.claude_manual_title"
 }

@@ -416,6 +416,7 @@ async fn tunnel_lifecycle(app:&tauri::AppHandle,label:&str,broker:&super::mcp::L
     ensure(broker.start_tunnel(app).await?["runtime"]["epoch"]==started["runtime"]["epoch"],"repeated native start owns the same connector")?;
     let trace:Value=serde_json::from_slice(&std::fs::read(root.join("adapter-env.json")).map_err(|_|"adapter environment trace")?).map_err(|_|"adapter environment trace")?;
     ensure(trace["has_runtime_key"]==false,"actual helper environment excludes the runtime key")?;
+    #[cfg(windows)] ensure(trace["has_console"]==false,"actual tunnel helper does not allocate a console")?;
     let acl:Value=serde_json::from_slice(&std::fs::read(root.join("acl-runtime-effective.json")).map_err(|_|"runtime ACL evidence")?).map_err(|_|"runtime ACL evidence")?;
     ensure(acl.as_array().is_some_and(|rows|rows.iter().any(|r|r["trusted_apps"]==1))&&!acl.as_array().unwrap().iter().any(|r|r["trusted_apps"]==2),"actual runtime entry trusts only the GUI")?;
     let descriptor:super::mcp::ai_credentials::BrokerDescriptor=serde_json::from_slice(&std::fs::read(super::application_data(app).unwrap().join("mcp/chatgpt.json")).unwrap()).unwrap();

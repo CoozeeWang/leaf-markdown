@@ -59,7 +59,7 @@ export async function producePackages(options = {}) {
   if (process.platform === 'darwin') {
     appHelper = join(root, `src-tauri/target/release/bundle/macos/${appName}.app/Contents/MacOS/leaf-mcp-adapter`);
   } else {
-    // Tauri places a console externalBin beside its GUI exe before the NSIS producer.
+    // Tauri places the protocol-pipe externalBin beside its GUI exe before NSIS.
     // The unpacked payload is the installation directory layout; installer UI is a
     // separate Windows platform acceptance layer.
     const payload = join(cache, 'windows-payload'); await mkdir(payload, { recursive: true });

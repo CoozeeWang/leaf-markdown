@@ -821,9 +821,10 @@
   "ai.workbuddy_step3": "保持 Leaf 開啟並啟用 MCP 連線。在 WorkBuddy 啟用 Leaf 後，可直接在對話中提出要求，無需從「＋」選單選擇 Leaf。",
   "ai.claude_added": "已開啟 Claude 安裝畫面，請確認安裝 Leaf。",
   "ai.workbuddy_added": "已新增連線，請在 WorkBuddy 中啟用 Leaf。",
-  "ai.claude_save_bundle": "儲存 Claude 擴充功能",
-  "ai.claude_step1_windows": "點擊「儲存 Claude 擴充功能」，選擇位置儲存 Leaf.mcpb。",
+  "ai.claude_save_bundle": "匯出 Claude 擴充套件",
+  "ai.claude_step1_windows": "點擊「匯出 Claude 擴充套件」，將 Leaf.mcpb 儲存到容易找到的位置。",
   "ai.claude_step2_windows": "開啟 Claude 桌面版的「設定 → 擴充功能 → 進階設定 → 安裝擴充功能」，選擇剛儲存的 Leaf.mcpb，確認安裝並啟用 Leaf。無需按兩下檔案。",
   "ai.claude_bundle_saved": "擴充功能檔案已儲存，仍需在 Claude 中安裝。\n檔案位置：{{path}}\n在 Claude 的「設定 → 擴充功能 → 進階設定 → 安裝擴充功能」中選擇此檔案。",
-  "ai.claude_save_failed": "擴充功能檔案未儲存。請選擇可寫入的位置，以 .mcpb 為副檔名後重試。"
+  "ai.claude_save_failed": "擴充功能檔案未儲存。請選擇可寫入的位置，以 .mcpb 為副檔名後重試。",
+  "ai.claude_manual_title": "手動安裝 Claude 擴充功能"
 }
