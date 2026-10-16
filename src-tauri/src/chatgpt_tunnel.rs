@@ -396,7 +396,7 @@ mod tests {
         let text=text.lines().map(|line|if line.trim_start().starts_with("command: "){format!("      command: {}",serde_json::to_string(&passive).unwrap())}else{line.into()}).collect::<Vec<_>>().join("\n");
         std::fs::write(&config.profile,text+"\n").unwrap();
         let log=directory.path().join("synthetic-connector.log");
-        #[cfg(windows)] std::env::set_var("LEAF_PROXY_TEST_LOG",&log);
+        #[cfg(windows)] if std::env::var_os("LEAF_PROXY_CAPTURE_DIAGNOSTIC").is_some(){std::env::set_var("LEAF_PROXY_TEST_LOG",&log);}
         let spec=TunnelLaunchSpec{executable,profile:config.profile,generation:1,health_file:Some(config.health_file),proxy_url:if mode=="explicit"{std::env::var("LEAF_PROXY_TEST_URL").unwrap()}else{String::new()},#[cfg(feature="native-smoke")]synthetic:false};
         let mut manager=TunnelManager::default();manager.configured(true,true);manager.start(&spec,"synthetic-not-a-key").unwrap();
         let start=Instant::now();
@@ -432,8 +432,16 @@ mod tests {
             for key in ["CONTROL_PLANE_HTTP_PROXY","TUNNEL_CLIENT_HTTP_PROXY","HTTPS_PROXY","https_proxy","HTTP_PROXY","http_proxy","NO_PROXY","no_proxy"]{child.env_remove(key);}
             child.env("LEAF_PROXY_TEST_CHILD",mode).env("LEAF_PROXY_TEST_URL",&url);
             if mode=="environment"{child.env("HTTPS_PROXY",&url);}
-            let output=child.output().unwrap();done.store(true,Ordering::Relaxed);server.join().unwrap();
-            assert!(output.status.success(),"{} {}",String::from_utf8_lossy(&output.stdout),String::from_utf8_lossy(&output.stderr));
+            child.env_remove("LEAF_PROXY_TEST_LOG").env_remove("LEAF_PROXY_CAPTURE_DIAGNOSTIC");
+            let output=child.output().unwrap();
+            // Diagnose failures without allowing captured stdio to turn a
+            // failed production-equivalent launch into a passing result.
+            let diagnostic=if output.status.success(){String::new()}else{
+                let retry=child.env("LEAF_PROXY_CAPTURE_DIAGNOSTIC","1").output().unwrap();
+                format!("diagnostic capture status: {}; {} {}",retry.status,String::from_utf8_lossy(&retry.stdout),String::from_utf8_lossy(&retry.stderr))
+            };
+            done.store(true,Ordering::Relaxed);server.join().unwrap();
+            assert!(output.status.success(),"{} {} {diagnostic}",String::from_utf8_lossy(&output.stdout),String::from_utf8_lossy(&output.stderr));
             assert!(saw.load(Ordering::Relaxed),"vendor must actually CONNECT through the chosen proxy");
         }
     }
