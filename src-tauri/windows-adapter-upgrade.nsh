@@ -1,21 +1,27 @@
 ﻿; The MCP host owns this console process, so closing leaf.exe does not release
 ; its executable. Scope shutdown to the exact installation path, never a name.
-LangString LeafAdapterBusy 1033 "Leaf's connection program is still in use. Close Claude and WorkBuddy, then choose Retry. Your documents and connection settings will be kept."
-LangString LeafAdapterBusy 2052 "Leaf 连接程序仍被占用。请退出 Claude 和 WorkBuddy，然后点重试。文档和连接配置会保留。"
-LangString LeafAdapterBusy 1028 "Leaf 連線程式仍被佔用。請結束 Claude 和 WorkBuddy，然後按重試。文件和連線設定會保留。"
-
 Var LeafAdapterShutdownFailed
+Var LeafAdapterWriteError
+
+LangString LeafAdapterBusy 1033 "Cannot update Leaf's connection program (Windows error $LeafAdapterWriteError). Close Claude and WorkBuddy, then choose Retry. If this persists, keep the error number for diagnosis. Your documents and connection settings will be kept."
+LangString LeafAdapterBusy 2052 "无法更新 Leaf 连接程序（Windows 错误 $LeafAdapterWriteError）。请退出 Claude 和 WorkBuddy，然后点重试。如果仍然失败，请保留错误编号以便排查。文档和连接配置会保留。"
+LangString LeafAdapterBusy 1028 "無法更新 Leaf 連線程式（Windows 錯誤 $LeafAdapterWriteError）。請結束 Claude 和 WorkBuddy，然後按重試。如果仍然失敗，請保留錯誤編號以便排查。文件和連線設定會保留。"
 
 !macro LeafAdapterShutdownFunction Prefix
 Function ${Prefix}LeafStopInstalledAdapter
   System::Store "s"
   StrCpy $LeafAdapterShutdownFailed 0
+  StrCpy $LeafAdapterWriteError 8
   GetFullPathName $9 "$INSTDIR\leaf-mcp-adapter.exe"
   IfFileExists "$9" 0 done
   System::Alloc 65536
   Pop $0
   StrCmp $0 0 failed
-  System::Call 'kernel32::K32EnumProcesses(p r0, i 65536, *i .r1) i .r2'
+  System::Call 'kernel32::K32EnumProcesses(p r0, i 65536, *i .r1) i .r2 ?e'
+  Pop $LeafAdapterWriteError
+  ${If} $1 >= 65536
+    StrCpy $LeafAdapterWriteError 234
+  ${EndIf}
   ${If} $2 == 0
   ${OrIf} $1 >= 65536
     System::Free $0
@@ -45,7 +51,8 @@ Function ${Prefix}LeafStopInstalledAdapter
   ; Check write access before Tauri replaces ANY payload, rather than ignore
   ; a failed copy and leave a mixture of old and new executables.
   Sleep 250
-  System::Call 'kernel32::CreateFileW(w r9, i 0x40000000, i 7, p 0, i 3, i 0, p 0) p .r6'
+  System::Call 'kernel32::CreateFileW(w r9, i 0x40000000, i 7, p 0, i 3, i 0, p 0) p .r6 ?e'
+  Pop $LeafAdapterWriteError
   StrCmp $6 -1 failed
   System::Call 'kernel32::CloseHandle(p r6)'
   Goto done
