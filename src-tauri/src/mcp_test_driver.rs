@@ -291,6 +291,9 @@ async fn connection_restart(app:&tauri::AppHandle,label:&str,broker:&super::mcp:
         let previous:Value=serde_json::from_slice(&std::fs::read(directory.join("old-instance.json")).map_err(|_|"instance evidence")?).map_err(|_|"instance encoding")?;
         let diagnostics=broker.tunnel_status()?["diagnostics"].clone();
         ensure(previous!=diagnostics["instance_id"],"restart publishes a distinct source instance")?;
+        // Most legacy fixtures deliberately disable whole-document access.
+        // Exercise the production access mode for this scoped list/read check.
+        broker.inner.automatic_access.store(true,std::sync::atomic::Ordering::Relaxed);
         broker.bridge(app,label,"test",json!({"action":"reset","content":"Nonempty synthetic proxy acceptance buffer"})).await?;
         let listed=broker.call(app,"workbuddy","list_documents",json!({})).await?;
         let doc=listed["documents"].as_array().and_then(|docs|docs.first()).ok_or("synthetic document")?;
