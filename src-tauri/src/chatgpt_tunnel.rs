@@ -4,6 +4,7 @@ use serde::Serialize;
 
 pub struct TunnelLaunchSpec {
     pub executable:PathBuf,
+    pub proxy_url:String,
     pub profile:PathBuf,
     pub generation:u64,
     pub health_file:Option<PathBuf>,
@@ -12,10 +13,11 @@ pub struct TunnelLaunchSpec {
 #[derive(Clone,Default,Serialize)]
 pub struct TunnelRuntimeStatus {
     pub generation:u64,pub epoch:u64,pub saved_config:bool,pub runtime_present:bool,
-    pub process:bool,pub local_ready:bool,pub host_verified:bool,pub last_error:Option<String>,
+    pub process:bool,pub local_ready:bool,pub cloud_connected:bool,pub host_verified:bool,pub last_error:Option<String>,
+    pub proxy_source:String,pub cloud_state:String,pub consecutive_failures:u64,pub http_status:u64,pub tunnel_instance:Option<String>,
 }
 #[derive(Default)]
-pub struct TunnelManager { child:Option<OwnedProcess>,status:TunnelRuntimeStatus,health_file:Option<PathBuf>,started:Option<Instant>,failure_pending:bool }
+pub struct TunnelManager { child:Option<OwnedProcess>,status:TunnelRuntimeStatus,health_file:Option<PathBuf>,started:Option<Instant>,last_probe:Option<Instant>,failure_pending:bool }
 #[cfg(not(windows))] type OwnedProcess=Child;
 #[cfg(windows)] type OwnedProcess=windows_tree::OwnedJob;
 impl TunnelManager {
@@ -23,10 +25,17 @@ impl TunnelManager {
         if self.child.as_mut().is_some_and(|c|c.try_wait().ok().flatten().is_some()) {
             let _=self.stop();self.status.last_error=Some("tunnel_exited".into());self.failure_pending=true;
         }
-        if self.status.process&&!self.status.local_ready {
-            if self.health_file.as_ref().is_some_and(|p|local_ready_probe(p)){self.status.local_ready=true;}
-            else if self.health_file.is_some()&&self.started.is_some_and(|s|s.elapsed()>Duration::from_secs(90)) {
-                let _=self.stop();self.status.last_error=Some("tunnel_start_timeout".into());self.failure_pending=true;
+        if self.status.process&&self.last_probe.is_none_or(|at|at.elapsed()>Duration::from_secs(2)) {
+            self.last_probe=Some(Instant::now());
+            if let Some(path)=&self.health_file {
+                self.status.local_ready=local_ready_probe(path);
+                match health_request(path,"/health?details=true").and_then(|bytes|serde_json::from_slice::<serde_json::Value>(&bytes).ok()) {
+                    Some(value) if value["schema_version"]==1=>self.status.observe_health(&value),
+                    _=>{self.status.cloud_connected=false;self.status.cloud_state="unknown".into();self.status.last_error=Some("tunnel_health_unavailable".into());}
+                }
+                if !self.status.local_ready&&self.started.is_some_and(|s|s.elapsed()>Duration::from_secs(90)) {
+                    let _=self.stop();self.status.last_error=Some("tunnel_start_timeout".into());self.failure_pending=true;
+                }
             }
         }self.status.clone()
     }
@@ -46,16 +55,25 @@ impl TunnelManager {
         if self.status.process&&self.status.generation==spec.generation{return Ok(self.status.clone());}
         self.stop()?;
         if key.is_empty(){return Err("runtime_key_required".into());}
+        let route=super::tunnel_proxy::resolve(&spec.proxy_url).inspect_err(|error|{self.status.last_error=Some(error.clone());})?;
         let mut command=Command::new(&spec.executable);
         command.args(["run","--profile-file"]).arg(&spec.profile).env_clear();
         for name in ["HOME","PATH","SYSTEMROOT","WINDIR","TEMP","TMP","LANG"] {if let Some(v)=std::env::var_os(name){command.env(name,v);}}
+        route.apply(&mut command);
         command.env("CONTROL_PLANE_API_KEY",key).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         #[cfg(feature="native-smoke")]
         if spec.synthetic {command.env("LEAF_MCP_TEST_PROCESS_ROLE","chatgpt-tunnel-fixture").stderr(Stdio::inherit());if let Some(root)=std::env::var_os("LEAF_MCP_TEST_DIR"){command.env("LEAF_MCP_TEST_DIR",root);}}
         #[cfg(unix)] {use std::os::unix::process::CommandExt;command.process_group(0);}
         #[cfg(not(windows))] {self.child=Some(command.spawn().map_err(|_|"tunnel_spawn_failed")?);}
-        #[cfg(windows)] {self.child=Some(windows_tree::OwnedJob::spawn(&command)?);}
-        self.health_file=spec.health_file.clone();self.started=Some(Instant::now());
+        #[cfg(windows)] {
+            // Controlled network tests can capture their synthetic child only.
+            // Production never retains connector logs or credential-bearing output.
+            #[cfg(test)] let log=std::env::var_os("LEAF_PROXY_TEST_LOG").map(std::fs::File::create).transpose().map_err(|_|"test_log_failed")?;
+            #[cfg(not(test))] let log:Option<std::fs::File>=None;
+            self.child=Some(windows_tree::OwnedJob::spawn_with_output(&command,log.as_ref())?);
+        }
+        self.health_file=spec.health_file.clone();self.started=Some(Instant::now());self.last_probe=None;
+        self.status.proxy_source=route.source.into();self.status.cloud_state="starting".into();self.status.cloud_connected=false;self.status.consecutive_failures=0;self.status.http_status=0;self.status.tunnel_instance=None;
         self.status.generation=spec.generation;self.status.epoch+=1;self.status.process=true;
         self.status.runtime_present=true;self.status.local_ready=false;self.status.host_verified=false;self.status.last_error=None;
         self.failure_pending=false;
@@ -65,7 +83,7 @@ impl TunnelManager {
         if self.status().process&&self.status.generation==generation&&self.status.epoch==epoch {self.status.local_ready=true;true}else{false}
     }
     pub fn stop(&mut self)->Result<(),String> {
-        self.status.epoch+=1;self.status.process=false;self.status.local_ready=false;self.status.host_verified=false;
+        self.status.epoch+=1;self.status.cloud_connected=false;self.status.cloud_state="stopped".into();self.status.last_error=None;self.status.tunnel_instance=None;self.status.consecutive_failures=0;self.status.http_status=0;self.status.process=false;self.status.local_ready=false;self.status.host_verified=false;
         if let Some(child)=self.child.as_mut(){
             #[cfg(unix)] {
                 let group=format!("-{}",child.id());
@@ -86,14 +104,44 @@ impl TunnelManager {
 }
 impl Drop for TunnelManager {fn drop(&mut self){let _=self.stop();}}
 
-fn local_ready_probe(path:&std::path::Path)->bool {
+// Probe HTTP/1.0 over a literal loopback socket: no proxy, redirects or
+// inherited HTTP credentials. Bound time, allocation and accepted URL shape.
+fn health_request(path:&std::path::Path,route:&str)->Option<Vec<u8>> {
     use std::io::{Read,Write};
-    let Ok(url)=std::fs::read_to_string(path) else{return false;};
-    let Some(port)=url.trim().strip_prefix("http://127.0.0.1:").and_then(|p|p.parse::<u16>().ok()).filter(|p|*p>0) else{return false;};
-    let Ok(mut stream)=std::net::TcpStream::connect_timeout(&std::net::SocketAddr::from(([127,0,0,1],port)),Duration::from_millis(200)) else{return false;};
-    let _=stream.set_read_timeout(Some(Duration::from_millis(200)));let _=stream.set_write_timeout(Some(Duration::from_millis(200)));
-    if stream.write_all(b"GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").is_err(){return false;}
-    let mut bytes=[0;128];let n=stream.read(&mut bytes).unwrap_or(0);bytes[..n].starts_with(b"HTTP/1.1 200 ")||bytes[..n].starts_with(b"HTTP/1.0 200 ")
+    let url=std::fs::read_to_string(path).ok()?;
+    let port=url.trim().strip_prefix("http://127.0.0.1:")?.parse::<u16>().ok().filter(|p|*p>0)?;
+    let mut stream=std::net::TcpStream::connect_timeout(&std::net::SocketAddr::from(([127,0,0,1],port)),Duration::from_millis(200)).ok()?;
+    stream.set_read_timeout(Some(Duration::from_millis(200))).ok()?;stream.set_write_timeout(Some(Duration::from_millis(200))).ok()?;
+    stream.write_all(format!("GET {route} HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n").as_bytes()).ok()?;
+    let mut bytes=Vec::new();let deadline=Instant::now()+Duration::from_millis(500);
+    loop {
+        let remaining=deadline.checked_duration_since(Instant::now())?;
+        stream.set_read_timeout(Some(remaining.min(Duration::from_millis(200)))).ok()?;
+        let mut chunk=[0;4096];let count=stream.read(&mut chunk).ok()?;
+        if count==0{break;}bytes.extend_from_slice(&chunk[..count]);
+        if bytes.len()>131072{return None;}
+    }
+    if bytes.len()>131072||!(bytes.starts_with(b"HTTP/1.1 200 ")||bytes.starts_with(b"HTTP/1.0 200 ")){return None;}
+    let boundary=bytes.windows(4).position(|part|part==b"\r\n\r\n")?+4;Some(bytes[boundary..].to_vec())
+}
+fn local_ready_probe(path:&std::path::Path)->bool {health_request(path,"/readyz").is_some()}
+impl TunnelRuntimeStatus {
+    fn observe_health(&mut self,value:&serde_json::Value){
+        let control=&value["components"]["control-plane"];let detail=&control["details"];
+        self.consecutive_failures=detail["consecutive_failures"].as_u64().unwrap_or(0);
+        self.http_status=detail["http_status"].as_u64().unwrap_or(0);
+        self.cloud_state=match control["state"].as_str().unwrap_or(""){state @ ("starting"|"polling"|"idle"|"backoff"|"backpressured"|"stopped")=>state,_=>"unknown"}.into();
+        self.tunnel_instance=value["runtime"]["instance_id"].as_str().filter(|s|s.len()<=64&&s.bytes().all(|b|b.is_ascii_hexdigit()||b==b'-')).map(str::to_owned);
+        let stalled=detail["deadline_seconds"].as_f64().is_some_and(|deadline|deadline>0.0&&detail["current_poll_age_seconds"].as_f64().unwrap_or(0.0)>deadline+15.0);
+        self.cloud_connected=self.local_ready&&control["status"]=="ok"&&detail["last_success"].is_string()&&self.consecutive_failures==0&&!stalled&&matches!(self.cloud_state.as_str(),"polling"|"idle"|"backpressured");
+        self.last_error=if self.consecutive_failures>0||stalled {
+            Some(match (self.http_status,detail["failure_category"].as_str().or(control["reason_code"].as_str()).unwrap_or("")){
+                (401|403,_)=>"tunnel_cloud_auth",(_,"network_error"|"timeout"|"deadline_exceeded")=>"tunnel_network_proxy",_ if stalled=>"tunnel_network_proxy",_=>"tunnel_cloud_poll_failed"
+            }.into())
+        }else if control["status"]=="degraded"||control["status"]=="error"{Some("tunnel_cloud_poll_failed".into())}else if self.cloud_state=="unknown"{Some("tunnel_health_unavailable".into())}else{None};
+        let delivery=&value["components"]["response-delivery"];
+        if self.last_error.is_none()&&delivery["status"]=="degraded"{self.cloud_connected=false;self.last_error=Some("tunnel_cloud_delivery_failed".into());}
+    }
 }
 
 // The selected binary is checked against the supported CLI contract. These
@@ -105,8 +153,9 @@ pub fn validate_input(id:&str,executable:&std::path::Path)->Result<(),String>{
     #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;if std::fs::metadata(executable).map_err(|_|"invalid_tunnel_executable")?.permissions().mode()&0o111==0{return Err("invalid_tunnel_executable".into());}}
     Ok(())
 }
-fn bounded_cli(executable:&std::path::Path,args:&[String],key:Option<&str>,capture:bool)->Result<String,String>{
+fn bounded_cli(executable:&std::path::Path,args:&[String],key:Option<&str>,capture:bool,deadline:Instant)->Result<String,String>{
     use std::io::{Read,Seek};
+    if Instant::now()>=deadline{return Err("tunnel_cli_timeout".into());}
     let mut output=tempfile::tempfile().map_err(|_|"tunnel_cli_failed")?;
     let mut command=Command::new(executable);command.args(args).env_clear().stdin(Stdio::null()).stderr(Stdio::null());
     for name in ["HOME","PATH","SYSTEMROOT","WINDIR","TEMP","TMP","LANG"] {if let Some(v)=std::env::var_os(name){command.env(name,v);}}
@@ -117,10 +166,9 @@ fn bounded_cli(executable:&std::path::Path,args:&[String],key:Option<&str>,captu
     #[cfg(unix)] {use std::os::unix::process::CommandExt;command.process_group(0);}
     #[cfg(not(windows))] let mut child=command.spawn().map_err(|_|"tunnel_cli_failed")?;
     #[cfg(windows)] let mut child=windows_tree::OwnedJob::spawn_with_output(&command,capture.then_some(&output))?;
-    let start=Instant::now();
     let result=loop {
         if let Some(status)=child.try_wait().map_err(|_|"tunnel_cli_failed")?{break if status.success(){Ok(())}else{Err("tunnel_cli_rejected")};}
-        if start.elapsed()>Duration::from_secs(15){break Err("tunnel_cli_timeout");}
+        if Instant::now()>=deadline{break Err("tunnel_cli_timeout");}
         std::thread::sleep(Duration::from_millis(25));
     };
     #[cfg(unix)] {let _=Command::new("/bin/kill").args(["-KILL","--",&format!("-{}",child.id())]).stdout(Stdio::null()).stderr(Stdio::null()).status();let _=child.wait();}
@@ -130,22 +178,25 @@ fn bounded_cli(executable:&std::path::Path,args:&[String],key:Option<&str>,captu
     if bytes.len()>16384{return Err("tunnel_cli_contract_changed".into());}String::from_utf8(bytes).map_err(|_|"tunnel_cli_contract_changed".into())
 }
 pub fn prepare_profile(id:&str,executable:&std::path::Path,directory:&std::path::Path,descriptor:&std::path::Path,key:&str)->Result<super::mcp::ai_credentials::TunnelProfile,String>{
+    let helper=std::env::current_exe().map_err(|_|"helper_not_installed")?.parent().unwrap().join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});
+    prepare_profile_with_helper(id,executable,directory,descriptor,key,&helper)
+}
+fn prepare_profile_with_helper(id:&str,executable:&std::path::Path,directory:&std::path::Path,descriptor:&std::path::Path,key:&str,helper:&std::path::Path)->Result<super::mcp::ai_credentials::TunnelProfile,String>{
     validate_input(id,executable)?;
-    let version=bounded_cli(executable,&["--version".into()],None,true)?;
+    let deadline=Instant::now()+Duration::from_secs(15);
+    let version=bounded_cli(executable,&["--version".into()],None,true,deadline)?;
     if !version.trim().bytes().next().is_some_and(|b|b.is_ascii_digit()){return Err("tunnel_cli_contract_changed".into());}
     for(args,required)in [(vec!["help","quickstart"],vec!["sample_mcp_stdio_local","CONTROL_PLANE_API_KEY"]),(vec!["init","--help"],vec!["--profile-dir","--mcp-command","--control-plane-api-key-ref"]),(vec!["doctor","--help"],vec!["--profile-file"])] {
-        let help=bounded_cli(executable,&args.iter().map(|v|v.to_string()).collect::<Vec<_>>(),None,true)?;
+        let help=bounded_cli(executable,&args.iter().map(|v|v.to_string()).collect::<Vec<_>>(),None,true,deadline)?;
         if required.iter().any(|r|!help.contains(r)){return Err("tunnel_cli_contract_changed".into());}
     }
-    let helper=std::env::current_exe().map_err(|_|"helper_not_installed")?.parent().unwrap().join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});
     if !helper.is_file(){return Err("helper_not_installed".into());}
     std::fs::create_dir_all(directory).map_err(|_|"tunnel_profile_write")?;
     #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(directory,std::fs::Permissions::from_mode(0o700)).map_err(|_|"tunnel_profile_write")?;}
     let staging=tempfile::tempdir_in(directory).map_err(|_|"tunnel_profile_write")?;
-    let quote=|p:&std::path::Path|->String{if cfg!(windows){windows_quote(&p.to_string_lossy())}else{format!("'{}'",p.to_string_lossy().replace('\'',"'\\''"))}};
-    let fixed_command=format!("{} --descriptor {}",quote(&helper),quote(descriptor));
+    let fixed_command=tunnel_command(helper,descriptor,cfg!(windows));
     let args=vec!["init".into(),"--sample".into(),"sample_mcp_stdio_local".into(),"--profile".into(),"leaf".into(),"--profile-dir".into(),staging.path().to_string_lossy().into_owned(),"--tunnel-id".into(),id.into(),"--mcp-command".into(),fixed_command.clone(),"--control-plane-api-key-ref".into(),"env:CONTROL_PLANE_API_KEY".into(),"--health-listen-addr".into(),"127.0.0.1:0".into()];
-    bounded_cli(executable,&args,None,false)?;
+    bounded_cli(executable,&args,None,false,deadline).map_err(|e|cli_stage("init",e))?;
     let path=staging.path().join("leaf.yaml");let generated=std::fs::read_to_string(&path).map_err(|_|"tunnel_cli_contract_changed")?;
     if !generated.contains("config_version: 1")||!generated.contains("commands:")||!generated.contains("channel: main")||!generated.contains(&serde_json::to_string(&fixed_command).unwrap())||!generated.contains("env:CONTROL_PLANE_API_KEY")||!generated.contains(id){return Err("tunnel_cli_contract_changed".into());}
     // Use the verified schema with a fixed command; no user-provided command,
@@ -155,12 +206,14 @@ pub fn prepare_profile(id:&str,executable:&std::path::Path,directory:&std::path:
     let text=format!("config_version: 1\ncontrol_plane:\n  base_url: \"https://api.openai.com\"\n  tunnel_id: {}\n  api_key: \"env:CONTROL_PLANE_API_KEY\"\nhealth:\n  listen_addr: \"127.0.0.1:0\"\n  url_file: {}\nadmin_ui:\n  open_browser: false\nlog:\n  level: warn\n  format: json\nmcp:\n  commands:\n    - channel: main\n      command: {}\n",scalar(id),scalar(&health.to_string_lossy()),scalar(&fixed_command));
     std::fs::write(&path,&text).map_err(|_|"tunnel_profile_write")?;
     #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o600)).map_err(|_|"tunnel_profile_write")?;}
-    bounded_cli(executable,&["doctor".into(),"--profile-file".into(),path.to_string_lossy().into_owned(),"--explain".into()],Some(key),false)?;
-    std::fs::File::open(&path).and_then(|file|file.sync_all()).map_err(|_|"tunnel_profile_write")?;
+    bounded_cli(executable,&["doctor".into(),"--profile-file".into(),path.to_string_lossy().into_owned(),"--explain".into()],Some(key),false,deadline).map_err(|e|cli_stage("doctor",e))?;
+    // Windows FlushFileBuffers requires a writable handle. File::open is
+    // read-only and makes an otherwise valid generated profile fail to save.
+    std::fs::OpenOptions::new().write(true).open(&path).and_then(|file|file.sync_all()).map_err(|_|"tunnel_profile_write")?;
     std::fs::rename(&path,&profile).map_err(|_|"tunnel_profile_write")?;
     #[cfg(unix)] std::fs::File::open(directory).and_then(|file|file.sync_all()).map_err(|_|"tunnel_profile_write")?;
     use sha2::{Digest,Sha256};
-    Ok(super::mcp::ai_credentials::TunnelProfile{tunnel_id:id.into(),executable:executable.to_path_buf(),profile,health_file:health,generation:0,digest:format!("{:x}",Sha256::digest(text.as_bytes()))})
+    Ok(super::mcp::ai_credentials::TunnelProfile{proxy_url:String::new(),tunnel_id:id.into(),executable:executable.to_path_buf(),profile,health_file:health,generation:0,digest:format!("{:x}",Sha256::digest(text.as_bytes()))})
 }
 pub fn validate_saved(config:&super::mcp::ai_credentials::TunnelProfile,descriptor:&std::path::Path)->Result<(),String>{
     use sha2::{Digest,Sha256};
@@ -170,7 +223,26 @@ pub fn validate_saved(config:&super::mcp::ai_credentials::TunnelProfile,descript
     let helper=std::env::current_exe().map_err(|_|"helper_not_installed")?.parent().unwrap().join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});
     let text=String::from_utf8(bytes).map_err(|_|"tunnel_profile_changed")?;
     // Both paths are inside the hash-bound, fixed-command profile.
-    if !helper.is_file()||!text.contains(&helper.to_string_lossy().replace('\\',"\\\\"))||!text.contains(&descriptor.to_string_lossy().replace('\\',"\\\\")){return Err("tunnel_profile_reconfigure_required".into());}Ok(())
+    if !helper.is_file()||!profile_contains_command(&text,&helper,descriptor){return Err("tunnel_profile_reconfigure_required".into());}Ok(())
+}
+// tunnel-client uses a shell-style lexer even on Windows. This is a command
+// string inside YAML, not a CreateProcessW argument vector. Win32 accepts /.
+fn tunnel_command(helper:&std::path::Path,descriptor:&std::path::Path,windows:bool)->String {
+    let quote=|p:&std::path::Path| if windows {format!("\"{}\"",p.to_string_lossy().replace('\\',"/"))}else{format!("'{}'",p.to_string_lossy().replace('\'',"'\\''"))};
+    format!("{} --descriptor {}",quote(helper),quote(descriptor))
+}
+fn profile_contains_command(text:&str,helper:&std::path::Path,descriptor:&std::path::Path)->bool {
+    let command=tunnel_command(helper,descriptor,cfg!(windows));
+    text.contains(&format!("command: {}",serde_json::to_string(&command).unwrap()))
+}
+fn cli_stage(stage:&str,error:String)->String {
+    match (stage,error.as_str()) {
+        ("init","tunnel_cli_rejected")=>"tunnel_cli_init_rejected".into(),
+        ("init","tunnel_cli_timeout")=>"tunnel_cli_init_timeout".into(),
+        ("doctor","tunnel_cli_rejected")=>"tunnel_cli_doctor_rejected".into(),
+        ("doctor","tunnel_cli_timeout")=>"tunnel_cli_doctor_timeout".into(),
+        _=>error,
+    }
 }
 fn windows_quote(value:&str)->String {let mut out=String::from("\"");let mut slashes=0;for c in value.chars(){if c=='\\'{slashes+=1;continue;}if c=='"'{out.push_str(&"\\".repeat(slashes*2+1));out.push('"');}else{out.push_str(&"\\".repeat(slashes));out.push(c);}slashes=0;}out.push_str(&"\\".repeat(slashes*2));out.push('"');out}
 
@@ -202,7 +274,9 @@ mod windows_tree {
             let mut env=Vec::<u16>::new();for(k,v)in command.get_envs().filter_map(|(k,v)|v.map(|v|(k,v))){env.extend(wide(std::ffi::OsStr::new(&format!("{}={}",k.to_string_lossy(),v.to_string_lossy()))));}env.push(0);
             let mut startup:STARTUPINFOW=std::mem::zeroed();startup.cb=std::mem::size_of_val(&startup) as u32;let mut info:PROCESS_INFORMATION=std::mem::zeroed();
             let stdout=output.map(|file|{use std::os::windows::io::AsRawHandle;file.as_raw_handle() as HANDLE});
-            if let Some(handle)=stdout {if windows_sys::Win32::Foundation::SetHandleInformation(handle,windows_sys::Win32::Foundation::HANDLE_FLAG_INHERIT,windows_sys::Win32::Foundation::HANDLE_FLAG_INHERIT)==0{return Err("tunnel_cli_failed".into());}startup.dwFlags=STARTF_USESTDHANDLES;startup.hStdOutput=handle;}
+            if let Some(handle)=stdout {if windows_sys::Win32::Foundation::SetHandleInformation(handle,windows_sys::Win32::Foundation::HANDLE_FLAG_INHERIT,windows_sys::Win32::Foundation::HANDLE_FLAG_INHERIT)==0{return Err("tunnel_cli_failed".into());}startup.dwFlags=STARTF_USESTDHANDLES;startup.hStdOutput=handle;
+                #[cfg(test)] if std::env::var_os("LEAF_PROXY_TEST_LOG").is_some(){startup.hStdError=handle;}
+            }
             let created=CreateProcessW(executable.as_ptr(),line.as_mut_ptr(),std::ptr::null(),std::ptr::null(),i32::from(stdout.is_some()),CREATE_SUSPENDED|CREATE_UNICODE_ENVIRONMENT|CREATE_NO_WINDOW,env.as_ptr().cast(),std::ptr::null(),&startup,&mut info);
             if let Some(handle)=stdout {windows_sys::Win32::Foundation::SetHandleInformation(handle,windows_sys::Win32::Foundation::HANDLE_FLAG_INHERIT,0);}
             if created==0{return Err("tunnel_spawn_failed".into());}
@@ -297,11 +371,132 @@ pub fn synthetic_fixture_main()->i32 {
 mod tests {
     use super::*;
     #[test]
+    fn tunnel_health_probe_has_an_absolute_deadline_even_with_dripping_bytes(){
+        use std::{net::TcpListener,io::{Read,Write},sync::{Arc,atomic::{AtomicBool,Ordering}}};
+        let listener=TcpListener::bind("127.0.0.1:0").unwrap();let directory=tempfile::tempdir().unwrap();let file=directory.path().join("health");
+        std::fs::write(&file,format!("http://127.0.0.1:{}",listener.local_addr().unwrap().port())).unwrap();
+        let done=Arc::new(AtomicBool::new(false));let stop=done.clone();
+        let server=std::thread::spawn(move||{let (mut socket,_)=listener.accept().unwrap();let mut request=[0;1024];let _=socket.read(&mut request);let _=socket.write_all(b"HTTP/1.0 200 OK\r\n\r\n");let until=Instant::now()+Duration::from_secs(3);while !stop.load(Ordering::Relaxed)&&Instant::now()<until{if socket.write_all(b" ").is_err(){break;}std::thread::sleep(Duration::from_millis(50));}});
+        let start=Instant::now();assert!(health_request(&file,"/health?details=true").is_none());
+        done.store(true,Ordering::Relaxed);server.join().unwrap();assert!(start.elapsed()<Duration::from_secs(2),"per-read timeouts must not extend the total probe indefinitely");
+    }
+    #[cfg(unix)]
+    #[test]
+    fn tunnel_cli_budget_is_shared_and_kills_a_stalled_check(){
+        let deadline=Instant::now()+Duration::from_millis(100);let start=Instant::now();
+        assert_eq!(bounded_cli(std::path::Path::new("/bin/sleep"),&["30".into()],None,false,deadline).unwrap_err(),"tunnel_cli_timeout");
+        assert!(start.elapsed()<Duration::from_secs(2));
+    }
+    #[test]
+    fn component_health_distinguishes_local_cloud_failures_and_recovery(){
+        use serde_json::json;
+        let mut status=TunnelRuntimeStatus{process:true,local_ready:true,..Default::default()};
+        let mut value=json!({"schema_version":1,"runtime":{"instance_id":"0123456789abcdef"},"components":{"control-plane":{"status":"unknown","state":"polling","details":{"consecutive_failures":0}}}});
+        status.observe_health(&value);assert!(!status.cloud_connected,"a pending first poll is not a successful connection");
+        value["components"]["control-plane"]=json!({"status":"degraded","state":"polling","details":{"consecutive_failures":3,"failure_category":"network_error","last_success":"2026-01-01T00:00:00Z"}});
+        status.observe_health(&value);assert!(status.local_ready);assert!(!status.cloud_connected);assert_eq!(status.last_error.as_deref(),Some("tunnel_network_proxy"));
+        value["components"]["control-plane"]["details"]["http_status"]=json!(401);status.observe_health(&value);assert_eq!(status.last_error.as_deref(),Some("tunnel_cloud_auth"));
+        value["components"]["control-plane"]=json!({"status":"ok","state":"polling","details":{"consecutive_failures":0,"last_success":"2026-01-01T00:00:00Z","deadline_seconds":60,"current_poll_age_seconds":4}});
+        status.observe_health(&value);assert!(status.cloud_connected);assert!(status.last_error.is_none());assert!(!status.host_verified);
+        value["components"]["control-plane"]["details"]["current_poll_age_seconds"]=json!(90);status.observe_health(&value);assert!(!status.cloud_connected);assert_eq!(status.last_error.as_deref(),Some("tunnel_network_proxy"));
+        value["components"]["control-plane"]["details"]["current_poll_age_seconds"]=json!(0);
+        value["components"]["response-delivery"]=json!({"status":"degraded"});status.observe_health(&value);assert!(!status.cloud_connected);assert_eq!(status.last_error.as_deref(),Some("tunnel_cloud_delivery_failed"));
+        value["components"]["response-delivery"]=json!({"status":"ok"});status.observe_health(&value);assert!(status.cloud_connected);assert!(status.last_error.is_none());
+    }
+    // This child process gives each environment-mode test an isolated proxy
+    // environment without racing other Rust tests or editing OS settings.
+    #[test]
+    fn official_tunnel_client_proxy_child(){
+        let Some(mode)=std::env::var("LEAF_PROXY_TEST_CHILD").ok() else{return;};
+        let executable=PathBuf::from(std::env::var_os("LEAF_TEST_TUNNEL_CLIENT").unwrap());
+        let directory=tempfile::tempdir().unwrap();
+        let helper=directory.path().join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});std::fs::copy(std::env::current_exe().unwrap(),&helper).unwrap();
+        let config=prepare_profile_with_helper(&format!("tunnel_{}","0".repeat(32)),&executable,&directory.path().join("profiles"),&directory.path().join("descriptor.json"),"synthetic-not-a-key",&helper).unwrap();
+        // The network probe needs a passive live stdio child, not another
+        // invocation of this Rust test harness with --descriptor arguments.
+        // The harness supplies its existing Node executable on Windows. Hold
+        // stdin without shell/PATHEXT or interactive console-filter behavior.
+        let passive=if cfg!(windows){format!("\"{}\" -e \"process.stdin.resume()\"",std::env::var("LEAF_TEST_NODE_PATH").expect("Windows vendor harness must supply its Node executable").replace('\\',"/"))}else{"/bin/cat".into()};
+        let text=std::fs::read_to_string(&config.profile).unwrap();
+        let text=text.lines().map(|line|if line.trim_start().starts_with("command: "){format!("      command: {}",serde_json::to_string(&passive).unwrap())}else{line.into()}).collect::<Vec<_>>().join("\n");
+        std::fs::write(&config.profile,text+"\n").unwrap();
+        let log=directory.path().join("synthetic-connector.log");
+        #[cfg(windows)] if std::env::var_os("LEAF_PROXY_CAPTURE_DIAGNOSTIC").is_some(){std::env::set_var("LEAF_PROXY_TEST_LOG",&log);}
+        let spec=TunnelLaunchSpec{executable,profile:config.profile,generation:1,health_file:Some(config.health_file),proxy_url:if mode=="explicit"{std::env::var("LEAF_PROXY_TEST_URL").unwrap()}else{String::new()},#[cfg(feature="native-smoke")]synthetic:false};
+        let mut manager=TunnelManager::default();manager.configured(true,true);manager.start(&spec,"synthetic-not-a-key").unwrap();
+        let start=Instant::now();
+        loop {
+            let status=manager.status();
+            if status.last_error.as_deref()==Some("tunnel_network_proxy") {
+                assert!(status.process&&status.local_ready&&status.saved_config);assert!(!status.cloud_connected);assert!(status.consecutive_failures>0);assert_eq!(status.proxy_source,mode);break;
+            }
+            assert!(status.process,"official client must remain running: {}",std::fs::read_to_string(&log).unwrap_or_default());
+            assert!(start.elapsed()<Duration::from_secs(25),"official polling health did not report the controlled proxy failure: {}",serde_json::to_string(&status).unwrap());
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        manager.stop().unwrap();
+    }
+    #[test]
+    fn official_tunnel_client_routes_through_explicit_and_environment_proxy(){
+        if std::env::var_os("LEAF_TEST_TUNNEL_CLIENT").is_none(){return;}
+        use std::{io::{Read,Write},sync::{Arc,atomic::{AtomicBool,Ordering}}};
+        for mode in ["explicit","environment"] {
+            let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();listener.set_nonblocking(true).unwrap();
+            let url=format!("http://127.0.0.1:{}",listener.local_addr().unwrap().port());
+            let done=Arc::new(AtomicBool::new(false));let saw=Arc::new(AtomicBool::new(false));let stop=done.clone();let observed=saw.clone();
+            let server=std::thread::spawn(move||{while !stop.load(Ordering::Relaxed){
+                if let Ok((mut socket,_))=listener.accept(){
+                    socket.set_read_timeout(Some(Duration::from_millis(500))).unwrap();let mut bytes=[0;8192];let size=socket.read(&mut bytes).unwrap_or(0);
+                    let request=String::from_utf8_lossy(&bytes[..size]);
+                    if request.starts_with("CONNECT api.openai.com:443 ")&&!request.contains("synthetic-not-a-key"){observed.store(true,Ordering::Relaxed);}
+                    let _=socket.write_all(b"HTTP/1.1 502 Controlled proxy failure\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                }else{std::thread::sleep(Duration::from_millis(10));}
+            }});
+            let mut child=Command::new(std::env::current_exe().unwrap());
+            child.args(["chatgpt_tunnel::tests::official_tunnel_client_proxy_child","--exact","--nocapture"]);
+            for key in ["CONTROL_PLANE_HTTP_PROXY","TUNNEL_CLIENT_HTTP_PROXY","HTTPS_PROXY","https_proxy","HTTP_PROXY","http_proxy","NO_PROXY","no_proxy"]{child.env_remove(key);}
+            child.env("LEAF_PROXY_TEST_CHILD",mode).env("LEAF_PROXY_TEST_URL",&url);
+            if mode=="environment"{child.env("HTTPS_PROXY",&url);}
+            child.env_remove("LEAF_PROXY_TEST_LOG").env_remove("LEAF_PROXY_CAPTURE_DIAGNOSTIC");
+            let output=child.output().unwrap();
+            // Diagnose failures without allowing captured stdio to turn a
+            // failed production-equivalent launch into a passing result.
+            let diagnostic=if output.status.success(){String::new()}else{
+                let retry=child.env("LEAF_PROXY_CAPTURE_DIAGNOSTIC","1").output().unwrap();
+                format!("diagnostic capture status: {}; {} {}",retry.status,String::from_utf8_lossy(&retry.stdout),String::from_utf8_lossy(&retry.stderr))
+            };
+            done.store(true,Ordering::Relaxed);server.join().unwrap();
+            assert!(output.status.success(),"{} {} {diagnostic}",String::from_utf8_lossy(&output.stdout),String::from_utf8_lossy(&output.stderr));
+            assert!(saw.load(Ordering::Relaxed),"vendor must actually CONNECT through the chosen proxy");
+        }
+    }
+    #[test]
     fn tunnel_id_and_windows_argument_boundaries(){
         assert_eq!(windows_quote("C:\\Public Example\\tunnel-client.exe"),"\"C:\\Public Example\\tunnel-client.exe\"");
         assert!(validate_input("",std::path::Path::new("/synthetic/tunnel-client")).is_err());
         assert!(validate_input(&format!("tunnel_{}","A".repeat(32)),std::path::Path::new("/synthetic/tunnel-client")).is_err());
         assert!(validate_input(&format!("tunnel_{}","a".repeat(32)),std::path::Path::new("relative/tunnel-client")).is_err());
+    }
+    #[test]
+    fn vendor_command_is_distinct_from_createprocess_arguments() {
+        let command=tunnel_command(std::path::Path::new("C:\\Public Example\\中文's\\leaf-mcp-adapter.exe"),std::path::Path::new("C:\\Public Example\\中文's\\descriptor.json"),true);
+        assert_eq!(command,"\"C:/Public Example/中文's/leaf-mcp-adapter.exe\" --descriptor \"C:/Public Example/中文's/descriptor.json\"");
+        assert_eq!(cli_stage("doctor","tunnel_cli_rejected".into()),"tunnel_cli_doctor_rejected");
+        assert_eq!(cli_stage("init","tunnel_cli_timeout".into()),"tunnel_cli_init_timeout");
+    }
+    #[test]
+    fn official_tunnel_client_prepares_profile_with_spaces_and_unicode() {
+        let Some(executable)=std::env::var_os("LEAF_TEST_TUNNEL_CLIENT") else {return;};
+        let root=tempfile::tempdir().unwrap();
+        let directory=root.path().join("Public Example 中文's");std::fs::create_dir(&directory).unwrap();
+        let helper=directory.join(if cfg!(windows){"leaf-mcp-adapter.exe"}else{"leaf-mcp-adapter"});
+        std::fs::copy(std::env::current_exe().unwrap(),&helper).unwrap();
+        let descriptor=directory.join("descriptor 中文.json");std::fs::write(&descriptor,"{}").unwrap();
+        let profile=prepare_profile_with_helper(&format!("tunnel_{}","0".repeat(32)),&PathBuf::from(executable),&directory.join("profiles"),&descriptor,"synthetic-placeholder-not-an-api-key",&helper).unwrap();
+        let text=std::fs::read_to_string(&profile.profile).unwrap();
+        assert!(profile_contains_command(&text,&helper,&descriptor));
+        assert!(!text.contains("synthetic-placeholder-not-an-api-key"));
+        if cfg!(windows){assert!(text.contains("C:/")||text.contains(":/"));}
     }
     #[cfg(unix)]
     fn fixture(directory:&std::path::Path,body:&str)->PathBuf{
@@ -309,7 +504,7 @@ mod tests {
         let path=directory.join("synthetic-connector");std::fs::write(&path,format!("#!/bin/sh\n{body}\n")).unwrap();std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o700)).unwrap();path
     }
     #[cfg(unix)]
-    fn spec(path:PathBuf)->TunnelLaunchSpec {TunnelLaunchSpec{executable:path,profile:"synthetic-profile".into(),generation:1,health_file:None,#[cfg(feature="native-smoke")]synthetic:false}}
+    fn spec(path:PathBuf)->TunnelLaunchSpec {TunnelLaunchSpec{executable:path,proxy_url:String::new(),profile:"synthetic-profile".into(),generation:1,health_file:None,#[cfg(feature="native-smoke")]synthetic:false}}
     #[cfg(unix)]
     #[test]
     fn single_tree_idempotence_and_stale_readiness(){

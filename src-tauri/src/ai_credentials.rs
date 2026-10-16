@@ -5,9 +5,25 @@ use serde::{Serialize, Deserialize};
 use sha2::{Digest, Sha256};
 
 pub const CLIENTS: [&str; 3] = ["chatgpt", "claude-desktop", "workbuddy"];
+// User intent is durable; process bearers, document grants and tasks are not.
+#[derive(Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpPreferences { pub enabled: bool }
+impl McpPreferences {
+    pub fn load(path:&std::path::Path)->Result<Self,String> {
+        match std::fs::read(path) {
+            Ok(bytes)=>serde_json::from_slice(&bytes).map_err(|_|"mcp_preference_invalid".into()),
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Ok(Self::default()),
+            Err(_)=>Err("mcp_preference_read".into()),
+        }
+    }
+    pub fn save(&self,path:&std::path::Path)->Result<(),String> {
+        write_private(path,&serde_json::to_string(self).map_err(|_|"mcp_preference_write")?).map_err(|_|"mcp_preference_write".into())
+    }
+}
 pub fn native_build_identity()->String {
     let mut hash=Sha256::new();
-    for source in [include_str!("ai_credentials.rs"),include_str!("ai_client_install.rs"),include_str!("claude_stdio.cjs"),include_str!("mcp.rs"),include_str!("chatgpt_tunnel.rs"),include_str!("main.rs"),include_str!("bin/leaf-mcp-adapter.rs"),include_str!("../Cargo.toml")] {hash.update(source.as_bytes());}
+    for source in [include_str!("ai_credentials.rs"),include_str!("atomic_file.rs"),include_str!("ai_client_install.rs"),include_str!("claude_stdio.cjs"),include_str!("mcp.rs"),include_str!("chatgpt_tunnel.rs"),include_str!("tunnel_proxy.rs"),include_str!("main.rs"),include_str!("bin/leaf-mcp-adapter.rs"),include_str!("../Cargo.toml")] {hash.update(source.as_bytes());}
     format!("{}:{:x}:{}:{}:{}:{}",env!("CARGO_PKG_VERSION"),hash.finalize(),std::env::consts::OS,std::env::consts::ARCH,if cfg!(feature="native-smoke"){"native-smoke"}else{"production"},if cfg!(debug_assertions){"debug"}else{"release"})
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -99,7 +115,7 @@ pub fn write_private_existing_parent(path:&std::path::Path,text:&str)->Result<()
  let mut f=tempfile::NamedTempFile::new_in(parent).map_err(|_|"credential_write")?;
  #[cfg(unix)]{use std::os::unix::fs::PermissionsExt;f.as_file().set_permissions(std::fs::Permissions::from_mode(0o600)).map_err(|_|"credential_write")?;}
  #[cfg(windows)]protect_windows(f.path())?;
- f.write_all(text.as_bytes()).and_then(|_|f.as_file().sync_all()).map_err(|_|"credential_write")?;f.persist(path).map_err(|_|"credential_write")?;Ok(())
+ f.write_all(text.as_bytes()).and_then(|_|f.as_file().sync_all()).map_err(|_|"credential_write")?;crate::atomic_file::persist(f,path).map_err(|_|"credential_write")?;Ok(())
 }
 pub fn read_private(path:&std::path::Path)->Result<String,String>{
  let metadata=std::fs::symlink_metadata(path).map_err(|_|"credential_unavailable")?;
@@ -107,12 +123,22 @@ pub fn read_private(path:&std::path::Path)->Result<String,String>{
  #[cfg(unix)]{use std::os::unix::fs::MetadataExt;unsafe extern "C"{fn getuid()->u32;}if metadata.mode()&0o077!=0||metadata.uid()!=unsafe{getuid()}{return Err("unsafe_credential_path".into());}}
  std::fs::read_to_string(path).map_err(|_|"credential_unavailable".into())
 }
+#[cfg(windows)]fn hidden_windows_command(program:impl AsRef<std::ffi::OsStr>)->std::process::Command {
+ use std::os::windows::process::CommandExt;
+ let mut command=std::process::Command::new(program);
+ command.creation_flags(0x08000000); // CREATE_NO_WINDOW; preserve redirected handles.
+ command
+}
 #[cfg(windows)]fn protect_windows(path:&std::path::Path)->Result<(),String>{
- use std::process::{Command,Stdio};
- let user=Command::new("whoami.exe").args(["/user","/fo","csv","/nh"]).output().map_err(|_|"credential_permissions")?;
+ use std::process::Stdio;
+ let user=hidden_windows_command("whoami.exe").args(["/user","/fo","csv","/nh"]).output().map_err(|_|"credential_permissions")?;
  let sid=String::from_utf8_lossy(&user.stdout).split(',').last().unwrap_or("").trim().trim_matches('"').to_string();
  if !sid.starts_with("S-1-")||!sid.bytes().all(|b|b.is_ascii_digit()||b==b'S'||b==b'-'){return Err("credential_permissions".into());}
- if !Command::new("icacls.exe").arg(path).args(["/inheritance:r","/grant:r",&format!("*{sid}:(F)")]).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s|s.success()){return Err("credential_permissions".into());}Ok(())
+ // Directories must pass the current user's access to files/subdirectories.
+ // A non-inheritable grant can strip inherited access from existing siblings
+ // when the master preference first protects their shared application folder.
+ let permission=if path.is_dir(){format!("*{sid}:(OI)(CI)F")}else{format!("*{sid}:F")};
+ if !hidden_windows_command("icacls.exe").arg(path).args(["/inheritance:r","/grant:r",&permission]).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s|s.success()){return Err("credential_permissions".into());}Ok(())
 }
 fn runtime_cache()->&'static std::sync::Mutex<HashMap<String,String>> {static CACHE:std::sync::OnceLock<std::sync::Mutex<HashMap<String,String>>>=std::sync::OnceLock::new();CACHE.get_or_init(Default::default)}
 // Keyring's macOS setter creates a caller-only ACL. For NEW Leaf entries use
@@ -206,7 +232,7 @@ pub struct AiClientProfile {
     #[serde(default)] pub(crate) runtime_pending:bool,
 }
 #[derive(Clone,Debug,Serialize,Deserialize,PartialEq)]
-pub struct TunnelProfile {pub tunnel_id:String,pub executable:PathBuf,pub profile:PathBuf,pub health_file:PathBuf,pub generation:u64,#[serde(default)]pub digest:String}
+pub struct TunnelProfile {#[serde(default)]pub proxy_url:String,pub tunnel_id:String,pub executable:PathBuf,pub profile:PathBuf,pub health_file:PathBuf,pub generation:u64,#[serde(default)]pub digest:String}
 #[derive(Clone,Debug,Serialize,Deserialize,PartialEq)]
 pub(crate) struct RuntimeCredentialRef {service:String,account:String}
 impl RuntimeCredentialRef {
@@ -318,7 +344,7 @@ impl AiClientProfileStore {
             let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|_| "profile_write")?;
             file.write_all(&serde_json::to_vec(&self.profiles).map_err(|_| "profile_encoding")?).map_err(|_| "profile_write")?;
             file.as_file().sync_all().map_err(|_| "profile_write")?;
-            file.persist(path).map_err(|_| "profile_write")?;
+            crate::atomic_file::persist(file,path).map_err(|_| "profile_write")?;
         }
         Ok(())
     }
@@ -388,9 +414,12 @@ impl AiClientProfileStore {
         self.persist()?;
         self.operations.insert(key, hash); self.status(client)
     }
-    pub(crate) fn configure_tunnel(&mut self,mut config:TunnelProfile,key:&str,operation:&str,expected:u64,shared:&dyn SecretStore,runtime:&dyn RuntimeVault)->Result<AiClientProfile,String>{
+    pub(crate) fn configure_tunnel(&mut self,config:TunnelProfile,key:&str,operation:&str,expected:u64,shared:&dyn SecretStore,runtime:&dyn RuntimeVault)->Result<AiClientProfile,String>{
+        self.configure_tunnel_before(config,key,operation,expected,shared,runtime,None)
+    }
+    pub(crate) fn configure_tunnel_before(&mut self,mut config:TunnelProfile,key:&str,operation:&str,expected:u64,shared:&dyn SecretStore,runtime:&dyn RuntimeVault,deadline:Option<std::time::Instant>)->Result<AiClientProfile,String>{
         let old=self.status("chatgpt")?;
-        let payload=format!("tunnel:{}:{}:{}",config.tunnel_id,config.executable.display(),key);
+        let payload=format!("tunnel:{}:{}:{}:{}",config.tunnel_id,config.executable.display(),key,config.proxy_url);
         let (op,hash,repeated)=self.operation("chatgpt",operation,&payload)?;
         if repeated{return Ok(old);}if old.generation!=expected{return Err("stale_configuration".into());}
         let key=key.trim();if key.len()>16384||key.chars().any(char::is_whitespace){return Err("invalid_runtime_key".into());}
@@ -401,6 +430,7 @@ impl AiClientProfileStore {
         let generation=old.generation+1;config.generation=generation;
         let bound=BoundCredential{token:random_token()?,uri:String::new(),instance:String::new(),generation,external_secret:None};
         if let Err(e)=shared.set(&bearer,&serde_json::to_string(&bound).unwrap()){if fresh{let _=runtime.delete(&r);}return Err(e);}
+        if deadline.is_some_and(|at|std::time::Instant::now()>=at){let _=shared.delete(&bearer);if fresh{let _=runtime.delete(&r);}return Err("connection_action_timeout".into());}
         let index=self.profiles.iter().position(|p|p.client=="chatgpt").unwrap();
         self.profiles[index]=AiClientProfile{configured:true,enabled:false,generation,credential_ref:Some(bearer.clone()),tunnel:Some(config),has_runtime_key:true,runtime_ref:Some(r.clone()),runtime_pending:false,..old.clone()};
         if let Err(e)=self.persist(){self.profiles[index]=old;let _=shared.delete(&bearer);if fresh{let _=runtime.delete(&r);}return Err(e);}
@@ -412,8 +442,8 @@ impl AiClientProfileStore {
         self.retry_tunnel_cleanup(shared,runtime);
         self.status("chatgpt")
     }
-    pub(crate) fn validate_tunnel_operation(&self,id:&str,executable:&std::path::Path,key:&str,operation:&str,expected:u64)->Result<bool,String>{
-        let (_,_,repeated)=self.operation("chatgpt",operation,&format!("tunnel:{id}:{}:{key}",executable.display()))?;
+    pub(crate) fn validate_tunnel_operation(&self,id:&str,executable:&std::path::Path,key:&str,proxy:&str,operation:&str,expected:u64)->Result<bool,String>{
+        let (_,_,repeated)=self.operation("chatgpt",operation,&format!("tunnel:{id}:{}:{key}:{proxy}",executable.display()))?;
         if !repeated&&self.status("chatgpt")?.generation!=expected{return Err("stale_configuration".into());}Ok(repeated)
     }
     pub(crate) fn migrate_runtime(&mut self,shared:&dyn SecretStore,runtime:&dyn RuntimeVault)->Result<(),String>{
@@ -455,6 +485,22 @@ impl AiClientProfileStore {
 pub mod tests {
     use super::*;
     use std::sync::Mutex;
+    #[cfg(windows)]
+    #[test]
+    fn windows_permission_commands_keep_pipes_without_a_console() {
+        if std::env::var_os("LEAF_TEST_HIDDEN_PERMISSION_CHILD").is_some() {
+            #[link(name="kernel32")] extern "system" {fn GetConsoleWindow()->*mut std::ffi::c_void;}
+            assert!(unsafe{GetConsoleWindow().is_null()},"permission child allocated a console");
+            println!("synthetic redirected permission output");
+            return;
+        }
+        let result=hidden_windows_command(std::env::current_exe().unwrap())
+            .args(["windows_permission_commands_keep_pipes_without_a_console","--nocapture","--test-threads=1"])
+            .env("LEAF_TEST_HIDDEN_PERMISSION_CHILD","1").output().unwrap();
+        assert!(result.status.success(),"{}",String::from_utf8_lossy(&result.stderr));
+        let stdout=String::from_utf8_lossy(&result.stdout);
+        assert!(stdout.contains("synthetic redirected permission output")&&stdout.contains("1 passed"));
+    }
     #[derive(Default)]
     struct MemoryKeyring(Mutex<HashMap<String, String>>);
     impl SecretStore for MemoryKeyring {
@@ -477,7 +523,38 @@ pub mod tests {
         fn get(&self,r:&RuntimeCredentialRef)->Result<String,String>{r.validate()?;self.0.lock().unwrap().get(&r.account).cloned().ok_or("runtime_key_unavailable".into())}
         fn delete(&self,r:&RuntimeCredentialRef)->Result<(),String>{self.0.lock().unwrap().remove(&r.account);Ok(())}
     }
-    fn config()->TunnelProfile {TunnelProfile{tunnel_id:format!("tunnel_{}","a".repeat(32)),executable:"/synthetic/tunnel-client".into(),profile:"/synthetic/leaf.yaml".into(),health_file:"/synthetic/leaf.health".into(),generation:0,digest:"synthetic-digest".into()}}
+    fn config()->TunnelProfile {TunnelProfile{proxy_url:String::new(),tunnel_id:format!("tunnel_{}","a".repeat(32)),executable:"/synthetic/tunnel-client".into(),profile:"/synthetic/leaf.yaml".into(),health_file:"/synthetic/leaf.health".into(),generation:0,digest:"synthetic-digest".into()}}
+    #[test]
+    fn tunnel_expired_save_cannot_replace_a_newer_configuration_or_key(){
+        let mut store=store();let shared=MemoryKeyring::default();let runtime=MemoryRuntime::default();
+        let first=store.configure_tunnel(config(),"synthetic-original","first",0,&shared,&runtime).unwrap();
+        let before_keys=runtime.0.lock().unwrap().clone();let before_bearers=shared.0.lock().unwrap().clone();
+        let mut wrong=config();wrong.proxy_url="http://invalid.example:1".into();
+        let deadline=std::time::Instant::now()-std::time::Duration::from_millis(1);
+        assert_eq!(store.configure_tunnel_before(wrong,"synthetic-replacement","expired",first.generation,&shared,&runtime,Some(deadline)).unwrap_err(),"connection_action_timeout");
+        assert_eq!(store.status("chatgpt").unwrap(),first);assert_eq!(*runtime.0.lock().unwrap(),before_keys);assert_eq!(*shared.0.lock().unwrap(),before_bearers);
+        let recovered=store.configure_tunnel(config(),"","recover",first.generation,&shared,&runtime).unwrap();
+        assert_eq!(store.runtime_key(&shared,&runtime).unwrap(),"synthetic-original");assert!(recovered.tunnel.unwrap().proxy_url.is_empty());
+    }
+    #[test]
+    fn tunnel_proxy_persists_and_blank_key_keeps_existing_runtime(){
+        let directory=tempfile::tempdir().unwrap();let path=directory.path().join("profiles.json");
+        let shared=MemoryKeyring::default();let runtime=MemoryRuntime::default();let namespace="studio.leaf.synthetic.mcp".to_string();
+        let mut store=AiClientProfileStore::new(namespace.clone(),Some(path.clone())).unwrap();
+        let first=store.configure_tunnel(config(),"synthetic-key","first",0,&shared,&runtime).unwrap();
+        let mut proxy=config();proxy.proxy_url="http://proxy.example:9123".into();
+        proxy.profile=directory.path().join("mcp/tunnel/proxy.yaml");proxy.health_file=directory.path().join("mcp/tunnel/proxy.health");
+        let saved=store.configure_tunnel(proxy.clone(),"","proxy",first.generation,&shared,&runtime).unwrap();
+        assert_eq!(saved.runtime_ref,first.runtime_ref);assert_eq!(store.runtime_key(&shared,&runtime).unwrap(),"synthetic-key");
+        assert!(store.validate_tunnel_operation(&proxy.tunnel_id,&proxy.executable,"","http://proxy.example:9123","proxy",first.generation).unwrap());
+        assert!(store.validate_tunnel_operation(&proxy.tunnel_id,&proxy.executable,"","http://different.example:9123","proxy",first.generation).is_err());
+        drop(store);let reopened=AiClientProfileStore::new(namespace,Some(path.clone())).unwrap();
+        assert_eq!(reopened.status("chatgpt").unwrap().tunnel.unwrap().proxy_url,proxy.proxy_url);
+        assert!(!std::fs::read_to_string(path).unwrap().contains("synthetic-key"));
+        // Old profiles without the optional field remain readable.
+        let mut legacy=serde_json::to_value(config()).unwrap();legacy.as_object_mut().unwrap().remove("proxy_url");
+        assert!(serde_json::from_value::<TunnelProfile>(legacy).unwrap().proxy_url.is_empty());
+    }
     #[test]
     fn tunnel_blank_replacement_retains_gui_key_and_masks_reference(){
         let mut s=store();let shared=MemoryKeyring::default();let runtime=MemoryRuntime::default();
@@ -485,8 +562,8 @@ pub mod tests {
         assert!(s.configure_tunnel(config(),"","empty",0,&shared,&runtime).is_err());
         let p=s.configure_tunnel(config(),"synthetic-runtime-sentinel","save",0,&shared,&runtime).unwrap();
         assert_eq!(s.configure_tunnel(config(),"synthetic-runtime-sentinel","save",0,&shared,&runtime).unwrap(),p);
-        assert!(s.validate_tunnel_operation(&p.tunnel.as_ref().unwrap().tunnel_id,&p.tunnel.as_ref().unwrap().executable,"synthetic-runtime-sentinel","save",0).unwrap());
-        assert!(s.validate_tunnel_operation(&p.tunnel.as_ref().unwrap().tunnel_id,&p.tunnel.as_ref().unwrap().executable,"different-key","save",p.generation).is_err());
+        assert!(s.validate_tunnel_operation(&p.tunnel.as_ref().unwrap().tunnel_id,&p.tunnel.as_ref().unwrap().executable,"synthetic-runtime-sentinel","","save",0).unwrap());
+        assert!(s.validate_tunnel_operation(&p.tunnel.as_ref().unwrap().tunnel_id,&p.tunnel.as_ref().unwrap().executable,"different-key","","save",p.generation).is_err());
         let original=p.runtime_ref.clone().unwrap();let next=s.configure_tunnel(config(),"   ","replace",p.generation,&shared,&runtime).unwrap();
         assert_eq!(next.runtime_ref,Some(original.clone()));assert_eq!(runtime.get(&original).unwrap(),"synthetic-runtime-sentinel");
         assert_eq!(s.status("workbuddy").unwrap(),buddy);
@@ -602,12 +679,23 @@ pub mod tests {
         s.enable("chatgpt","new-enable",disabled.generation,&k).unwrap();assert_ne!(s.token("chatgpt",&k).unwrap(),old_token);assert!(k.get(&old_ref).is_err());
     }
     #[test]
-    fn restart_is_disabled_and_profiles_persist_without_secrets() {
+    fn restart_retires_client_capabilities_and_profiles_persist_without_secrets() {
         let dir=tempfile::tempdir().unwrap();let path=dir.path().join("profiles.json");let k=MemoryKeyring::default();
         let mut s=AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(path.clone())).unwrap();
         let p=s.configure("chatgpt","synthetic-secret","save",0,&k).unwrap();s.enable("chatgpt","enable",p.generation,&k).unwrap();
         assert!(!std::fs::read_to_string(&path).unwrap().contains("synthetic-secret"));
         let restarted=AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(path)).unwrap();assert!(!restarted.status("chatgpt").unwrap().enabled);
+    }
+    #[test]
+    fn master_preference_persists_explicit_consent_and_refuses_invalid_data() {
+        let dir=tempfile::tempdir().unwrap();let path=dir.path().join("mcp-preferences-v1.json");
+        assert!(!McpPreferences::load(&path).unwrap().enabled);
+        McpPreferences{enabled:true}.save(&path).unwrap();assert!(McpPreferences::load(&path).unwrap().enabled);
+        McpPreferences{enabled:false}.save(&path).unwrap();assert!(!McpPreferences::load(&path).unwrap().enabled);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(),"{\"enabled\":false}");
+        std::fs::write(&path,"{broken").unwrap();assert!(McpPreferences::load(&path).is_err());
+        assert!(McpPreferences{enabled:true}.save(&dir.path().join("missing-parent/file")).is_ok());
+        assert!(McpPreferences{enabled:true}.save(dir.path()).is_err());
     }
     #[test]
     fn unavailable_keyring_never_creates_plaintext_fallback() {
@@ -617,6 +705,29 @@ pub mod tests {
             fn delete(&self,_:&CredentialRef)->Result<(),String>{Err("credential_unavailable".into())}
         }
         let mut s=store();let before=s.list();assert!(s.configure("chatgpt","synthetic","save",0,&Denied).is_err());assert_eq!(s.list(),before);
+    }
+    #[cfg(windows)]
+    #[test]
+    fn protecting_shared_app_directory_preserves_siblings_and_nested_access() {
+        let dir=tempfile::tempdir().unwrap();let root=dir.path().join("app-data");
+        std::fs::create_dir_all(root.join("mcp/nested")).unwrap();
+        let path=root.join("mcp-profiles-v1.json");let secrets=MemoryKeyring::default();
+        let mut profiles=AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(path.clone())).unwrap();
+        profiles.configure("workbuddy","synthetic-local-profile","save",0,&secrets).unwrap();
+        std::fs::write(root.join("mcp/nested/synthetic.json"),"{}").unwrap();
+        McpPreferences{enabled:true}.save(&root.join("mcp-preferences-v1.json")).unwrap();
+        assert!(AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(path)).unwrap().status("workbuddy").unwrap().configured);
+        assert_eq!(std::fs::read_dir(root.join("mcp/nested")).unwrap().count(),1);
+        write_private(&root.join("mcp/credentials/synthetic.json"),"{}").unwrap();
+        let identity=std::process::Command::new("whoami.exe").args(["/user","/fo","csv","/nh"]).output().unwrap();
+        let sid=String::from_utf8_lossy(&identity.stdout).split(',').last().unwrap().trim().trim_matches('"').to_owned();
+        // Simulate the earlier directory grant, then repair it before reload.
+        assert!(std::process::Command::new("icacls.exe").arg(&root).args(["/inheritance:r","/grant:r",&format!("*{sid}:F")]).stdout(std::process::Stdio::null()).status().unwrap().success());
+        private_directory(&root).unwrap();
+        let reloaded=AiClientProfileStore::new("studio.leaf.synthetic.mcp".into(),Some(root.join("mcp-profiles-v1.json"))).unwrap();
+        assert!(reloaded.status("workbuddy").unwrap().configured);
+        assert_eq!(read_private(&root.join("mcp/credentials/synthetic.json")).unwrap(),"{}");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
 

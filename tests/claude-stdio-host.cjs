@@ -18,7 +18,7 @@ async function run(source, config, input, signal) {
   const context = {process: host, console: {error: (...args) => {stderr += args.join(' ') + '\n';}},
     require: name => {
       assert.equal(name, 'node:child_process');
-      return {spawn: (...args) => {child = spawn(...args); return child;}};
+      return {spawn: (...args) => {assert.equal(args[2].windowsHide, true); child = spawn(...args); return child;}};
     }};
   vm.runInNewContext(`const c=${JSON.stringify(config)};\n${source}`, context);
   const timeout = setTimeout(() => child.kill('SIGKILL'), 5000);

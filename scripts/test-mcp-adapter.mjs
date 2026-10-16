@@ -1,18 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, copyFile, mkdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import {createServer} from 'node:net';
 import {stageDevBundle} from './desktop-dev-macos.mjs';
+import {Client} from '@modelcontextprotocol/client';
+import {StdioClientTransport} from '@modelcontextprotocol/client/stdio';
+import {delimiter} from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const mode = process.argv[2] || 'stdio-and-origin';
 assert(['stdio-and-origin', 'packaged'].includes(mode));
 const directory = await mkdtemp(join(tmpdir(), 'leaf-adapter-native-'));
-const env = { ...process.env, PATH: `${homedir()}/.cargo/bin:${process.env.PATH}`, LEAF_MCP_TEST_DIR: directory, LEAF_MCP_TEST_MODE: 'tracer', LEAF_MCP_ADAPTER_TEST: '1' };
+const env = { ...process.env, PATH: `${homedir()}/.cargo/bin${delimiter}${process.env.PATH}`, LEAF_MCP_TEST_DIR: directory, LEAF_MCP_TEST_MODE: 'tracer', LEAF_MCP_ADAPTER_TEST: '1' };
+if(process.platform==='win32') {
+  const probe=createServer();await new Promise((res,rej)=>{probe.once('error',rej);probe.listen(0,'127.0.0.1',res);});
+  env.LEAF_NATIVE_SMOKE_PORT=String(probe.address().port);await new Promise(res=>probe.close(res));
+}
 const processes = [];
 function start(command, args, options = {}) {
   const child = spawn(command, args, { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'], ...options });
@@ -49,8 +57,9 @@ async function initialize(h) {
   assert(result.result?.capabilities?.tools, 'standard initialize must negotiate tools'); h.notify('notifications/initialized');
 }
 await test('standard MCP adapter with actual native keyring and broker', async () => {
+let primaryFailure;
 try {
-  let binaries;let appExecutable=resolve(root,'src-tauri/target/debug/leaf');
+  let binaries;let appExecutable=resolve(root,'src-tauri/target/debug/leaf'+(process.platform==='win32'?'.exe':''));
   if(mode!=='packaged'&&!process.argv.includes('--reuse-build')) await build(['--debug','--no-bundle','--features','native-smoke','--config','src-tauri/tauri.mcp-test.conf.json']);
   if (mode === 'packaged') {
     assert.equal(existsSync(resolve(root, '.cache/mcp-adapter/artifacts.json')), true, 'actual Tauri bundle and MCPB artifacts must be produced');
@@ -73,11 +82,65 @@ try {
     const staged=await stageDevBundle({source:appExecutable,helper:binaries[0],test:true,testBundlePath:join(directory,'Leaf Adapter Test.app')});
     appExecutable=staged.executable;binaries=[staged.helper];
   }
+  if(process.platform==='win32') {
+    const installed=join(directory,'Public Example 中文');await mkdir(installed);
+    const gui=join(installed,'leaf.exe'),helper=join(installed,'leaf-mcp-adapter.exe');
+    await copyFile(appExecutable,gui);await copyFile(binaries[0],helper);appExecutable=gui;binaries=[helper];
+    const pe=await readFile(helper),header=pe.readUInt32LE(0x3c);
+    assert.equal(pe.readUInt16LE(header+92),2,'Windows helper uses the no-console Windows subsystem');
+  }
   const server = start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '41731', '--strictPort']);
   for (let i = 0; i < 100; i++) { try { if ((await fetch('http://127.0.0.1:41731')).ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
   const app = start(appExecutable, []);
   app.stderr.on('data', chunk => process.stderr.write(chunk));
   const ready = await waitJson('adapter-ready.json');
+  // Exercise generated host artifacts, including the Claude stream launcher,
+  // with the actual adapter. This does not require a model or paid host quota.
+  await test('generated Claude MCPB and WorkBuddy config launch the real adapter',async()=>{
+    const zip=await readFile(ready.claude_bundle);let offset=0;const entries=new Map();
+    while(zip.readUInt32LE(offset)===0x04034b50){
+      const size=zip.readUInt32LE(offset+18),nameLength=zip.readUInt16LE(offset+26),extra=zip.readUInt16LE(offset+28);
+      const name=zip.subarray(offset+30,offset+30+nameLength).toString();const start=offset+30+nameLength+extra;
+      entries.set(name,zip.subarray(start,start+size));offset=start+size;
+    }
+    const manifest=JSON.parse(entries.get('manifest.json').toString());
+    assert(manifest.compatibility.platforms.includes(process.platform));
+    assert.equal(manifest.server.mcp_config.command,'node');
+    const launcher=join(directory,'claude-launcher.cjs');await writeFile(launcher,entries.get('server/index.js'));
+    const workbuddy=JSON.parse(await readFile(ready.workbuddy_config,'utf8')).mcpServers.Leaf;
+    assert.equal(workbuddy.type,'stdio');
+    for(const [name,config] of [['claude',{command:process.execPath,args:[launcher]}],['workbuddy',workbuddy]]) {
+      const trace=join(directory,`${name}-console-proof.json`);
+      const transport=new StdioClientTransport({...config,env:{...config.env,LEAF_MCP_TEST_ADAPTER_ENV_TRACE:trace},stderr:'pipe'});
+      const client=new Client({name:'Synthetic '+name+' host',version:'1.0.0'},{capabilities:{},versionNegotiation:{mode:{pin:'2026-07-28'}}});
+      try {
+        await client.connect(transport);const tools=await client.listTools();assert(tools.tools.some(t=>t.name==='apply_edit_batch'));
+        const documents=await client.callTool({name:'list_documents',arguments:{}});assert.equal(documents.isError,false);
+        if(process.platform==='win32') assert.equal(JSON.parse(await readFile(trace,'utf8')).has_console,false,`${name} helper must not allocate a console`);
+        if(name==='claude') {
+          const read=await client.callTool({name:'read_document',arguments:ready.binding});assert.equal(read.structuredContent.content,'synthetic alpha omega');
+        }
+      }finally{await client.close();}
+    }
+  });
+  for (const binary of binaries) {
+    await test('modern SDK discovers tools and reads through the actual adapter', async () => {
+      const transport = new StdioClientTransport({command:binary,args:['--descriptor',ready.descriptor],cwd:directory,env:{PATH:'/no-development-runtimes'},stderr:'pipe'});
+      const client = new Client({name:'Synthetic modern adapter host',version:'1.0.0'},{capabilities:{},versionNegotiation:{mode:{pin:'2026-07-28'}}});
+      let stderr='';transport.stderr.on('data',chunk=>stderr+=chunk);
+      try {
+        await client.connect(transport);
+        const tools=await client.listTools();assert(tools.tools.some(t=>t.name==='read_document'));
+        const read=await client.callTool({name:'read_document',arguments:ready.binding});
+        assert.equal(read.isError,false);assert.equal(read.structuredContent.content,'synthetic alpha omega');
+        const resources=await client.listResources();assert.equal(resources.resources.length,1);
+        const resource=await client.readResource({uri:resources.resources[0].uri});assert.match(resource.contents[0].text,/<!doctype html>/i);
+        const denied=await client.callTool({name:'read_document',arguments:{...ready.binding,session_id:'synthetic-stale-session'}});
+        assert.equal(denied.isError,true,'tool failures also use a valid complete response');
+        assert.equal(stderr,'','no diagnostic or credential output');
+      } finally {await client.close();}
+    });
+  }
   const clients = [];
   for (const binary of binaries) {
     const h = helper(binary, ready.descriptor); clients.push(h); await initialize(h);
@@ -115,12 +178,19 @@ try {
   await test('global disable rejects remaining client calls', async () => { const reply = await other.request('tools/call', { name: 'list_documents', arguments: {} }); assert(reply.error || reply.result?.isError); });
   for (const h of [...clients, other]) h.child.stdin.end();
   await writeFile(join(directory, 'done'), ''); const report = await waitJson('adapter-result.json'); assert.equal(report.pass, true, report.failure);
-} finally {
+} catch(error) {primaryFailure=error;throw error;}
+finally {
   const acl=await readFile(join(directory,'acl-effective.json'),'utf8').catch(()=>null);
   if(acl) console.log(`Effective synthetic entry ACL: ${acl}`);
   await writeFile(join(directory, 'abort'), '');
   if (existsSync(join(directory, 'adapter-ready.json'))) {try {await waitJson('adapter-result.json', 5000);}catch{}}
-  for (const child of processes) if (child.exitCode === null) child.kill('SIGTERM');
-  await new Promise(r => setTimeout(r, 300)); await rm(directory, { recursive: true, force: true });
+  await Promise.all(processes.map(child=>{
+    if(child.exitCode!==null||child.signalCode!==null)return;
+    return new Promise(resolve=>{
+      const timeout=setTimeout(resolve,5000);child.once('close',()=>{clearTimeout(timeout);resolve();});child.kill('SIGTERM');
+    });
+  }));
+  try {await rm(directory, { recursive: true, force: true, maxRetries:10, retryDelay:100 });}
+  catch(error) {if(primaryFailure)console.error('Secondary adapter cleanup failure:',error.code);else throw error;}
 }
 });

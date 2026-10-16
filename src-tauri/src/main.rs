@@ -14,6 +14,7 @@ mod pdf_output;
 mod native_shortcuts;
 #[cfg(target_os = "macos")]
 mod native_title;
+mod atomic_file;
 mod recovery;
 mod resources;
 mod document_location;
@@ -1188,6 +1189,7 @@ fn development_window<'a>(app: &tauri::AppHandle, builder: tauri::WebviewWindowB
 }
 
 mod chatgpt_tunnel;
+mod tunnel_proxy;
 fn main() {
     if std::env::args().nth(1).as_deref()==Some("--leaf-build-identity") {println!("{}",mcp::ai_credentials::native_build_identity());return;}
     #[cfg(feature="native-smoke")]
@@ -1233,6 +1235,8 @@ fn main() {
         })
         .setup(|app| {
             app.state::<mcp::LeafMcpBroker>().initialize(app.handle()).map_err(std::io::Error::other)?;
+            let handle=app.handle().clone();
+            tauri::async_runtime::spawn(async move {handle.state::<mcp::LeafMcpBroker>().restore_connections(&handle).await;});
             app.manage(i18n::Language::load(application_data(app.handle())?.join("language-v1.json")));
             let recent_path = application_data(app.handle())?.join("recent-files-v1.json");
             app.manage(recent::Recent::load(recent_path));

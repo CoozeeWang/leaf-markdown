@@ -277,15 +277,16 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <label class="setting-row ai-client-row"><span>${h('ai.client')}</span><span class="ui-select"><select id="aiClient"><option value="chatgpt">ChatGPT</option><option value="claude-desktop">Claude Desktop</option><option value="workbuddy">WorkBuddy</option></select>${icon('chevron',16)}</span></label>
         <div class="ai-actions ai-config-actions"><button id="aiEditSetup" class="ai-button" hidden>${h('ai.edit_setup')}</button><button id="aiClear" class="ai-button ai-danger" disabled></button></div>
         <p id="aiConnectionError" class="setting-hint ai-error" role="alert"></p>
-        <div id="aiLocalSetup" hidden><ol class="setting-hint ai-local-steps"><li id="aiLocalStep1"></li><li id="aiLocalStep2"></li><li id="aiLocalStep3"></li></ol><div class="ai-actions ai-config-actions"><button id="aiLocalConfigure" class="ai-button ai-primary"></button></div><p id="aiLocalResult" class="setting-hint" role="status"></p></div>
+        <div id="aiLocalSetup" hidden><h4 id="aiClaudeManualTitle" class="ai-local-title" hidden></h4><ol class="setting-hint ai-local-steps"><li id="aiLocalStep1"></li><li id="aiLocalStep2"></li><li id="aiLocalStep3"></li></ol><div class="ai-actions ai-config-actions"><button id="aiLocalConfigure" class="ai-button ai-primary"></button></div><p id="aiLocalResult" class="setting-hint" role="status"></p></div>
         <div id="aiChatGPTSetup" class="ai-guided-card">
           <h4>${h('ai.guided_title')}</h4><p id="aiSavedStatus" class="setting-hint" role="status"></p>
           <ol class="ai-guided-steps">
             <li><label for="aiTunnelId">${h('ai.tunnel_id')}</label><p class="setting-hint">${h('ai.setup_at')} <a href="https://platform.openai.com/settings/organization/tunnels" data-ai-link>${h('ai.tunnel_link')}</a> ${h('ai.tunnel_help')}</p><input id="aiTunnelId" autocomplete="off" spellcheck="false" data-i18n-placeholder="ai.tunnel_placeholder" placeholder="${t('ai.tunnel_placeholder')}" disabled></li>
             <li><label for="aiTunnelProgram">${h('ai.program')}</label><div class="ai-input-row"><input id="aiTunnelProgram" readonly data-i18n-placeholder="ai.program_placeholder" placeholder="${t('ai.program_placeholder')}"><button id="aiPickProgram" class="ai-button" disabled>${h('ai.choose_program')}</button></div><div class="ai-device-row"><span id="aiDevice" class="setting-hint"></span><button id="aiRefreshDownload" class="ai-text-button">${h('ai.recheck')}</button></div><p id="aiDownloadStatus" class="setting-hint" role="status"></p><a id="aiDownload" href="https://github.com/openai/tunnel-client/releases/latest" data-ai-link>${h('ai.downloads')}</a><p id="aiProgramHelp" class="setting-hint"></p><details id="aiMacHelp" open><summary>${h('ai.mac_title')}</summary><p class="setting-hint">${h('ai.mac_help')}</p></details></li>
-            <li><label for="aiRuntimeKey">${h('ai.runtime_key')}</label><input id="aiRuntimeKey" type="password" autocomplete="off" spellcheck="false" disabled><p class="setting-hint">${h('ai.setup_at')} <a href="https://platform.openai.com/settings/organization/api-keys" data-ai-link>${h('ai.key_link')}</a> ${h('ai.key_help')}</p><p id="aiKeepKey" class="setting-hint" hidden>${h('ai.keep_key')}</p><div class="ai-actions"><button id="aiSaveSetup" class="ai-button ai-primary" disabled>${h('ai.save_setup')}</button><button id="aiCancelSetup" class="ai-button" hidden>${h('ai.cancel')}</button></div></li>
+            <li><label for="aiRuntimeKey">${h('ai.runtime_key')}</label><p class="setting-hint">${h('ai.key_requirement')}</p><input id="aiRuntimeKey" type="password" autocomplete="off" spellcheck="false" disabled><p class="setting-hint">${h('ai.setup_at')} <a href="https://platform.openai.com/settings/organization/api-keys" data-ai-link>${h('ai.key_link')}</a> ${h('ai.key_help')}</p><p id="aiKeepKey" class="setting-hint" hidden>${h('ai.keep_key')}</p><div class="ai-actions"><button id="aiSaveSetup" class="ai-button ai-primary" disabled>${h('ai.save_setup')}</button><button id="aiCancelSetup" class="ai-button" hidden>${h('ai.cancel')}</button></div></li>
             <li><span class="ai-step-title">${h('ai.add_title')}</span><p class="setting-hint">${h('ai.add_help')}</p><p id="aiRuntimeStatus" class="setting-hint" role="status"></p><div class="ai-actions ai-add-actions"><button id="aiAddChatGPT" class="ai-button ai-primary" disabled>${h('ai.add_button')}</button><button id="aiCopyTunnel" class="ai-button" disabled>${h('ai.copy_tunnel')}</button></div><button id="aiRetryTunnel" class="ai-text-button ai-retry" hidden>${h('ai.retry_connection')}</button><details><summary>${h('ai.existing_title')}</summary><p class="setting-hint">${h('ai.existing_help')}</p></details></li>
           </ol>
+          <button id="aiTroubleshoot" class="ai-text-button" hidden>${h('ai.troubleshoot')}</button><details id="aiAdvanced"><summary>${h('ai.advanced_title')}</summary><label for="aiTunnelProxy">${h('ai.proxy_label')}</label><input id="aiTunnelProxy" autocomplete="off" spellcheck="false" placeholder="${t('ai.proxy_placeholder')}" disabled><p class="setting-hint">${h('ai.proxy_help')}</p><h5>${h('ai.diagnostics_title')}</h5>${h('ai.diagnostics_title')}</summary><p class="setting-hint">${h('ai.diagnostics_help')}</p><pre id="aiDiagnosticsText" class="setting-hint" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre><button id="aiCopyDiagnostics" class="ai-text-button">${h('ai.copy_diagnostics')}</button></details>
         </div>
         <details id="aiSetupHelp" class="ai-setup-help"><summary>${h('ai.help_title')}</summary><p class="setting-hint">${h('ai.help_hint')}</p><p class="setting-hint ai-setup-prompt">${h('ai.help_prompt')}</p><button id="aiCopyPrompt" class="ai-button">${h('ai.copy_prompt')}</button></details>
         <p id="aiActionStatus" class="setting-hint" role="status"></p>
@@ -1834,7 +1835,7 @@ document.querySelector('#settingsClose').onclick = closeSettings;
 const aiClients = ['chatgpt', 'claude-desktop', 'workbuddy'];
 const aiClientNames = {'chatgpt':'ChatGPT','claude-desktop':'Claude Desktop','workbuddy':'WorkBuddy'};
 const aiNode = id => document.getElementById(id);
-const aiConnection = {profiles:null, tunnel:null, selected:'chatgpt', editing:true, executable:'', busy:false, read:0, platform:null};
+const aiConnection = {profiles:null, tunnel:null, selected:'chatgpt', editing:true, executable:'', busy:false, action:0, connecting:false, read:0, platform:null, localInstall:null};
 const aiOperation = () => crypto.randomUUID();
 aiNode('aiConnectionControls').addEventListener('click',event=>{
   if(aiNode('aiConnectionControls').disabled) {event.preventDefault();event.stopImmediatePropagation();}
@@ -1871,25 +1872,40 @@ function renderAiConnections() {
       if(target.dataset.aiHref) {target.setAttribute('href',target.dataset.aiHref);delete target.dataset.aiHref;}
     }
   }
-  aiNode('aiClient').disabled = value.busy;
+  aiNode('aiClient').disabled = controls.disabled;
   for (const option of aiNode('aiClient').options) {
     const item = profiles?.clients.find(p => p.client === option.value);
     option.textContent = `${aiClientNames[option.value]} · ${t(item ? item.configured ? 'ai.configured' : 'ai.unconfigured' : 'ai.unknown')}`;
   }
   aiNode('aiClear').textContent = t('ai.clear', {client:aiClientNames[value.selected]});
-  aiNode('aiClear').disabled = value.busy || !profile?.configured;
+  aiNode('aiClear').disabled = controls.disabled || !profile?.configured;
   aiNode('aiClear').hidden = !profile?.configured;
   aiNode('aiChatGPTSetup').hidden = value.selected !== 'chatgpt';
   aiNode('aiSetupHelp').hidden = value.selected !== 'chatgpt';
   aiNode('aiLocalSetup').hidden = value.selected === 'chatgpt';
-  aiNode('aiLocalConfigure').textContent=t('ai.add_client',{client:value.selected==='claude-desktop'?'Claude':'WorkBuddy'});
-  aiNode('aiLocalConfigure').disabled=!desktop||!profile||value.busy;
-  for(const [index,key] of ['step1','step2','step3'].entries()) aiNode(`aiLocalStep${index+1}`).textContent=t(`ai.${value.selected==='claude-desktop'?'claude':'workbuddy'}_${key}`);
+  const windowsClaude=value.selected==='claude-desktop'&&value.platform?.os==='windows';
+  aiNode('aiClaudeManualTitle').hidden=!windowsClaude;
+  aiNode('aiClaudeManualTitle').textContent=t('ai.claude_manual_title');
+  aiNode('aiLocalConfigure').textContent=windowsClaude?t('ai.claude_save_bundle'):t('ai.add_client',{client:value.selected==='claude-desktop'?'Claude':'WorkBuddy'});
+  aiNode('aiLocalConfigure').disabled=controls.disabled||!profile;
+  for(const [index,key] of ['step1','step2','step3'].entries()) aiNode(`aiLocalStep${index+1}`).textContent=t(`ai.${value.selected==='claude-desktop'?'claude':'workbuddy'}_${key}${windowsClaude&&index<2?'_windows':''}`);
+  const installed=value.localInstall;
+  aiNode('aiLocalResult').textContent=installed?t(installed.path?'ai.claude_bundle_saved':installed.client==='claude-desktop'?'ai.claude_added':'ai.workbuddy_added',{path:installed.path}):'';
   aiNode('aiSavedStatus').textContent = runtime?.saved_config ? t('ai.saved') : '';
-  aiNode('aiRuntimeStatus').textContent = t(runtime?.host_verified ? 'ai.host_verified' : runtime?.local_ready ? 'ai.local_ready' : runtime?.process ? 'ai.starting' : 'ai.stopped');
-  aiNode('aiRuntimeStatus').dataset.state = runtime?.host_verified ? 'host-verified' : runtime?.local_ready ? 'local-ready' : runtime?.process ? 'starting' : 'stopped';
-  if (runtime?.last_error) showAiError(runtime.last_error);
-  for (const id of ['aiTunnelId','aiRuntimeKey']) {
+  const cloudErrors={tunnel_network_proxy:'ai.cloud_network_error',tunnel_cloud_auth:'ai.cloud_auth_error',tunnel_cloud_poll_failed:'ai.cloud_poll_error',tunnel_cloud_delivery_failed:'ai.cloud_delivery_error',tunnel_health_unavailable:'ai.cloud_health_error',invalid_tunnel_proxy:'ai.proxy_invalid',tunnel_proxy_auto_config:'ai.proxy_auto_config',tunnel_system_proxy_unavailable:'ai.proxy_system_error'};
+  const cloudError=cloudErrors[runtime?.last_error];
+  const connected=runtime?.cloud_connected&&!value.connecting;
+  const cloudState=cloudError?'cloud-error':connected?'cloud-connected':runtime?.local_ready?'local-ready':runtime?.process?'starting':'stopped';
+  aiNode('aiRuntimeStatus').textContent=[runtime?.local_ready?t('ai.local_ready'):t(runtime?.process?'ai.starting':'ai.stopped'),cloudError?t(cloudError):connected?t('ai.cloud_connected'):(runtime?.process||value.connecting)?t('ai.cloud_waiting'):''].filter(Boolean).join(' ');
+  aiNode('aiRuntimeStatus').dataset.state=cloudState;
+  aiNode('aiRuntimeStatus').classList.toggle('ai-error',!!cloudError);
+  aiNode('aiTroubleshoot').hidden=!cloudError&&!aiNode('aiConnectionError').textContent;
+  const diagnostics={...value.tunnel?.diagnostics,tunnel:runtime?{local_ready:runtime.local_ready,cloud_connected:runtime.cloud_connected,cloud_state:runtime.cloud_state,proxy_source:runtime.proxy_source,consecutive_failures:runtime.consecutive_failures,http_status:runtime.http_status,tunnel_instance:runtime.tunnel_instance,last_error:runtime.last_error}:null};
+  aiNode('aiDiagnosticsText').textContent=JSON.stringify(diagnostics,null,2);
+  aiNode('aiCopyDiagnostics').disabled=controls.disabled||!value.tunnel?.diagnostics;
+  if (runtime?.last_error&&!cloudError) showAiError(runtime.last_error,'runtime');
+  else if(aiNode('aiConnectionError').dataset.errorOrigin==='runtime')aiNode('aiConnectionError').textContent='';
+  for (const id of ['aiTunnelId','aiRuntimeKey','aiTunnelProxy']) {
     aiNode(id).disabled = !desktop || !chatgpt || value.busy;
     aiNode(id).readOnly = !value.editing;
   }
@@ -1905,7 +1921,7 @@ function renderAiConnections() {
   aiNode('aiCancelSetup').disabled = value.busy;
   aiNode('aiRetryTunnel').hidden = !profiles?.enabled || !runtime?.saved_config || !!runtime?.process || value.editing;
   aiNode('aiRetryTunnel').disabled = value.busy;
-  aiNode('aiAddChatGPT').disabled = value.busy || !runtime?.local_ready || value.editing;
+  aiNode('aiAddChatGPT').disabled = value.busy || !connected || value.editing;
   aiNode('aiCopyTunnel').disabled = value.busy || !chatgpt?.tunnel?.tunnel_id || value.editing;
   const platform=value.platform;
   const chip=['aarch64','arm64'].includes(platform?.arch)?'arm64':['x86_64','amd64'].includes(platform?.arch)?'amd64':null;
@@ -1920,90 +1936,116 @@ function renderAiConnections() {
 function restoreAiFields() {
   const config = aiConnection.tunnel?.profile.tunnel;
   aiNode('aiTunnelId').value = config?.tunnel_id || '';
+  aiNode('aiTunnelProxy').value = config?.proxy_url || '';
   aiConnection.executable = config?.executable || '';
   aiNode('aiTunnelProgram').value = aiConnection.executable.split(/[\\/]/).at(-1) || '';
   aiNode('aiRuntimeKey').value = '';
 }
-function showAiError(error) {
+function showAiError(error, origin='action') {
+  aiNode('aiConnectionError').dataset.errorOrigin=origin;
   // Native failures may contain arbitrary OS/user text. Never echo credential
   // input or opaque diagnostics into DOM; the recoverable action is stable.
-  const codes = new Set(['invalid_tunnel_id','invalid_tunnel_executable','invalid_runtime_key','tunnel_unconfigured','tunnel_executable_missing','tunnel_cli_failed','tunnel_cli_rejected','tunnel_cli_timeout','tunnel_cli_contract_changed','tunnel_profile_changed','tunnel_profile_reconfigure_required','tunnel_profile_unavailable','tunnel_profile_write','tunnel_spawn_failed','tunnel_start_timeout','tunnel_exited','stale_configuration','credential_unavailable','runtime_key_unavailable','runtime_key_required','runtime_gui_only','invalid_runtime_reference','connection_disabled','helper_not_installed']);
+  const codes = new Set(['invalid_tunnel_proxy','tunnel_proxy_auto_config','tunnel_system_proxy_unavailable','invalid_tunnel_id','invalid_tunnel_executable','invalid_runtime_key','tunnel_unconfigured','tunnel_executable_missing','tunnel_cli_failed','tunnel_cli_rejected','tunnel_cli_init_rejected','tunnel_cli_init_timeout','tunnel_cli_doctor_rejected','tunnel_cli_doctor_timeout','mcp_preference_read','mcp_preference_invalid','mcp_preference_write','tunnel_cli_timeout','tunnel_cli_contract_changed','tunnel_profile_changed','tunnel_profile_reconfigure_required','tunnel_profile_unavailable','tunnel_profile_write','tunnel_spawn_failed','tunnel_start_timeout','tunnel_exited','stale_configuration','credential_unavailable','runtime_key_unavailable','runtime_key_required','runtime_gui_only','invalid_runtime_reference','connection_disabled','helper_not_installed','connection_action_timeout']);
   const code = codes.has(String(error)) ? String(error) : 'connection_failed';
   aiNode('aiConnectionError').dataset.failure = String(error).startsWith('invalid args') ? 'ipc_invalid_args' : /(?:not found|unknown command|Unknown IPC)/.test(String(error)) ? 'ipc_missing' : code;
-  aiNode('aiConnectionError').textContent = t('ai.error', {code});
+  aiNode('aiConnectionError').textContent = String(error)==='connection_action_timeout'?t('ai.action_timeout'):['invalid_tunnel_proxy','tunnel_proxy_auto_config','tunnel_system_proxy_unavailable'].includes(String(error))?t({'invalid_tunnel_proxy':'ai.proxy_invalid','tunnel_proxy_auto_config':'ai.proxy_auto_config','tunnel_system_proxy_unavailable':'ai.proxy_system_error'}[String(error)]):['install_write','invalid_export_path'].includes(String(error))?t('ai.claude_save_failed'):t('ai.error', {code});
 }
 async function refreshAiConnections() {
   if (!desktop) {aiNode('aiConnectionError').textContent = t('ai.desktop_required'); renderAiConnections(); return;}
-  if (aiConnection.busy) return;
   const serial = ++aiConnection.read;
   try {
     const [profiles, tunnel] = await Promise.all([invoke('mcp_profiles'), invoke('mcp_tunnel_status')]);
-    if (serial !== aiConnection.read || aiConnection.busy) return;
+    if (serial !== aiConnection.read) return;
     if (!profiles?.clients || profiles.clients.length !== 3) throw new Error('profiles_unavailable');
     const initial = !aiConnection.profiles;
     if (initial) aiConnection.profiles = profiles;
-    else {aiConnection.profiles.enabled = profiles.enabled; for (const profile of profiles.clients) acceptAiProfile(profile);}
+    else {aiConnection.profiles.enabled = profiles.enabled;aiConnection.profiles.connection_errors=profiles.connection_errors; for (const profile of profiles.clients) acceptAiProfile(profile);}
     acceptAiTunnel(tunnel);
+    const startupError=Object.values(profiles.connection_errors || {})[0];
+    if (startupError) showAiError(startupError,'startup');
+    else if(aiNode('aiConnectionError').dataset.errorOrigin==='startup')aiNode('aiConnectionError').textContent='';
     if (initial) {aiConnection.editing = !tunnel.runtime.saved_config; restoreAiFields();}
     renderAiConnections();
   } catch (error) {if (serial === aiConnection.read) {showAiError(error); renderAiConnections();}}
 }
-async function runAiAction(action) {
-  if (aiConnection.busy || !desktop) return false;
-  aiConnection.busy = true; ++aiConnection.read;
+// Local configuration/startup has a deadline; cloud polling never owns the form.
+// A retired action cannot apply late replies or initiate another native mutation.
+async function runAiAction(action, {masterSwitch=false, connecting=false, dialog=false}={}) {
+  if (aiConnection.busy || !desktop || (!masterSwitch&&!aiConnection.profiles?.enabled)) return false;
+  const serial=++aiConnection.action;
+  const check=()=>{if(serial!==aiConnection.action)throw 'connection_action_retired';};
+  const call=async(command,args)=>{check();const result=await invoke(command,args);check();return result;};
+  aiConnection.busy = true; aiConnection.connecting=connecting; ++aiConnection.read;
   aiNode('aiConnectionError').textContent = ''; aiNode('aiActionStatus').textContent = t('ai.working'); renderAiConnections();
-  try {await action(); aiNode('aiActionStatus').textContent = ''; return true;}
-  catch (error) {showAiError(error); aiNode('aiActionStatus').textContent = ''; return false;}
-  finally {aiConnection.busy = false; renderAiConnections();}
+  let timer;
+  try {
+    const work=action(call);
+    await (dialog?work:Promise.race([work,new Promise((_,reject)=>{timer=setTimeout(()=>reject('connection_action_timeout'),30000);})]));
+    return true;
+  } catch (error) {if(serial===aiConnection.action)showAiError(error);return false;}
+  finally {
+    clearTimeout(timer);
+    if(serial===aiConnection.action){++aiConnection.action;aiConnection.busy=false;aiConnection.connecting=false;aiNode('aiActionStatus').textContent='';renderAiConnections();void refreshAiConnections();}
+  }
 }
 aiNode('aiClient').addEventListener('change', () => {
-  aiConnection.selected = aiNode('aiClient').value; aiNode('aiLocalResult').textContent='';
+  aiConnection.selected = aiNode('aiClient').value; aiConnection.localInstall=null;
   aiNode('aiRuntimeKey').value = ''; aiNode('aiConnectionError').textContent = ''; aiNode('aiActionStatus').textContent = ''; renderAiConnections();
 });
 aiNode('mcpEnabled').addEventListener('change', () => {
   const desired = aiNode('mcpEnabled').checked;
   aiNode('mcpEnabled').checked = !!aiConnection.profiles?.enabled;
-  void runAiAction(async () => {
-    aiConnection.profiles = await invoke('mcp_set_enabled', {enabled:desired});
-    acceptAiTunnel(await invoke('mcp_tunnel_status'));
-    if (desired) await enableConfiguredAiConnections();
-  });
+  void runAiAction(async call => {
+    aiConnection.profiles = await call('mcp_set_enabled', {enabled:desired});
+    acceptAiTunnel(await call('mcp_tunnel_status'));
+    if (desired) await enableConfiguredAiConnections(call);
+  },{masterSwitch:true,connecting:desired});
 });
 aiNode('aiPickProgram').onclick = () => {void runAiAction(async () => {
   const path = await pickNativeFile({multiple:false, title:t('ai.choose_program')});
   if (typeof path === 'string') {aiConnection.executable = path; aiNode('aiTunnelProgram').value = path.split(/[\\/]/).at(-1);}
-});};
-for (const id of ['aiTunnelId','aiRuntimeKey']) aiNode(id).addEventListener('input', renderAiConnections);
+},{dialog:true});};
+for (const id of ['aiTunnelId','aiRuntimeKey','aiTunnelProxy']) aiNode(id).addEventListener('input', renderAiConnections);
 aiNode('aiSaveSetup').onclick = () => {
   const runtimeKey = aiNode('aiRuntimeKey').value;
   aiNode('aiRuntimeKey').value = ''; // Input is ephemeral, including failures.
-  void runAiAction(async () => {
-    const value = await invoke('mcp_configure_tunnel', {tunnelId:aiNode('aiTunnelId').value.trim(), executable:aiConnection.executable, runtimeKey, operationId:aiOperation(), generation:aiConnection.tunnel.profile.generation});
+  void runAiAction(async call => {
+    const value = await call('mcp_configure_tunnel', {tunnelId:aiNode('aiTunnelId').value.trim(), executable:aiConnection.executable, runtimeKey, proxyUrl:aiNode('aiTunnelProxy').value.trim(), operationId:aiOperation(), generation:aiConnection.tunnel.profile.generation});
     acceptAiTunnel(value); aiConnection.editing = false; restoreAiFields();
-    if (aiConnection.profiles?.enabled) await enableConfiguredAiConnections();
-  });
+    if (aiConnection.profiles?.enabled) await enableConfiguredAiConnections(call);
+  },{connecting:true});
 };
+aiNode('aiTroubleshoot').onclick=()=>{aiConnection.editing=true;renderAiConnections();aiNode('aiAdvanced').open=true;aiNode('aiTunnelProxy').focus();};
 aiNode('aiEditSetup').onclick = () => {aiConnection.editing = true; renderAiConnections(); aiNode('aiTunnelId').focus();};
 aiNode('aiCancelSetup').onclick = () => {aiConnection.editing = false; restoreAiFields(); renderAiConnections(); aiNode('aiEditSetup').focus();};
-async function enableConfiguredAiConnections() {
+async function enableConfiguredAiConnections(call=invoke) {
+  let failure;
   for (const profile of aiConnection.profiles.clients.filter(p=>p.configured && !p.enabled)) {
-    const result = await invoke('mcp_enable_client', {client:profile.client, operationId:aiOperation(), generation:profile.generation});
-    acceptAiProfile(result.profile);
+    try {
+      const result = await call('mcp_enable_client', {client:profile.client, operationId:aiOperation(), generation:profile.generation});
+      acceptAiProfile(result.profile);
+    } catch (error) {failure ??= error;}
   }
-  if (aiConnection.tunnel?.runtime.saved_config) acceptAiTunnel(await invoke('mcp_start_tunnel'));
+  try {if (aiConnection.tunnel?.runtime.saved_config) acceptAiTunnel(await call('mcp_start_tunnel'));}
+  catch (error) {failure ??= error;}
+  aiConnection.profiles=await call('mcp_profiles');
+  failure ??= Object.values(aiConnection.profiles.connection_errors || {})[0];
+  if (failure) throw failure;
 }
-aiNode('aiRetryTunnel').onclick = () => {void runAiAction(enableConfiguredAiConnections);};
-aiNode('aiLocalConfigure').onclick = () => {const client=aiConnection.selected;void runAiAction(async()=>{
+aiNode('aiRetryTunnel').onclick = () => {void runAiAction(enableConfiguredAiConnections,{connecting:true});};
+aiNode('aiLocalConfigure').onclick = () => {const client=aiConnection.selected;void runAiAction(async call=>{
+  aiConnection.localInstall=null;
   aiNode('aiLocalResult').textContent='';
-  const result=await invoke('mcp_add_client',{client,language:currentLanguage()});
+  const result=await call('mcp_add_client',{client,language:currentLanguage()});
   if(result.cancelled)return;
   acceptAiProfile(result.profile);
-  aiNode('aiLocalResult').textContent=t(client==='claude-desktop'?'ai.claude_added':'ai.workbuddy_added');
-});};
+  aiConnection.localInstall={client,path:result.bundle_path};
+},{dialog:true});};
 async function copyAiText(text) {
   try {await navigator.clipboard.writeText(text); aiNode('aiActionStatus').textContent = t('ai.copied');}
   catch {aiNode('aiConnectionError').textContent = t('ai.copy_failed');}
 }
+aiNode('aiCopyDiagnostics').onclick=()=>{void copyAiText(aiNode('aiDiagnosticsText').textContent);};
 aiNode('aiCopyTunnel').onclick = () => {void copyAiText(aiConnection.tunnel.profile.tunnel.tunnel_id);};
 aiNode('aiCopyPrompt').onclick = () => {void copyAiText(t('ai.help_prompt'));};
 function validAiSetupLink(url) {
@@ -2043,10 +2085,12 @@ async function refreshAiDownload() {
 }
 aiNode('aiRefreshDownload').onclick = () => {void refreshAiDownload();};
 let aiDownloadStarted = false;
+if (desktop) void listenNative('leaf-mcp-connections-changed', () => {void refreshAiConnections();});
 setInterval(() => {if (!appearancePopover.hidden && !aiNode('settingsPanel-ai').hidden) void refreshAiConnections();}, 4000);
 window.addEventListener('focus', () => {if (!appearancePopover.hidden && !aiNode('settingsPanel-ai').hidden) void refreshAiConnections();});
 onLanguageChange(renderAiConnections);
 aiNode('aiClear').onclick = () => {
+  if(aiNode('aiConnectionControls').disabled)return;
   const client = aiConnection.selected, opener = aiNode('aiClear');
   const dialog = document.createElement('dialog'); dialog.className = 'ai-clear-dialog close-document-dialog';
   dialog.setAttribute('aria-labelledby', 'aiClearTitle'); dialog.setAttribute('aria-describedby','aiClearDescription');
@@ -2062,9 +2106,9 @@ aiNode('aiClear').onclick = () => {
   dialog.querySelector('[data-ai-confirm]').onclick = async () => {
     if (deleting) return; deleting = true;
     for (const button of dialog.querySelectorAll('button')) button.disabled = true;
-    const success = await runAiAction(async () => {
-      acceptAiProfile(await invoke('mcp_revoke_client', {client, clear:true, operationId:aiOperation()}));
-      if (client === 'chatgpt') {acceptAiTunnel(await invoke('mcp_tunnel_status')); aiConnection.editing = true; restoreAiFields();}
+    const success = await runAiAction(async call => {
+      acceptAiProfile(await call('mcp_revoke_client', {client, clear:true, operationId:aiOperation()}));
+      if (client === 'chatgpt') {acceptAiTunnel(await call('mcp_tunnel_status')); aiConnection.editing = true; restoreAiFields();}
 
     });
     deleting = false;
@@ -2609,6 +2653,14 @@ if (desktop) {
             nativeTestRetirement={action:args.mutation,content:args.content,checked:false};result={armed:true};
           }
           else if(args.action==='human') editor.restoreValue(args.content);
+          else if(args.action==='ai-proxy-save') {
+            openSettings('ai');await refreshAiConnections();aiConnection.editing=true;
+            if(args.executable){aiConnection.executable=args.executable;aiNode('aiTunnelId').value=`tunnel_${'0'.repeat(32)}`;aiNode('aiRuntimeKey').value='synthetic-proxy-key';}
+            aiNode('aiTunnelProxy').value=args.proxy;renderAiConnections();aiNode('aiSaveSetup').click();result={started:aiConnection.busy};
+          }
+          else if(args.action==='ai-proxy-state') {
+            await refreshAiConnections();result={busy:aiConnection.busy,editable:!aiNode('aiEditSetup').disabled,key_empty:aiNode('aiRuntimeKey').value==='',failure:aiNode('aiConnectionError').dataset.failure,error:aiNode('aiConnectionError').textContent,state:aiNode('aiRuntimeStatus').dataset.state};
+          }
           else if(args.action==='ai-settings-configure') {
             openSettings('ai'); await refreshAiConnections();
             if (!aiConnection.profiles) throw new Error('native_ui_profiles_missing');

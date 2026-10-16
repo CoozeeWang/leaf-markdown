@@ -1,4 +1,9 @@
 !include "${__FILEDIR__}\windows-locales.nsh"
+!include "${__FILEDIR__}\windows-adapter-upgrade.nsh"
+
+!macro NSIS_HOOK_PREINSTALL
+  !insertmacro LeafPrepareAdapterUpgrade ""
+!macroend
 
 ; Per-user folder context actions. Do not modify Windows' UserChoice keys.
 !macro NSIS_HOOK_POSTINSTALL
@@ -13,6 +18,7 @@
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro LeafPrepareAdapterUpgrade "un."
   ReadRegStr $R0 HKCU "Software\Classes\Directory\shell\Leaf.NewMarkdown\command" ""
   ${If} $R0 == '"$INSTDIR\${MAINBINARYNAME}.exe" --new-in "%1\."'
     DeleteRegKey HKCU "Software\Classes\Directory\shell\Leaf.NewMarkdown"

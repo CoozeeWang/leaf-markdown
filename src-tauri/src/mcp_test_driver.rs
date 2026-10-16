@@ -76,6 +76,8 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     let _=broker.bridge(app,label,"test",json!({"action":"reset","content":""})).await?;
     let original=broker.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).cloned().ok_or("renderer registration absent")?;
     ensure(original.client.is_none(),"default authorization must be closed")?;
+    if mode=="connection-proxy-recovery" {return proxy_recovery(app,label,broker).await;}
+    if mode.starts_with("connection-restart-") {return connection_restart(app,label,broker,mode).await;}
     if mode=="chatgpt-tunnel-automatic-access" {return automatic_access(app,label,broker).await;}
     if mode=="chatgpt-tunnel-tracer" {return tunnel_tracer(app,label,broker,mode).await;}
     if mode=="chatgpt-tunnel-dev-bundle" {return tunnel_lifecycle(app,label,broker).await;}
@@ -260,6 +262,90 @@ async fn authorization_retirement(app:&tauri::AppHandle,label:&str,broker:&super
     Ok(())
 }
 
+// Production settings IPC + official connector, with synthetic credentials.
+// The parent owns a local failing proxy; no real OpenAI success is claimed.
+async fn proxy_recovery(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker)->Result<(),String>{
+    let executable=std::env::var("LEAF_TEST_TUNNEL_CLIENT").map_err(|_|"official connector absent")?;
+    let bad=std::env::var("LEAF_TEST_BAD_PROXY").map_err(|_|"bad proxy absent")?;
+    broker.set_enabled(app,true).await?;
+    for (index,proxy) in [bad.as_str(),""].iter().enumerate(){
+        let args=if index==0{json!({"action":"ai-proxy-save","proxy":proxy,"executable":executable})}else{json!({"action":"ai-proxy-save","proxy":proxy})};
+        ensure(broker.bridge(app,label,"test",args).await?["started"]==true,"real settings started save")?;
+        let start=std::time::Instant::now();
+        loop {
+            let state=broker.bridge(app,label,"test",json!({"action":"ai-proxy-state"})).await?;
+            if state["busy"]==false{ensure(state["editable"]==true&&state["key_empty"]==true&&state["error"]=="","real settings restored controls after saving")?;break;}
+            ensure(start.elapsed()<std::time::Duration::from_secs(30),"real settings cannot remain busy past deadline")?;
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+        loop {
+            let status=broker.tunnel_status()?;
+            if status["runtime"]["last_error"]=="tunnel_network_proxy"{ensure(status["runtime"]["cloud_connected"]==false,"failed cloud cannot stay connected")?;break;}
+            ensure(start.elapsed()<std::time::Duration::from_secs(40),"official connector must expose network failure")?;
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        let state=broker.bridge(app,label,"test",json!({"action":"ai-proxy-state"})).await?;
+        ensure(state["state"]=="cloud-error"&&state["editable"]==true,"actual UI displays failure and permits editing")?;
+        let profile=broker.client_profiles()?.into_iter().find(|p|p.client=="chatgpt").unwrap();
+        ensure(profile.has_runtime_key&&profile.tunnel.as_ref().unwrap().proxy_url==*proxy&&*broker.inner.enabled.lock().unwrap(),"saved proxy, key and MCP intent retained")?;
+        if index==0{std::fs::write(super::application_data(app).unwrap().join("first-profile.txt"),profile.tunnel.unwrap().profile.to_string_lossy().as_bytes()).map_err(|_|"profile evidence")?;}
+        else{
+            let first=std::fs::read_to_string(super::application_data(app).unwrap().join("first-profile.txt")).map_err(|_|"profile evidence")?;
+            ensure(profile.tunnel.unwrap().profile.to_string_lossy()==first,"proxy edit reuses validated profile without external revalidation")?;
+            ensure(broker.tunnel_status()?["runtime"]["proxy_source"]=="environment","clearing override restores automatic route in the same process")?;
+        }
+    }
+    broker.revoke_client(app,"chatgpt",true,"cleanup").await?;broker.set_enabled(app,false).await?;
+    Ok(())
+}
+
+async fn connection_restart(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,mode:&str)->Result<(),String> {
+    let directory=super::application_data(app).map_err(|_|"test data")?;
+    if mode=="connection-restart-cold" {
+        ensure(!*broker.inner.enabled.lock().unwrap(),"first use defaults off")?;
+        for client in super::mcp::ai_credentials::CLIENTS {
+            broker.configure_client(app,client,"synthetic-local-profile".into(),"setup",0).await?;
+        }
+        broker.set_enabled(app,true).await?;
+        broker.restore_connections(app).await;
+        ensure(*broker.inner.enabled.lock().unwrap(),"configured tunnel failure cannot clear intent")?;
+        let old=std::fs::read(directory.join("mcp/claude-desktop.json")).map_err(|_|"old descriptor")?;
+        std::fs::write(directory.join("old-descriptor.json"),old).map_err(|_|"test evidence")?;
+        std::fs::write(directory.join("old-instance.json"),broker.tunnel_status()?["diagnostics"]["instance_id"].to_string()).map_err(|_|"instance evidence")?;
+    }else if mode=="connection-restart-on" {
+        ensure(*broker.inner.enabled.lock().unwrap(),"enabled consent survives actual process restart")?;
+        for _ in 0..100 {
+            if broker.client_profiles()?.iter().filter(|p|p.client!="chatgpt").all(|p|p.enabled){break;}
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        for client in ["claude-desktop","workbuddy"] {
+            ensure(broker.client_profiles()?.iter().any(|p|p.client==client&&p.enabled),"local client restored despite ChatGPT failure")?;
+            let path=directory.join(format!("mcp/{client}.json"));
+            let d:super::mcp::ai_credentials::BrokerDescriptor=serde_json::from_slice(&std::fs::read(path).map_err(|_|"descriptor")?).map_err(|_|"descriptor")?;
+            ensure(!d.load_token()?.is_empty(),"fresh instance-bound credential published")?;
+        }
+        let old:super::mcp::ai_credentials::BrokerDescriptor=serde_json::from_slice(&std::fs::read(directory.join("old-descriptor.json")).unwrap()).unwrap();
+        ensure(old.load_token().is_err(),"old process descriptor rejected")?;
+        let previous:Value=serde_json::from_slice(&std::fs::read(directory.join("old-instance.json")).map_err(|_|"instance evidence")?).map_err(|_|"instance encoding")?;
+        let diagnostics=broker.tunnel_status()?["diagnostics"].clone();
+        ensure(previous!=diagnostics["instance_id"],"restart publishes a distinct source instance")?;
+        // Most legacy fixtures deliberately disable whole-document access.
+        // Exercise the production access mode for this scoped list/read check.
+        broker.inner.automatic_access.store(true,std::sync::atomic::Ordering::Relaxed);
+        broker.bridge(app,label,"test",json!({"action":"reset","content":"Nonempty synthetic proxy acceptance buffer"})).await?;
+        let listed=broker.call(app,"workbuddy","list_documents",json!({})).await?;
+        let doc=listed["documents"].as_array().and_then(|docs|docs.first()).ok_or("synthetic document")?;
+        let read=broker.call(app,"workbuddy","read_document",doc.clone()).await?;
+        ensure(read["content"]=="Nonempty synthetic proxy acceptance buffer","nonempty native broker read")?;
+        ensure(listed["_meta"]["leaf"]["instance_id"]==diagnostics["instance_id"]&&read["_meta"]["leaf"]["instance_id"]==diagnostics["instance_id"],"list and read match the displayed source instance")?;
+        broker.set_enabled(app,false).await?;
+    }else {
+        ensure(!*broker.inner.enabled.lock().unwrap(),"explicit off survives actual process restart")?;
+        ensure(broker.client_profiles()?.iter().all(|p|!p.enabled),"no local clients started while master off")?;
+    }
+    Ok(())
+}
+
 async fn tunnel_tracer(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,_mode:&str)->Result<(),String>{
     use super::mcp::ai_credentials::{BrokerDescriptor,BoundCredential,CredentialRef,SecretStore,OsKeyring,random_token};
     use super::chatgpt_tunnel::TunnelLaunchSpec;
@@ -283,7 +369,7 @@ async fn tunnel_tracer(app:&tauri::AppHandle,label:&str,broker:&super::mcp::Leaf
         let descriptor_path=directory.join("chatgpt.json");
         std::fs::write(&descriptor_path,serde_json::to_vec(&descriptor).unwrap()).map_err(|_|"test descriptor")?;
         std::fs::write(&profile_path,serde_json::to_vec(&json!({"descriptor":descriptor_path,"binding":{"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch},"evidence":evidence})).unwrap()).map_err(|_|"test profile")?;
-        let spec=TunnelLaunchSpec{executable:std::env::current_exe().map_err(|_|"test executable")?,profile:profile_path,generation:1,health_file:None,synthetic:true};
+        let spec=TunnelLaunchSpec{proxy_url:String::new(),executable:std::env::current_exe().map_err(|_|"test executable")?,profile:profile_path,generation:1,health_file:None,synthetic:true};
         let status=broker.inner.tunnel.lock().unwrap().start(&spec,"synthetic-tunnel-key-sentinel")?;
         for _ in 0..600 {
             if evidence.exists(){break;}
@@ -381,6 +467,7 @@ async fn tunnel_lifecycle(app:&tauri::AppHandle,label:&str,broker:&super::mcp::L
     ensure(broker.start_tunnel(app).await?["runtime"]["epoch"]==started["runtime"]["epoch"],"repeated native start owns the same connector")?;
     let trace:Value=serde_json::from_slice(&std::fs::read(root.join("adapter-env.json")).map_err(|_|"adapter environment trace")?).map_err(|_|"adapter environment trace")?;
     ensure(trace["has_runtime_key"]==false,"actual helper environment excludes the runtime key")?;
+    #[cfg(windows)] ensure(trace["has_console"]==false,"actual tunnel helper does not allocate a console")?;
     let acl:Value=serde_json::from_slice(&std::fs::read(root.join("acl-runtime-effective.json")).map_err(|_|"runtime ACL evidence")?).map_err(|_|"runtime ACL evidence")?;
     ensure(acl.as_array().is_some_and(|rows|rows.iter().any(|r|r["trusted_apps"]==1))&&!acl.as_array().unwrap().iter().any(|r|r["trusted_apps"]==2),"actual runtime entry trusts only the GUI")?;
     let descriptor:super::mcp::ai_credentials::BrokerDescriptor=serde_json::from_slice(&std::fs::read(super::application_data(app).unwrap().join("mcp/chatgpt.json")).unwrap()).unwrap();
