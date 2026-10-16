@@ -73,6 +73,7 @@ jobs:
         run: |
           $installer = Get-ChildItem "src-tauri/target/$env:LEAF_BUILD_TARGET/release/bundle/nsis/*.exe" | Select-Object -First 1
           if (!$installer) { throw 'NSIS installer not found' }
+          ./tests/windows-adapter-upgrade.ps1 -Installer $installer.FullName
           ./tests/windows-i18n-installer.ps1 -Installer $installer.FullName
           ./tests/document-icons-windows.ps1 -Installer $installer.FullName
       - name: Verify macOS file integration

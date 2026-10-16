@@ -37,6 +37,8 @@ MCP adapter 的协议回归包含旧版 `initialize` 和新版 `server/discover`
 
 Windows 的 Claude 扩展入口使用原生保存窗口导出 `Leaf.mcpb`，随后由用户在 Claude Desktop 的 Settings → Extensions → Advanced settings → Install Extension 导入，不依赖 `.mcpb` 文件关联。取消保存不创建配置；界面只报告文件保存结果，不表示宿主已安装或连接成功。`ai_client_install` 原生测试覆盖空格／Unicode 导出路径、替换、失败及不改变目录／其他文件；`ai-connections-browser.mjs` 覆盖三语引导和关闭 MCP 后三个客户端整体禁用。Windows 打包工作流运行这两层检查；真实保存窗口与 Claude 导入仍需安装版验收。
 
+Windows 安装／卸载钩子只结束可执行文件路径与当前安装目录完全相符的 `leaf-mcp-adapter.exe`，不按进程名批量结束其他安装或客户端。文件仍被占用时，在替换安装内容前停止，提示退出宿主后重试。`windows-adapter-upgrade.ps1` 仅在一次性 Windows CI 中运行，使用合成常驻进程复现可执行文件占用，核对覆盖升级、同路径多实例、其他路径不受影响、外部文件锁失败后重试、卸载和已保存设置保留；不代替真实用户电脑上的客户端重连验收。
+
 高亮与行内代码快捷键由 `inline-format-shortcuts-browser.mjs` 检查，覆盖两端按键、三语命令、实际渲染及撤销／重做。已有 Vite 测试服务运行时，macOS 可执行 `cargo run --locked --example native-table-keys -- ../tests/native-inline-format-shortcuts.html http://127.0.0.1:41732/tests/native-inline-format-shortcuts.html`，以 AppKit 按键验证实际 WKWebView；不代替安装版及真实中文输入法验收。
 
 脚注浮框的文档历史回归为 `footnote-history-browser.mjs`，覆盖 Mac／Windows 快捷键、原生菜单事件入口、撤销后继续输入、编号恢复与浮框同步。macOS 可用同一原生入口运行 `../tests/native-footnote-history.html` 与 `http://127.0.0.1:41732/tests/native-footnote-history.html --foreground`，检查 AppKit 撤销／重做与模拟菜单转发；不代替真实原生菜单、中文输入法或 Windows 实机验收。
