@@ -4,7 +4,11 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Run in a disposable GitHub Actions Windows runner only' }
 # The complete Rust suite runs in the preceding workflow step.
 $archive = 'tunnel-client-v0.0.16-windows-amd64.zip'
-$metadata = Invoke-RestMethod 'https://api.github.com/repos/openai/tunnel-client/releases/tags/v0.0.16'
+# Hosted runners share anonymous API quotas. Send the read-only job token only
+# to the fixed metadata endpoint, never to a redirected asset download.
+$headers = @{ Accept = 'application/vnd.github+json' }
+if ($env:GH_TOKEN) { $headers.Authorization = "Bearer $env:GH_TOKEN" }
+$metadata = Invoke-RestMethod 'https://api.github.com/repos/openai/tunnel-client/releases/tags/v0.0.16' -Headers $headers -MaximumRetryCount 3 -RetryIntervalSec 2 -TimeoutSec 30
 $asset = $metadata.assets | Where-Object { $_.name -eq $archive }
 if (!$asset -or !$asset.digest.StartsWith('sha256:')) { throw 'Official archive digest missing' }
 $directory = Join-Path $env:RUNNER_TEMP 'Leaf MCP vendor'

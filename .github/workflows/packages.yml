@@ -84,6 +84,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows MCP configuration checks failed' }
         env:
           LEAF_VERIFICATION_SCOPE: ${{ inputs.verification_scope }}
+          GH_TOKEN: ${{ github.token }}
       - name: Build installer
         shell: bash
         run: npm run desktop:build -- --target "$LEAF_BUILD_TARGET" --config "$LEAF_BUILD_CONFIG"
