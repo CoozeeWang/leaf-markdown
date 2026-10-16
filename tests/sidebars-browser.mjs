@@ -41,7 +41,8 @@ try {
  assert.equal(await width('outline'),350);assert.equal(await width('notes'),400);
  await page.setViewportSize({width:1050,height:900});await page.waitForTimeout(100);
  assert.ok((await page.locator('#editor').boundingBox()).width>=360);
- await page.setViewportSize({width:700,height:900});await page.waitForTimeout(100);
+ await page.setViewportSize({width:700,height:900});
+ await page.waitForFunction(()=>matchMedia('(max-width: 1000px)').matches && document.querySelectorAll('.outline-drawer.visible, .notes-drawer.visible').length===1);
  assert.equal(await page.locator('.outline-drawer.visible, .notes-drawer.visible').count(),1);
  await page.click('#outlineButton');assert.equal(await page.locator('.notes-drawer.visible').count(),0);
  await page.click('#notesButton');assert.equal(await page.locator('.outline-drawer.visible').count(),0);

@@ -114,8 +114,39 @@ for (const engine of process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGIN
       await cdp.detach();
     }
     const loaded=await page.evaluate(()=>Array.from(document.fonts).filter(face=>face.family.includes('Leaf Body')).map(face=>({family:face.family.replace(/^(["'])(.*)\1$/,'$2'),style:face.style,weight:face.weight,range:face.unicodeRange,status:face.status})));
-    assert.ok(loaded.some(face=>face.family===`Leaf Body en ${english}`&&face.style==='italic'&&face.status==='loaded'),`${engine}/${english}: real italic face is loaded: ${JSON.stringify(loaded)}`);
-    assert.ok(loaded.some(face=>face.family===`Leaf Body en ${english}`&&face.weight==='700'&&face.status==='loaded'),`${engine}/${english}: real bold face is loaded: ${JSON.stringify(loaded)}`);
+    // Probe the browser directly, independently of Leaf's loader. WinCairo's
+    // local() lookup can resolve a family while rejecting its full face names.
+    // Chromium (the Windows desktop engine) and macOS WebKit must load real faces.
+    const capabilities=await page.evaluate(async english=>{
+      const {loadBodyFonts}=await import('/src/body-fonts.js');
+      const family=(await loadBodyFonts()).en[english].family, compact=family.replaceAll(' ','');
+      const probe=async(style,weight)=>{
+        const suffix=weight==='700'?'Bold':'Italic';
+        const names=style==='normal'&&weight==='400'?[family]:[`${family} ${suffix}`,`${compact}-${suffix}`,`${compact}${suffix}`];
+        try {await new FontFace('Independent face probe',names.map(n=>`local(${JSON.stringify(n)})`).join(', '),{style,weight}).load();return true;}catch{return false;}
+      };
+      return {regular:await probe('normal','400'),italic:await probe('italic','400'),bold:await probe('normal','700'),missing:await new FontFace('Missing probe','local("Leaf Nonexistent Face 9142")').load().then(()=>true,()=>false)};
+    },english);
+    assert.equal(capabilities.regular,true);assert.equal(capabilities.missing,false);
+    for(const [style,weight,key] of [['italic','400','italic'],['normal','700','bold']]) {
+      const actual=loaded.some(face=>face.family===`Leaf Body en ${english}`&&face.style===style&&face.weight===weight&&face.status==='loaded');
+      if(capabilities[key]) assert.ok(actual,`${engine}/${english}: real ${key} face is loaded: ${JSON.stringify(loaded)}`);
+      else {
+        assert.equal(process.platform,'win32',`Real ${key} remains required on macOS`);
+        assert.equal(engine,'webkit',`Real ${key} remains required in the Windows desktop engine`);
+        assert.equal(actual,false,'An unavailable face must not be mislabeled as genuine');
+        const pixels=await page.evaluate(({english,style,weight})=>{
+          const canvas=document.createElement('canvas');canvas.width=600;canvas.height=90;
+          const ctx=canvas.getContext('2d');
+          const paint=font=>{ctx.clearRect(0,0,600,90);ctx.font=font;ctx.fillText('Hamburgefonts Café 123',12,60);return ctx.getImageData(0,0,600,90).data;};
+          const regular=paint(`normal 400 36px "Leaf Body en ${english}"`);
+          const styled=paint(`${style} ${weight} 36px "Leaf Body en ${english}"`);
+          return {ink:styled.some(value=>value>0),different:styled.some((value,index)=>value!==regular[index])};
+        },{english,style,weight});
+        assert.equal(pixels.ink,true);assert.equal(pixels.different,true,`${key} fallback must actually change rendered glyphs`);
+      }
+    }
+    console.log(`${engine} independent local face capabilities: ${JSON.stringify(capabilities)}`);
     await page.click('#settingsClose'); await mode(page,'reading');
     assert.equal(await page.locator('.reading-document > p').first().evaluate(el=>getComputedStyle(el).fontFamily),stack);
     assert.equal(await page.locator('.reading-document h1[data-source-line]').evaluate(el=>getComputedStyle(el).fontFamily),uiFont);
