@@ -23,7 +23,7 @@ impl McpPreferences {
 }
 pub fn native_build_identity()->String {
     let mut hash=Sha256::new();
-    for source in [include_str!("ai_credentials.rs"),include_str!("atomic_file.rs"),include_str!("ai_client_install.rs"),include_str!("claude_stdio.cjs"),include_str!("mcp.rs"),include_str!("chatgpt_tunnel.rs"),include_str!("main.rs"),include_str!("bin/leaf-mcp-adapter.rs"),include_str!("../Cargo.toml")] {hash.update(source.as_bytes());}
+    for source in [include_str!("ai_credentials.rs"),include_str!("atomic_file.rs"),include_str!("ai_client_install.rs"),include_str!("claude_stdio.cjs"),include_str!("mcp.rs"),include_str!("chatgpt_tunnel.rs"),include_str!("tunnel_proxy.rs"),include_str!("main.rs"),include_str!("bin/leaf-mcp-adapter.rs"),include_str!("../Cargo.toml")] {hash.update(source.as_bytes());}
     format!("{}:{:x}:{}:{}:{}:{}",env!("CARGO_PKG_VERSION"),hash.finalize(),std::env::consts::OS,std::env::consts::ARCH,if cfg!(feature="native-smoke"){"native-smoke"}else{"production"},if cfg!(debug_assertions){"debug"}else{"release"})
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -232,7 +232,7 @@ pub struct AiClientProfile {
     #[serde(default)] pub(crate) runtime_pending:bool,
 }
 #[derive(Clone,Debug,Serialize,Deserialize,PartialEq)]
-pub struct TunnelProfile {pub tunnel_id:String,pub executable:PathBuf,pub profile:PathBuf,pub health_file:PathBuf,pub generation:u64,#[serde(default)]pub digest:String}
+pub struct TunnelProfile {#[serde(default)]pub proxy_url:String,pub tunnel_id:String,pub executable:PathBuf,pub profile:PathBuf,pub health_file:PathBuf,pub generation:u64,#[serde(default)]pub digest:String}
 #[derive(Clone,Debug,Serialize,Deserialize,PartialEq)]
 pub(crate) struct RuntimeCredentialRef {service:String,account:String}
 impl RuntimeCredentialRef {
@@ -416,7 +416,7 @@ impl AiClientProfileStore {
     }
     pub(crate) fn configure_tunnel(&mut self,mut config:TunnelProfile,key:&str,operation:&str,expected:u64,shared:&dyn SecretStore,runtime:&dyn RuntimeVault)->Result<AiClientProfile,String>{
         let old=self.status("chatgpt")?;
-        let payload=format!("tunnel:{}:{}:{}",config.tunnel_id,config.executable.display(),key);
+        let payload=format!("tunnel:{}:{}:{}:{}",config.tunnel_id,config.executable.display(),key,config.proxy_url);
         let (op,hash,repeated)=self.operation("chatgpt",operation,&payload)?;
         if repeated{return Ok(old);}if old.generation!=expected{return Err("stale_configuration".into());}
         let key=key.trim();if key.len()>16384||key.chars().any(char::is_whitespace){return Err("invalid_runtime_key".into());}
@@ -438,8 +438,8 @@ impl AiClientProfileStore {
         self.retry_tunnel_cleanup(shared,runtime);
         self.status("chatgpt")
     }
-    pub(crate) fn validate_tunnel_operation(&self,id:&str,executable:&std::path::Path,key:&str,operation:&str,expected:u64)->Result<bool,String>{
-        let (_,_,repeated)=self.operation("chatgpt",operation,&format!("tunnel:{id}:{}:{key}",executable.display()))?;
+    pub(crate) fn validate_tunnel_operation(&self,id:&str,executable:&std::path::Path,key:&str,proxy:&str,operation:&str,expected:u64)->Result<bool,String>{
+        let (_,_,repeated)=self.operation("chatgpt",operation,&format!("tunnel:{id}:{}:{key}:{proxy}",executable.display()))?;
         if !repeated&&self.status("chatgpt")?.generation!=expected{return Err("stale_configuration".into());}Ok(repeated)
     }
     pub(crate) fn migrate_runtime(&mut self,shared:&dyn SecretStore,runtime:&dyn RuntimeVault)->Result<(),String>{
@@ -519,7 +519,26 @@ pub mod tests {
         fn get(&self,r:&RuntimeCredentialRef)->Result<String,String>{r.validate()?;self.0.lock().unwrap().get(&r.account).cloned().ok_or("runtime_key_unavailable".into())}
         fn delete(&self,r:&RuntimeCredentialRef)->Result<(),String>{self.0.lock().unwrap().remove(&r.account);Ok(())}
     }
-    fn config()->TunnelProfile {TunnelProfile{tunnel_id:format!("tunnel_{}","a".repeat(32)),executable:"/synthetic/tunnel-client".into(),profile:"/synthetic/leaf.yaml".into(),health_file:"/synthetic/leaf.health".into(),generation:0,digest:"synthetic-digest".into()}}
+    fn config()->TunnelProfile {TunnelProfile{proxy_url:String::new(),tunnel_id:format!("tunnel_{}","a".repeat(32)),executable:"/synthetic/tunnel-client".into(),profile:"/synthetic/leaf.yaml".into(),health_file:"/synthetic/leaf.health".into(),generation:0,digest:"synthetic-digest".into()}}
+    #[test]
+    fn tunnel_proxy_persists_and_blank_key_keeps_existing_runtime(){
+        let directory=tempfile::tempdir().unwrap();let path=directory.path().join("profiles.json");
+        let shared=MemoryKeyring::default();let runtime=MemoryRuntime::default();let namespace="studio.leaf.synthetic.mcp".to_string();
+        let mut store=AiClientProfileStore::new(namespace.clone(),Some(path.clone())).unwrap();
+        let first=store.configure_tunnel(config(),"synthetic-key","first",0,&shared,&runtime).unwrap();
+        let mut proxy=config();proxy.proxy_url="http://proxy.example:9123".into();
+        proxy.profile=directory.path().join("mcp/tunnel/proxy.yaml");proxy.health_file=directory.path().join("mcp/tunnel/proxy.health");
+        let saved=store.configure_tunnel(proxy.clone(),"","proxy",first.generation,&shared,&runtime).unwrap();
+        assert_eq!(saved.runtime_ref,first.runtime_ref);assert_eq!(store.runtime_key(&shared,&runtime).unwrap(),"synthetic-key");
+        assert!(store.validate_tunnel_operation(&proxy.tunnel_id,&proxy.executable,"","http://proxy.example:9123","proxy",first.generation).unwrap());
+        assert!(store.validate_tunnel_operation(&proxy.tunnel_id,&proxy.executable,"","http://different.example:9123","proxy",first.generation).is_err());
+        drop(store);let reopened=AiClientProfileStore::new(namespace,Some(path.clone())).unwrap();
+        assert_eq!(reopened.status("chatgpt").unwrap().tunnel.unwrap().proxy_url,proxy.proxy_url);
+        assert!(!std::fs::read_to_string(path).unwrap().contains("synthetic-key"));
+        // Old profiles without the optional field remain readable.
+        let mut legacy=serde_json::to_value(config()).unwrap();legacy.as_object_mut().unwrap().remove("proxy_url");
+        assert!(serde_json::from_value::<TunnelProfile>(legacy).unwrap().proxy_url.is_empty());
+    }
     #[test]
     fn tunnel_blank_replacement_retains_gui_key_and_masks_reference(){
         let mut s=store();let shared=MemoryKeyring::default();let runtime=MemoryRuntime::default();
@@ -527,8 +546,8 @@ pub mod tests {
         assert!(s.configure_tunnel(config(),"","empty",0,&shared,&runtime).is_err());
         let p=s.configure_tunnel(config(),"synthetic-runtime-sentinel","save",0,&shared,&runtime).unwrap();
         assert_eq!(s.configure_tunnel(config(),"synthetic-runtime-sentinel","save",0,&shared,&runtime).unwrap(),p);
-        assert!(s.validate_tunnel_operation(&p.tunnel.as_ref().unwrap().tunnel_id,&p.tunnel.as_ref().unwrap().executable,"synthetic-runtime-sentinel","save",0).unwrap());
-        assert!(s.validate_tunnel_operation(&p.tunnel.as_ref().unwrap().tunnel_id,&p.tunnel.as_ref().unwrap().executable,"different-key","save",p.generation).is_err());
+        assert!(s.validate_tunnel_operation(&p.tunnel.as_ref().unwrap().tunnel_id,&p.tunnel.as_ref().unwrap().executable,"synthetic-runtime-sentinel","","save",0).unwrap());
+        assert!(s.validate_tunnel_operation(&p.tunnel.as_ref().unwrap().tunnel_id,&p.tunnel.as_ref().unwrap().executable,"different-key","","save",p.generation).is_err());
         let original=p.runtime_ref.clone().unwrap();let next=s.configure_tunnel(config(),"   ","replace",p.generation,&shared,&runtime).unwrap();
         assert_eq!(next.runtime_ref,Some(original.clone()));assert_eq!(runtime.get(&original).unwrap(),"synthetic-runtime-sentinel");
         assert_eq!(s.status("workbuddy").unwrap(),buddy);

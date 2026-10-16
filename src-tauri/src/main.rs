@@ -1189,6 +1189,7 @@ fn development_window<'a>(app: &tauri::AppHandle, builder: tauri::WebviewWindowB
 }
 
 mod chatgpt_tunnel;
+mod tunnel_proxy;
 fn main() {
     if std::env::args().nth(1).as_deref()==Some("--leaf-build-identity") {println!("{}",mcp::ai_credentials::native_build_identity());return;}
     #[cfg(feature="native-smoke")]

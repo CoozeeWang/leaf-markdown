@@ -1,4 +1,5 @@
 # Real vendor parser + isolated native broker/host checks. No real API key.
+param([switch]$ProxyOnly)
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Run in a disposable GitHub Actions Windows runner only' }
 # The complete Rust suite runs in the preceding workflow step.
@@ -17,10 +18,16 @@ if (!$client) { throw 'Official tunnel-client.exe missing' }
 $env:LEAF_TEST_TUNNEL_CLIENT = $client.FullName
 cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf official_tunnel_client_prepares_profile_with_spaces_and_unicode -- --nocapture
 if ($LASTEXITCODE -ne 0) { throw 'Production profile preparation failed against official tunnel-client' }
+if ($ProxyOnly) {
+  cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf official_tunnel_client_routes_through_explicit_and_environment_proxy -- --nocapture --test-threads=1
+  if ($LASTEXITCODE -ne 0) { throw 'Official tunnel proxy routing and polling status regression failed' }
+}
 Remove-Item Env:LEAF_TEST_TUNNEL_CLIENT
 $nativeFailures = @()
 node scripts/test-mcp-startup.mjs
 if ($LASTEXITCODE -ne 0) { $nativeFailures += 'Native consent restart regression failed' }
-node scripts/test-mcp-adapter.mjs stdio-and-origin --reuse-build
-if ($LASTEXITCODE -ne 0) { $nativeFailures += 'Generated Claude/WorkBuddy host transport regression failed' }
+if (!$ProxyOnly) {
+  node scripts/test-mcp-adapter.mjs stdio-and-origin --reuse-build
+  if ($LASTEXITCODE -ne 0) { $nativeFailures += 'Generated Claude/WorkBuddy host transport regression failed' }
+}
 if ($nativeFailures.Count) { throw ($nativeFailures -join '; ') }

@@ -826,5 +826,21 @@
   "ai.claude_step2_windows": "開啟 Claude 桌面版的「設定 → 擴充功能 → 進階設定 → 安裝擴充功能」，選擇剛儲存的 Leaf.mcpb，確認安裝並啟用 Leaf。無需按兩下檔案。",
   "ai.claude_bundle_saved": "擴充功能檔案已儲存，仍需在 Claude 中安裝。\n檔案位置：{{path}}\n在 Claude 的「設定 → 擴充功能 → 進階設定 → 安裝擴充功能」中選擇此檔案。",
   "ai.claude_save_failed": "擴充功能檔案未儲存。請選擇可寫入的位置，以 .mcpb 為副檔名後重試。",
-  "ai.claude_manual_title": "手動安裝 Claude 擴充功能"
+  "ai.claude_manual_title": "手動安裝 Claude 擴充功能",
+  "ai.proxy_label": "隧道代理（選填）",
+  "ai.proxy_placeholder": "留空自動使用現有代理",
+  "ai.proxy_help": "僅用於連接 OpenAI，不修改系統代理。留空依環境變數、Windows 目前代理設定依序查找；可填寫 http:// 或 https:// 位址（不含帳號密碼）。",
+  "ai.proxy_invalid": "代理位址無效。請填寫不含帳號密碼的 HTTP 或 HTTPS 位址。",
+  "ai.proxy_auto_config": "無法解析自動代理（PAC/WPAD）。請在「修改設定」填寫可用的隧道代理位址後儲存。",
+  "ai.proxy_system_error": "無法讀取 Windows 代理設定。請在「修改設定」填寫隧道代理位址後儲存。",
+  "ai.cloud_connected": "雲端隧道已連通，等待 ChatGPT 實際呼叫驗證。",
+  "ai.cloud_waiting": "正在等待雲端輪詢成功。",
+  "ai.cloud_network_error": "雲端未連通：網路或代理連線失敗。請檢查代理是否執行、位址是否正確；設定已保留。",
+  "ai.cloud_auth_error": "雲端未連通：金鑰或隧道存取權限遭拒。請檢查設定；設定已保留。",
+  "ai.cloud_poll_error": "雲端輪詢失敗。請查看連線診斷中的 HTTP 狀態；設定已保留。",
+  "ai.cloud_delivery_error": "雲端回應傳送失敗。請檢查網路或代理並重試；設定已保留。",
+  "ai.cloud_health_error": "尚無法確認雲端狀態。請稍候或檢查連線程式；本機就緒不代表雲端連通。",
+  "ai.diagnostics_title": "連線診斷",
+  "ai.diagnostics_help": "不含金鑰、代理位址或文件內容。與工具結果的 _meta.leaf.instance_id 比對可確認來源。每次重開 Leaf 識別碼會變更；同一隧道只保留一台電腦連線。",
+  "ai.copy_diagnostics": "複製診斷"
 }

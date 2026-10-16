@@ -826,5 +826,21 @@
   "ai.claude_step2_windows": "打开 Claude 桌面版的“设置 → 扩展 → 高级设置 → 安装扩展”，选择刚保存的 Leaf.mcpb，确认安装并启用 Leaf。无需双击文件。",
   "ai.claude_bundle_saved": "扩展文件已保存，尚需在 Claude 中安装。\n文件位置：{{path}}\n在 Claude 的“设置 → 扩展 → 高级设置 → 安装扩展”中选择此文件。",
   "ai.claude_save_failed": "扩展文件未保存。请选择可写入的位置，以 .mcpb 为文件后缀后重试。",
-  "ai.claude_manual_title": "手动安装 Claude 扩展"
+  "ai.claude_manual_title": "手动安装 Claude 扩展",
+  "ai.proxy_label": "隧道代理（可选）",
+  "ai.proxy_placeholder": "留空自动使用已有代理",
+  "ai.proxy_help": "仅用于连接 OpenAI，不修改系统代理。留空按环境变量、Windows 当前代理设置依次查找；可填写 http:// 或 https:// 地址（不含账号密码）。",
+  "ai.proxy_invalid": "代理地址无效。请填写不含账号密码的 HTTP 或 HTTPS 地址。",
+  "ai.proxy_auto_config": "无法解析自动代理（PAC/WPAD）。请在“修改配置”中填写可用的隧道代理地址后保存。",
+  "ai.proxy_system_error": "无法读取 Windows 代理设置。请在“修改配置”中填写隧道代理地址后保存。",
+  "ai.cloud_connected": "云端隧道已连通，等待 ChatGPT 实际调用验证。",
+  "ai.cloud_waiting": "正在等待云端轮询成功。",
+  "ai.cloud_network_error": "云端未连通：网络或代理连接失败。请检查代理是否运行、地址是否正确；配置已保留。",
+  "ai.cloud_auth_error": "云端未连通：密钥或隧道访问权限被拒绝。请检查配置；配置已保留。",
+  "ai.cloud_poll_error": "云端轮询失败。请查看连接诊断中的 HTTP 状态；配置已保留。",
+  "ai.cloud_delivery_error": "云端响应传送失败。请检查网络或代理并重试；配置已保留。",
+  "ai.cloud_health_error": "尚无法确认云端状态。请稍候或检查连接程序；本地就绪不代表云端连通。",
+  "ai.diagnostics_title": "连接诊断",
+  "ai.diagnostics_help": "不含密钥、代理地址或文档内容。与工具结果中的 _meta.leaf.instance_id 对照可确认来源。每次重开 Leaf 标识会变化；同一隧道只保留一台电脑连接。",
+  "ai.copy_diagnostics": "复制诊断"
 }

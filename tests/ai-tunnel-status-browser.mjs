@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {chromium,launchOptions,artifactPath} from './browser-runtime.mjs';
+import {nativePage} from './ai-browser-fixture.mjs';
+const browser=await chromium.launch(launchOptions);
+try {
+  await test('Windows tunnel proxy save, separate cloud state, recovery and safe diagnostics',async()=>{
+    const page=await nativePage(browser,'windows');
+    await page.locator('#mcpEnabled').check();
+    await page.locator('#aiTunnelId').fill('tunnel_00000000000000000000000000000000');
+    await page.locator('#aiPickProgram').click();
+    await page.locator('#aiTunnelProxy').fill('http://127.0.0.1:19731');
+    await page.locator('#aiRuntimeKey').fill('synthetic-test-key');
+    await page.locator('#aiSaveSetup').click();
+    await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
+    assert.equal(await page.locator('#aiTunnelProxy').inputValue(),'http://127.0.0.1:19731');
+    assert.equal(await page.evaluate(()=>aiMock.calls.find(c=>c.command==='mcp_configure_tunnel').args.proxyUrl),'http://127.0.0.1:19731');
+    assert.equal(await page.locator('#aiRuntimeKey').inputValue(),'');
+    assert.equal(await page.locator('#aiAddChatGPT').isDisabled(),true,'local ready does not unlock cloud success action');
+    assert.match(await page.locator('#aiRuntimeStatus').innerText(),/本地.*等待云端/);
+    const update=async values=>page.evaluate(values=>{Object.assign(aiMock.runtime,values);emitNative('leaf-mcp-connections-changed',{});},values);
+    await update({last_error:'tunnel_network_proxy',cloud_connected:false,consecutive_failures:3,cloud_state:'backoff',proxy_source:'environment'});
+    await page.waitForFunction(()=>document.querySelector('#aiRuntimeStatus').dataset.state==='cloud-error');
+    assert.match(await page.locator('#aiRuntimeStatus').innerText(),/本地.*网络或代理/);
+    assert.equal(await page.locator('#mcpEnabled').isChecked(),true);
+    assert.match(await page.locator('#aiClient').inputValue(),/chatgpt/);
+    await page.locator('#aiDiagnostics summary').click();
+    let diagnostics=await page.locator('#aiDiagnosticsText').innerText();
+    assert.equal(JSON.parse(diagnostics).instance_id,'0123456789abcdef');
+    assert.equal(JSON.parse(diagnostics).tunnel.consecutive_failures,3);
+    assert.doesNotMatch(diagnostics,/synthetic-test-key|19731|tunnel_000|\/synthetic/);
+    await page.screenshot({path:artifactPath('ai-tunnel-network-error.png')});
+    await update({last_error:null,cloud_connected:true,consecutive_failures:0,cloud_state:'polling'});
+    await page.waitForFunction(()=>document.querySelector('#aiRuntimeStatus').dataset.state==='cloud-connected');
+    assert.equal(await page.locator('#aiAddChatGPT').isDisabled(),false);
+    assert.doesNotMatch(await page.locator('#aiRuntimeStatus').innerText(),/网络或代理连接失败/);
+    assert.equal(await page.locator('#aiConnectionError').innerText(),'','runtime recovery leaves no stale error banner');
+    await page.locator('#aiEditSetup').click();await page.locator('#aiTunnelProxy').fill('http://proxy.example:8091');
+    await page.locator('#aiCancelSetup').click();
+    assert.equal(await page.locator('#aiTunnelProxy').inputValue(),'http://127.0.0.1:19731');
+    await page.locator('#mcpEnabled').uncheck();assert.equal(await page.locator('#aiTunnelProxy').isDisabled(),true);
+    await page.close();
+  });
+} finally {await browser.close();}

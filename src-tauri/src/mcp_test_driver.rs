@@ -261,7 +261,7 @@ async fn authorization_retirement(app:&tauri::AppHandle,label:&str,broker:&super
     Ok(())
 }
 
-async fn connection_restart(app:&tauri::AppHandle,_label:&str,broker:&super::mcp::LeafMcpBroker,mode:&str)->Result<(),String> {
+async fn connection_restart(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker,mode:&str)->Result<(),String> {
     let directory=super::application_data(app).map_err(|_|"test data")?;
     if mode=="connection-restart-cold" {
         ensure(!*broker.inner.enabled.lock().unwrap(),"first use defaults off")?;
@@ -273,6 +273,7 @@ async fn connection_restart(app:&tauri::AppHandle,_label:&str,broker:&super::mcp
         ensure(*broker.inner.enabled.lock().unwrap(),"configured tunnel failure cannot clear intent")?;
         let old=std::fs::read(directory.join("mcp/claude-desktop.json")).map_err(|_|"old descriptor")?;
         std::fs::write(directory.join("old-descriptor.json"),old).map_err(|_|"test evidence")?;
+        std::fs::write(directory.join("old-instance.json"),broker.tunnel_status()?["diagnostics"]["instance_id"].to_string()).map_err(|_|"instance evidence")?;
     }else if mode=="connection-restart-on" {
         ensure(*broker.inner.enabled.lock().unwrap(),"enabled consent survives actual process restart")?;
         for _ in 0..100 {
@@ -287,6 +288,15 @@ async fn connection_restart(app:&tauri::AppHandle,_label:&str,broker:&super::mcp
         }
         let old:super::mcp::ai_credentials::BrokerDescriptor=serde_json::from_slice(&std::fs::read(directory.join("old-descriptor.json")).unwrap()).unwrap();
         ensure(old.load_token().is_err(),"old process descriptor rejected")?;
+        let previous:Value=serde_json::from_slice(&std::fs::read(directory.join("old-instance.json")).map_err(|_|"instance evidence")?).map_err(|_|"instance encoding")?;
+        let diagnostics=broker.tunnel_status()?["diagnostics"].clone();
+        ensure(previous!=diagnostics["instance_id"],"restart publishes a distinct source instance")?;
+        broker.bridge(app,label,"test",json!({"action":"reset","content":"Nonempty synthetic proxy acceptance buffer"})).await?;
+        let listed=broker.call(app,"workbuddy","list_documents",json!({})).await?;
+        let doc=listed["documents"].as_array().and_then(|docs|docs.first()).ok_or("synthetic document")?;
+        let read=broker.call(app,"workbuddy","read_document",doc.clone()).await?;
+        ensure(read["content"]=="Nonempty synthetic proxy acceptance buffer","nonempty native broker read")?;
+        ensure(listed["_meta"]["leaf"]["instance_id"]==diagnostics["instance_id"]&&read["_meta"]["leaf"]["instance_id"]==diagnostics["instance_id"],"list and read match the displayed source instance")?;
         broker.set_enabled(app,false).await?;
     }else {
         ensure(!*broker.inner.enabled.lock().unwrap(),"explicit off survives actual process restart")?;
@@ -318,7 +328,7 @@ async fn tunnel_tracer(app:&tauri::AppHandle,label:&str,broker:&super::mcp::Leaf
         let descriptor_path=directory.join("chatgpt.json");
         std::fs::write(&descriptor_path,serde_json::to_vec(&descriptor).unwrap()).map_err(|_|"test descriptor")?;
         std::fs::write(&profile_path,serde_json::to_vec(&json!({"descriptor":descriptor_path,"binding":{"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch},"evidence":evidence})).unwrap()).map_err(|_|"test profile")?;
-        let spec=TunnelLaunchSpec{executable:std::env::current_exe().map_err(|_|"test executable")?,profile:profile_path,generation:1,health_file:None,synthetic:true};
+        let spec=TunnelLaunchSpec{proxy_url:String::new(),executable:std::env::current_exe().map_err(|_|"test executable")?,profile:profile_path,generation:1,health_file:None,synthetic:true};
         let status=broker.inner.tunnel.lock().unwrap().start(&spec,"synthetic-tunnel-key-sentinel")?;
         for _ in 0..600 {
             if evidence.exists(){break;}

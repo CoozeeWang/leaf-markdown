@@ -812,5 +812,21 @@
   "AI0106": "ai.claude_step2_windows",
   "AI0107": "ai.claude_bundle_saved",
   "AI0108": "ai.claude_save_failed",
-  "AI0109": "ai.claude_manual_title"
+  "AI0109": "ai.claude_manual_title",
+  "AI0110": "ai.proxy_label",
+  "AI0111": "ai.proxy_placeholder",
+  "AI0112": "ai.proxy_help",
+  "AI0113": "ai.proxy_invalid",
+  "AI0114": "ai.proxy_auto_config",
+  "AI0115": "ai.proxy_system_error",
+  "AI0116": "ai.cloud_connected",
+  "AI0117": "ai.cloud_waiting",
+  "AI0118": "ai.cloud_network_error",
+  "AI0119": "ai.cloud_auth_error",
+  "AI0120": "ai.cloud_poll_error",
+  "AI0121": "ai.cloud_delivery_error",
+  "AI0122": "ai.cloud_health_error",
+  "AI0123": "ai.diagnostics_title",
+  "AI0124": "ai.diagnostics_help",
+  "AI0125": "ai.copy_diagnostics"
 }
