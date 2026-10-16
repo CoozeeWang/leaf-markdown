@@ -63,12 +63,19 @@ try {
 
   # A non-process file lock must fail before any payload is overwritten. Retry
   # succeeds after its owner releases it; silent mode must never hang on a UI.
+  # Give the old main executable distinguishable bytes, so a same-version
+  # reinstall cannot make an accidental overwrite look like preservation.
+  $main = [IO.File]::Open($exe, 'Append', 'Write', 'None')
+  try { $marker = [Text.Encoding]::ASCII.GetBytes('Synthetic old installation'); $main.Write($marker, 0, $marker.Length) } finally { $main.Dispose() }
+  $oldMain = (Get-FileHash $exe).Hash
+  if ($oldMain -eq $expectedMain) { throw 'Old main fixture was not distinguishable' }
   $lock = [IO.File]::Open($adapter, 'Open', 'Read', 'None')
   Invoke-Installer $false
-  if ((Get-FileHash $exe).Hash -ne $expectedMain) { throw 'Blocked upgrade changed the main executable' }
+  if ((Get-FileHash $exe).Hash -ne $oldMain) { throw 'Blocked upgrade changed the main executable' }
   $lock.Dispose(); $lock = $null
   Invoke-Installer
   if ((Get-FileHash $adapter).Hash -ne $expectedAdapter) { throw 'Retry left a stale adapter' }
+  if ((Get-FileHash $exe).Hash -ne $expectedMain) { throw 'Retry left a stale main executable' }
   Write-Output 'PASS external lock fails closed and retry succeeds'
 
   Copy-Item $fixture $adapter -Force
