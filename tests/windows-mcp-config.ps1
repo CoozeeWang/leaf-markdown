@@ -35,6 +35,14 @@ if ($VendorOnly) { return }
 $nativeFailures = @()
 node scripts/test-mcp-startup.mjs
 if ($LASTEXITCODE -ne 0) { $nativeFailures += 'Native consent restart regression failed' }
+if ($ProxyOnly) {
+  $connector = Get-ChildItem (Join-Path $env:RUNNER_TEMP 'Leaf MCP vendor/unpacked') -Filter tunnel-client.exe -Recurse | Select-Object -First 1
+  if (!$connector) { throw 'Verified official connector absent for native UI recovery' }
+  $env:LEAF_TEST_TUNNEL_CLIENT = $connector.FullName
+  node scripts/test-mcp-proxy-ui.mjs
+  if ($LASTEXITCODE -ne 0) { $nativeFailures += 'Native proxy settings recovery failed' }
+  Remove-Item Env:LEAF_TEST_TUNNEL_CLIENT
+}
 if (!$ProxyOnly) {
   node scripts/test-mcp-adapter.mjs stdio-and-origin --reuse-build
   if ($LASTEXITCODE -ne 0) { $nativeFailures += 'Generated Claude/WorkBuddy host transport regression failed' }

@@ -828,5 +828,9 @@
   "AI0122": "ai.cloud_health_error",
   "AI0123": "ai.diagnostics_title",
   "AI0124": "ai.diagnostics_help",
-  "AI0125": "ai.copy_diagnostics"
+  "AI0125": "ai.copy_diagnostics",
+  "AI0128": "ai.advanced_title",
+  "AI0129": "ai.key_requirement",
+  "AI0130": "ai.action_timeout",
+  "AI0131": "ai.troubleshoot"
 }

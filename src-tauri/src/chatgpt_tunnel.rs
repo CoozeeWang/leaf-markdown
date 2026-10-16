@@ -113,7 +113,14 @@ fn health_request(path:&std::path::Path,route:&str)->Option<Vec<u8>> {
     let mut stream=std::net::TcpStream::connect_timeout(&std::net::SocketAddr::from(([127,0,0,1],port)),Duration::from_millis(200)).ok()?;
     stream.set_read_timeout(Some(Duration::from_millis(200))).ok()?;stream.set_write_timeout(Some(Duration::from_millis(200))).ok()?;
     stream.write_all(format!("GET {route} HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n").as_bytes()).ok()?;
-    let mut bytes=Vec::new();stream.take(131073).read_to_end(&mut bytes).ok()?;
+    let mut bytes=Vec::new();let deadline=Instant::now()+Duration::from_millis(500);
+    loop {
+        let remaining=deadline.checked_duration_since(Instant::now())?;
+        stream.set_read_timeout(Some(remaining.min(Duration::from_millis(200)))).ok()?;
+        let mut chunk=[0;4096];let count=stream.read(&mut chunk).ok()?;
+        if count==0{break;}bytes.extend_from_slice(&chunk[..count]);
+        if bytes.len()>131072{return None;}
+    }
     if bytes.len()>131072||!(bytes.starts_with(b"HTTP/1.1 200 ")||bytes.starts_with(b"HTTP/1.0 200 ")){return None;}
     let boundary=bytes.windows(4).position(|part|part==b"\r\n\r\n")?+4;Some(bytes[boundary..].to_vec())
 }
@@ -126,12 +133,12 @@ impl TunnelRuntimeStatus {
         self.cloud_state=match control["state"].as_str().unwrap_or(""){state @ ("starting"|"polling"|"idle"|"backoff"|"backpressured"|"stopped")=>state,_=>"unknown"}.into();
         self.tunnel_instance=value["runtime"]["instance_id"].as_str().filter(|s|s.len()<=64&&s.bytes().all(|b|b.is_ascii_hexdigit()||b==b'-')).map(str::to_owned);
         let stalled=detail["deadline_seconds"].as_f64().is_some_and(|deadline|deadline>0.0&&detail["current_poll_age_seconds"].as_f64().unwrap_or(0.0)>deadline+15.0);
-        self.cloud_connected=control["status"]=="ok"&&detail["last_success"].is_string()&&self.consecutive_failures==0&&!stalled&&matches!(self.cloud_state.as_str(),"polling"|"idle"|"backpressured");
+        self.cloud_connected=self.local_ready&&control["status"]=="ok"&&detail["last_success"].is_string()&&self.consecutive_failures==0&&!stalled&&matches!(self.cloud_state.as_str(),"polling"|"idle"|"backpressured");
         self.last_error=if self.consecutive_failures>0||stalled {
             Some(match (self.http_status,detail["failure_category"].as_str().or(control["reason_code"].as_str()).unwrap_or("")){
                 (401|403,_)=>"tunnel_cloud_auth",(_,"network_error"|"timeout"|"deadline_exceeded")=>"tunnel_network_proxy",_ if stalled=>"tunnel_network_proxy",_=>"tunnel_cloud_poll_failed"
             }.into())
-        }else if self.cloud_state=="unknown"{Some("tunnel_health_unavailable".into())}else{None};
+        }else if control["status"]=="degraded"||control["status"]=="error"{Some("tunnel_cloud_poll_failed".into())}else if self.cloud_state=="unknown"{Some("tunnel_health_unavailable".into())}else{None};
         let delivery=&value["components"]["response-delivery"];
         if self.last_error.is_none()&&delivery["status"]=="degraded"{self.cloud_connected=false;self.last_error=Some("tunnel_cloud_delivery_failed".into());}
     }
@@ -146,8 +153,9 @@ pub fn validate_input(id:&str,executable:&std::path::Path)->Result<(),String>{
     #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;if std::fs::metadata(executable).map_err(|_|"invalid_tunnel_executable")?.permissions().mode()&0o111==0{return Err("invalid_tunnel_executable".into());}}
     Ok(())
 }
-fn bounded_cli(executable:&std::path::Path,args:&[String],key:Option<&str>,capture:bool)->Result<String,String>{
+fn bounded_cli(executable:&std::path::Path,args:&[String],key:Option<&str>,capture:bool,deadline:Instant)->Result<String,String>{
     use std::io::{Read,Seek};
+    if Instant::now()>=deadline{return Err("tunnel_cli_timeout".into());}
     let mut output=tempfile::tempfile().map_err(|_|"tunnel_cli_failed")?;
     let mut command=Command::new(executable);command.args(args).env_clear().stdin(Stdio::null()).stderr(Stdio::null());
     for name in ["HOME","PATH","SYSTEMROOT","WINDIR","TEMP","TMP","LANG"] {if let Some(v)=std::env::var_os(name){command.env(name,v);}}
@@ -158,10 +166,9 @@ fn bounded_cli(executable:&std::path::Path,args:&[String],key:Option<&str>,captu
     #[cfg(unix)] {use std::os::unix::process::CommandExt;command.process_group(0);}
     #[cfg(not(windows))] let mut child=command.spawn().map_err(|_|"tunnel_cli_failed")?;
     #[cfg(windows)] let mut child=windows_tree::OwnedJob::spawn_with_output(&command,capture.then_some(&output))?;
-    let start=Instant::now();
     let result=loop {
         if let Some(status)=child.try_wait().map_err(|_|"tunnel_cli_failed")?{break if status.success(){Ok(())}else{Err("tunnel_cli_rejected")};}
-        if start.elapsed()>Duration::from_secs(15){break Err("tunnel_cli_timeout");}
+        if Instant::now()>=deadline{break Err("tunnel_cli_timeout");}
         std::thread::sleep(Duration::from_millis(25));
     };
     #[cfg(unix)] {let _=Command::new("/bin/kill").args(["-KILL","--",&format!("-{}",child.id())]).stdout(Stdio::null()).stderr(Stdio::null()).status();let _=child.wait();}
@@ -176,10 +183,11 @@ pub fn prepare_profile(id:&str,executable:&std::path::Path,directory:&std::path:
 }
 fn prepare_profile_with_helper(id:&str,executable:&std::path::Path,directory:&std::path::Path,descriptor:&std::path::Path,key:&str,helper:&std::path::Path)->Result<super::mcp::ai_credentials::TunnelProfile,String>{
     validate_input(id,executable)?;
-    let version=bounded_cli(executable,&["--version".into()],None,true)?;
+    let deadline=Instant::now()+Duration::from_secs(15);
+    let version=bounded_cli(executable,&["--version".into()],None,true,deadline)?;
     if !version.trim().bytes().next().is_some_and(|b|b.is_ascii_digit()){return Err("tunnel_cli_contract_changed".into());}
     for(args,required)in [(vec!["help","quickstart"],vec!["sample_mcp_stdio_local","CONTROL_PLANE_API_KEY"]),(vec!["init","--help"],vec!["--profile-dir","--mcp-command","--control-plane-api-key-ref"]),(vec!["doctor","--help"],vec!["--profile-file"])] {
-        let help=bounded_cli(executable,&args.iter().map(|v|v.to_string()).collect::<Vec<_>>(),None,true)?;
+        let help=bounded_cli(executable,&args.iter().map(|v|v.to_string()).collect::<Vec<_>>(),None,true,deadline)?;
         if required.iter().any(|r|!help.contains(r)){return Err("tunnel_cli_contract_changed".into());}
     }
     if !helper.is_file(){return Err("helper_not_installed".into());}
@@ -188,7 +196,7 @@ fn prepare_profile_with_helper(id:&str,executable:&std::path::Path,directory:&st
     let staging=tempfile::tempdir_in(directory).map_err(|_|"tunnel_profile_write")?;
     let fixed_command=tunnel_command(helper,descriptor,cfg!(windows));
     let args=vec!["init".into(),"--sample".into(),"sample_mcp_stdio_local".into(),"--profile".into(),"leaf".into(),"--profile-dir".into(),staging.path().to_string_lossy().into_owned(),"--tunnel-id".into(),id.into(),"--mcp-command".into(),fixed_command.clone(),"--control-plane-api-key-ref".into(),"env:CONTROL_PLANE_API_KEY".into(),"--health-listen-addr".into(),"127.0.0.1:0".into()];
-    bounded_cli(executable,&args,None,false).map_err(|e|cli_stage("init",e))?;
+    bounded_cli(executable,&args,None,false,deadline).map_err(|e|cli_stage("init",e))?;
     let path=staging.path().join("leaf.yaml");let generated=std::fs::read_to_string(&path).map_err(|_|"tunnel_cli_contract_changed")?;
     if !generated.contains("config_version: 1")||!generated.contains("commands:")||!generated.contains("channel: main")||!generated.contains(&serde_json::to_string(&fixed_command).unwrap())||!generated.contains("env:CONTROL_PLANE_API_KEY")||!generated.contains(id){return Err("tunnel_cli_contract_changed".into());}
     // Use the verified schema with a fixed command; no user-provided command,
@@ -198,7 +206,7 @@ fn prepare_profile_with_helper(id:&str,executable:&std::path::Path,directory:&st
     let text=format!("config_version: 1\ncontrol_plane:\n  base_url: \"https://api.openai.com\"\n  tunnel_id: {}\n  api_key: \"env:CONTROL_PLANE_API_KEY\"\nhealth:\n  listen_addr: \"127.0.0.1:0\"\n  url_file: {}\nadmin_ui:\n  open_browser: false\nlog:\n  level: warn\n  format: json\nmcp:\n  commands:\n    - channel: main\n      command: {}\n",scalar(id),scalar(&health.to_string_lossy()),scalar(&fixed_command));
     std::fs::write(&path,&text).map_err(|_|"tunnel_profile_write")?;
     #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o600)).map_err(|_|"tunnel_profile_write")?;}
-    bounded_cli(executable,&["doctor".into(),"--profile-file".into(),path.to_string_lossy().into_owned(),"--explain".into()],Some(key),false).map_err(|e|cli_stage("doctor",e))?;
+    bounded_cli(executable,&["doctor".into(),"--profile-file".into(),path.to_string_lossy().into_owned(),"--explain".into()],Some(key),false,deadline).map_err(|e|cli_stage("doctor",e))?;
     // Windows FlushFileBuffers requires a writable handle. File::open is
     // read-only and makes an otherwise valid generated profile fail to save.
     std::fs::OpenOptions::new().write(true).open(&path).and_then(|file|file.sync_all()).map_err(|_|"tunnel_profile_write")?;
@@ -362,6 +370,23 @@ pub fn synthetic_fixture_main()->i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn tunnel_health_probe_has_an_absolute_deadline_even_with_dripping_bytes(){
+        use std::{net::TcpListener,io::{Read,Write},sync::{Arc,atomic::{AtomicBool,Ordering}}};
+        let listener=TcpListener::bind("127.0.0.1:0").unwrap();let directory=tempfile::tempdir().unwrap();let file=directory.path().join("health");
+        std::fs::write(&file,format!("http://127.0.0.1:{}",listener.local_addr().unwrap().port())).unwrap();
+        let done=Arc::new(AtomicBool::new(false));let stop=done.clone();
+        let server=std::thread::spawn(move||{let (mut socket,_)=listener.accept().unwrap();let mut request=[0;1024];let _=socket.read(&mut request);let _=socket.write_all(b"HTTP/1.0 200 OK\r\n\r\n");let until=Instant::now()+Duration::from_secs(3);while !stop.load(Ordering::Relaxed)&&Instant::now()<until{if socket.write_all(b" ").is_err(){break;}std::thread::sleep(Duration::from_millis(50));}});
+        let start=Instant::now();assert!(health_request(&file,"/health?details=true").is_none());
+        done.store(true,Ordering::Relaxed);server.join().unwrap();assert!(start.elapsed()<Duration::from_secs(2),"per-read timeouts must not extend the total probe indefinitely");
+    }
+    #[cfg(unix)]
+    #[test]
+    fn tunnel_cli_budget_is_shared_and_kills_a_stalled_check(){
+        let deadline=Instant::now()+Duration::from_millis(100);let start=Instant::now();
+        assert_eq!(bounded_cli(std::path::Path::new("/bin/sleep"),&["30".into()],None,false,deadline).unwrap_err(),"tunnel_cli_timeout");
+        assert!(start.elapsed()<Duration::from_secs(2));
+    }
     #[test]
     fn component_health_distinguishes_local_cloud_failures_and_recovery(){
         use serde_json::json;

@@ -51,7 +51,7 @@ export async function nativePage(browser,os='macos',startupError=null) {
           return {...binding,client:args.client,scope:args.scope};
         }
         const profile = clients.find(p=>p.client===args.client) || clients[0];
-        if (command === 'mcp_configure_tunnel') {clients[0].configured=true;clients[0].has_runtime_key=true;clients[0].generation++;clients[0].tunnel={tunnel_id:args.tunnelId,executable:args.executable,proxy_url:args.proxyUrl || ''};runtime.saved_config=runtime.runtime_present=true;runtime.generation=clients[0].generation;runtime.epoch++;return copy({profile:clients[0],runtime,diagnostics});}
+        if (command === 'mcp_configure_tunnel') {if(aiMock.holdConfigure)await new Promise(resolve=>aiMock.releaseConfigure=resolve);clients[0].configured=true;clients[0].has_runtime_key=true;clients[0].generation++;clients[0].tunnel={tunnel_id:args.tunnelId,executable:args.executable,proxy_url:args.proxyUrl || ''};runtime.saved_config=runtime.runtime_present=true;runtime.generation=clients[0].generation;runtime.epoch++;return copy({profile:clients[0],runtime,diagnostics});}
         if (command === 'mcp_add_client') {if(aiMock.cancelAdd)return {cancelled:true};profile.configured=profile.enabled=true;profile.generation++;return {profile:copy(profile),cancelled:false,...(os==='windows'&&profile.client==='claude-desktop'?{bundle_path:'C:\\Synthetic folder\\中文 <test> O\'Brien\\Leaf.mcpb'}:{})};}
         if (command === 'mcp_configure_client') {profile.configured=true;profile.generation++;return copy(profile);}
         if (command === 'mcp_enable_client') {profile.enabled=true;profile.generation++;return {profile:copy(profile),descriptor:'/synthetic/descriptor.json'};}

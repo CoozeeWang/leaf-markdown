@@ -827,9 +827,9 @@
   "ai.claude_bundle_saved": "扩展文件已保存，尚需在 Claude 中安装。\n文件位置：{{path}}\n在 Claude 的“设置 → 扩展 → 高级设置 → 安装扩展”中选择此文件。",
   "ai.claude_save_failed": "扩展文件未保存。请选择可写入的位置，以 .mcpb 为文件后缀后重试。",
   "ai.claude_manual_title": "手动安装 Claude 扩展",
-  "ai.proxy_label": "隧道代理（可选）",
-  "ai.proxy_placeholder": "留空自动使用已有代理",
-  "ai.proxy_help": "仅用于连接 OpenAI，不修改系统代理。留空按环境变量、Windows 当前代理设置依次查找；可填写 http:// 或 https:// 地址（不含账号密码）。",
+  "ai.proxy_label": "隧道代理",
+  "ai.proxy_placeholder": "留空时自动检测",
+  "ai.proxy_help": "留空时自动检测环境变量和系统代理。仅连接 OpenAI，不修改系统设置；手动填写 http:// 或 https:// 地址，不含账号密码。修改后点击上方“保存配置”。",
   "ai.proxy_invalid": "代理地址无效。请填写不含账号密码的 HTTP 或 HTTPS 地址。",
   "ai.proxy_auto_config": "无法解析自动代理（PAC/WPAD）。请在“修改配置”中填写可用的隧道代理地址后保存。",
   "ai.proxy_system_error": "无法读取 Windows 代理设置。请在“修改配置”中填写隧道代理地址后保存。",
@@ -842,5 +842,9 @@
   "ai.cloud_health_error": "尚无法确认云端状态。请稍候或检查连接程序；本地就绪不代表云端连通。",
   "ai.diagnostics_title": "连接诊断",
   "ai.diagnostics_help": "不含密钥、代理地址或文档内容。与工具结果中的 _meta.leaf.instance_id 对照可确认来源。每次重开 Leaf 标识会变化；同一隧道只保留一台电脑连接。",
-  "ai.copy_diagnostics": "复制诊断"
+  "ai.copy_diagnostics": "复制诊断",
+  "ai.advanced_title": "高级设置／故障排查",
+  "ai.key_requirement": "首次配置必填；已保存时留空保留",
+  "ai.action_timeout": "连接操作超时。可直接修改代理并重新保存，无需重启 Leaf；已保存的密钥保留。",
+  "ai.troubleshoot": "检查网络和代理"
 }

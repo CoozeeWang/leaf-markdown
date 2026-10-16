@@ -414,7 +414,10 @@ impl AiClientProfileStore {
         self.persist()?;
         self.operations.insert(key, hash); self.status(client)
     }
-    pub(crate) fn configure_tunnel(&mut self,mut config:TunnelProfile,key:&str,operation:&str,expected:u64,shared:&dyn SecretStore,runtime:&dyn RuntimeVault)->Result<AiClientProfile,String>{
+    pub(crate) fn configure_tunnel(&mut self,config:TunnelProfile,key:&str,operation:&str,expected:u64,shared:&dyn SecretStore,runtime:&dyn RuntimeVault)->Result<AiClientProfile,String>{
+        self.configure_tunnel_before(config,key,operation,expected,shared,runtime,None)
+    }
+    pub(crate) fn configure_tunnel_before(&mut self,mut config:TunnelProfile,key:&str,operation:&str,expected:u64,shared:&dyn SecretStore,runtime:&dyn RuntimeVault,deadline:Option<std::time::Instant>)->Result<AiClientProfile,String>{
         let old=self.status("chatgpt")?;
         let payload=format!("tunnel:{}:{}:{}:{}",config.tunnel_id,config.executable.display(),key,config.proxy_url);
         let (op,hash,repeated)=self.operation("chatgpt",operation,&payload)?;
@@ -427,6 +430,7 @@ impl AiClientProfileStore {
         let generation=old.generation+1;config.generation=generation;
         let bound=BoundCredential{token:random_token()?,uri:String::new(),instance:String::new(),generation,external_secret:None};
         if let Err(e)=shared.set(&bearer,&serde_json::to_string(&bound).unwrap()){if fresh{let _=runtime.delete(&r);}return Err(e);}
+        if deadline.is_some_and(|at|std::time::Instant::now()>=at){let _=shared.delete(&bearer);if fresh{let _=runtime.delete(&r);}return Err("connection_action_timeout".into());}
         let index=self.profiles.iter().position(|p|p.client=="chatgpt").unwrap();
         self.profiles[index]=AiClientProfile{configured:true,enabled:false,generation,credential_ref:Some(bearer.clone()),tunnel:Some(config),has_runtime_key:true,runtime_ref:Some(r.clone()),runtime_pending:false,..old.clone()};
         if let Err(e)=self.persist(){self.profiles[index]=old;let _=shared.delete(&bearer);if fresh{let _=runtime.delete(&r);}return Err(e);}
@@ -520,6 +524,18 @@ pub mod tests {
         fn delete(&self,r:&RuntimeCredentialRef)->Result<(),String>{self.0.lock().unwrap().remove(&r.account);Ok(())}
     }
     fn config()->TunnelProfile {TunnelProfile{proxy_url:String::new(),tunnel_id:format!("tunnel_{}","a".repeat(32)),executable:"/synthetic/tunnel-client".into(),profile:"/synthetic/leaf.yaml".into(),health_file:"/synthetic/leaf.health".into(),generation:0,digest:"synthetic-digest".into()}}
+    #[test]
+    fn tunnel_expired_save_cannot_replace_a_newer_configuration_or_key(){
+        let mut store=store();let shared=MemoryKeyring::default();let runtime=MemoryRuntime::default();
+        let first=store.configure_tunnel(config(),"synthetic-original","first",0,&shared,&runtime).unwrap();
+        let before_keys=runtime.0.lock().unwrap().clone();let before_bearers=shared.0.lock().unwrap().clone();
+        let mut wrong=config();wrong.proxy_url="http://invalid.example:1".into();
+        let deadline=std::time::Instant::now()-std::time::Duration::from_millis(1);
+        assert_eq!(store.configure_tunnel_before(wrong,"synthetic-replacement","expired",first.generation,&shared,&runtime,Some(deadline)).unwrap_err(),"connection_action_timeout");
+        assert_eq!(store.status("chatgpt").unwrap(),first);assert_eq!(*runtime.0.lock().unwrap(),before_keys);assert_eq!(*shared.0.lock().unwrap(),before_bearers);
+        let recovered=store.configure_tunnel(config(),"","recover",first.generation,&shared,&runtime).unwrap();
+        assert_eq!(store.runtime_key(&shared,&runtime).unwrap(),"synthetic-original");assert!(recovered.tunnel.unwrap().proxy_url.is_empty());
+    }
     #[test]
     fn tunnel_proxy_persists_and_blank_key_keeps_existing_runtime(){
         let directory=tempfile::tempdir().unwrap();let path=directory.path().join("profiles.json");

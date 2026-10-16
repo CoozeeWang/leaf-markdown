@@ -827,9 +827,9 @@
   "ai.claude_bundle_saved": "Extension file saved. Installation in Claude is still required.\nFile location: {{path}}\nSelect this file in Claude under Settings → Extensions → Advanced settings → Install Extension.",
   "ai.claude_save_failed": "The extension file was not saved. Choose a writable location with a .mcpb file extension and try again.",
   "ai.claude_manual_title": "Manually install the Claude extension",
-  "ai.proxy_label": "Tunnel proxy (optional)",
-  "ai.proxy_placeholder": "Leave blank to use an existing proxy",
-  "ai.proxy_help": "Only connects to OpenAI; does not change system settings. Blank uses environment variables, then current Windows proxy settings. Enter an http:// or https:// address without credentials to override.",
+  "ai.proxy_label": "Tunnel proxy",
+  "ai.proxy_placeholder": "Leave blank to detect automatically",
+  "ai.proxy_help": "Leave blank to detect environment and system proxies automatically. Only connects to OpenAI; does not change system settings. Override with an http:// or https:// address without credentials. After editing, use Save configuration above.",
   "ai.proxy_invalid": "Invalid proxy. Enter an HTTP or HTTPS address without credentials.",
   "ai.proxy_auto_config": "Automatic proxy (PAC/WPAD) resolution failed. Edit configuration, enter the tunnel proxy address and save.",
   "ai.proxy_system_error": "Cannot read Windows proxy settings. Edit configuration, enter the tunnel proxy address and save.",
@@ -842,5 +842,9 @@
   "ai.cloud_health_error": "Cloud status could not be confirmed. Wait or check the connector; local readiness does not prove cloud connectivity.",
   "ai.diagnostics_title": "Connection diagnostics",
   "ai.diagnostics_help": "Contains no keys, proxy addresses or document content. Compare _meta.leaf.instance_id in tool results to identify the source. It changes when Leaf restarts. Use only one computer per tunnel.",
-  "ai.copy_diagnostics": "Copy diagnostics"
+  "ai.copy_diagnostics": "Copy diagnostics",
+  "ai.advanced_title": "Advanced settings / Troubleshooting",
+  "ai.key_requirement": "Required for first setup; leave blank to keep a saved key",
+  "ai.action_timeout": "Connection setup timed out. Edit the proxy and save again without restarting Leaf. Saved keys are retained.",
+  "ai.troubleshoot": "Check network and proxy"
 }

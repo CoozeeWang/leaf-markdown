@@ -76,6 +76,7 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     let _=broker.bridge(app,label,"test",json!({"action":"reset","content":""})).await?;
     let original=broker.inner.registry.lock().unwrap().documents.values().find(|d|d.label==label).cloned().ok_or("renderer registration absent")?;
     ensure(original.client.is_none(),"default authorization must be closed")?;
+    if mode=="connection-proxy-recovery" {return proxy_recovery(app,label,broker).await;}
     if mode.starts_with("connection-restart-") {return connection_restart(app,label,broker,mode).await;}
     if mode=="chatgpt-tunnel-automatic-access" {return automatic_access(app,label,broker).await;}
     if mode=="chatgpt-tunnel-tracer" {return tunnel_tracer(app,label,broker,mode).await;}
@@ -258,6 +259,43 @@ async fn authorization_retirement(app:&tauri::AppHandle,label:&str,broker:&super
     let snapshot=broker.bridge(app,label,"snapshot",json!({})).await?;
     let mut begin=old;begin["revision"]=snapshot["revision"].clone();begin["request_id"]=json!("begin-after-prefix");
     ensure(tool(client,"begin_edit",begin).await.is_err(),"manual insertion before selection cannot start old capability")?;
+    Ok(())
+}
+
+// Production settings IPC + official connector, with synthetic credentials.
+// The parent owns a local failing proxy; no real OpenAI success is claimed.
+async fn proxy_recovery(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpBroker)->Result<(),String>{
+    let executable=std::env::var("LEAF_TEST_TUNNEL_CLIENT").map_err(|_|"official connector absent")?;
+    let bad=std::env::var("LEAF_TEST_BAD_PROXY").map_err(|_|"bad proxy absent")?;
+    broker.set_enabled(app,true).await?;
+    for (index,proxy) in [bad.as_str(),""].iter().enumerate(){
+        let args=if index==0{json!({"action":"ai-proxy-save","proxy":proxy,"executable":executable})}else{json!({"action":"ai-proxy-save","proxy":proxy})};
+        ensure(broker.bridge(app,label,"test",args).await?["started"]==true,"real settings started save")?;
+        let start=std::time::Instant::now();
+        loop {
+            let state=broker.bridge(app,label,"test",json!({"action":"ai-proxy-state"})).await?;
+            if state["busy"]==false{ensure(state["editable"]==true&&state["key_empty"]==true&&state["error"]=="","real settings restored controls after saving")?;break;}
+            ensure(start.elapsed()<std::time::Duration::from_secs(30),"real settings cannot remain busy past deadline")?;
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+        loop {
+            let status=broker.tunnel_status()?;
+            if status["runtime"]["last_error"]=="tunnel_network_proxy"{ensure(status["runtime"]["cloud_connected"]==false,"failed cloud cannot stay connected")?;break;}
+            ensure(start.elapsed()<std::time::Duration::from_secs(40),"official connector must expose network failure")?;
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        let state=broker.bridge(app,label,"test",json!({"action":"ai-proxy-state"})).await?;
+        ensure(state["state"]=="cloud-error"&&state["editable"]==true,"actual UI displays failure and permits editing")?;
+        let profile=broker.client_profiles()?.into_iter().find(|p|p.client=="chatgpt").unwrap();
+        ensure(profile.has_runtime_key&&profile.tunnel.as_ref().unwrap().proxy_url==*proxy&&*broker.inner.enabled.lock().unwrap(),"saved proxy, key and MCP intent retained")?;
+        if index==0{std::fs::write(super::application_data(app).unwrap().join("first-profile.txt"),profile.tunnel.unwrap().profile.to_string_lossy().as_bytes()).map_err(|_|"profile evidence")?;}
+        else{
+            let first=std::fs::read_to_string(super::application_data(app).unwrap().join("first-profile.txt")).map_err(|_|"profile evidence")?;
+            ensure(profile.tunnel.unwrap().profile.to_string_lossy()==first,"proxy edit reuses validated profile without external revalidation")?;
+            ensure(broker.tunnel_status()?["runtime"]["proxy_source"]=="environment","clearing override restores automatic route in the same process")?;
+        }
+    }
+    broker.revoke_client(app,"chatgpt",true,"cleanup").await?;broker.set_enabled(app,false).await?;
     Ok(())
 }
 

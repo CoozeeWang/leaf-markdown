@@ -9,6 +9,10 @@ try {
     await page.locator('#mcpEnabled').check();
     await page.locator('#aiTunnelId').fill('tunnel_00000000000000000000000000000000');
     await page.locator('#aiPickProgram').click();
+    assert.equal(await page.locator('#aiAdvanced').getAttribute('open'),null);
+    assert.equal(await page.locator('#aiTunnelProxy').isVisible(),false);
+    assert.match(await page.locator('#aiRuntimeKey').locator('..').innerText(),/首次配置必填；已保存时留空保留/);
+    await page.locator('#aiAdvanced summary').click();
     await page.locator('#aiTunnelProxy').fill('http://127.0.0.1:19731');
     await page.locator('#aiRuntimeKey').fill('synthetic-test-key');
     await page.locator('#aiSaveSetup').click();
@@ -24,7 +28,7 @@ try {
     assert.match(await page.locator('#aiRuntimeStatus').innerText(),/本地.*网络或代理/);
     assert.equal(await page.locator('#mcpEnabled').isChecked(),true);
     assert.match(await page.locator('#aiClient').inputValue(),/chatgpt/);
-    await page.locator('#aiDiagnostics summary').click();
+    assert.equal(await page.locator('#aiTroubleshoot').isVisible(),true);
     let diagnostics=await page.locator('#aiDiagnosticsText').innerText();
     assert.equal(JSON.parse(diagnostics).instance_id,'0123456789abcdef');
     assert.equal(JSON.parse(diagnostics).tunnel.consecutive_failures,3);
@@ -44,6 +48,42 @@ try {
     await page.locator('#aiCancelSetup').click();
     assert.equal(await page.locator('#aiTunnelProxy').inputValue(),'http://127.0.0.1:19731');
     await page.locator('#mcpEnabled').uncheck();assert.equal(await page.locator('#aiTunnelProxy').isDisabled(),true);
+    await page.close();
+  });
+  await test('pending proxy save polls failures, times out, and permits same-window recovery without a late restart',async()=>{
+    const page=await nativePage(browser,'windows','tunnel_proxy_auto_config');
+    await page.evaluate(()=>{aiMock.connectionErrors={};Object.assign(aiMock.runtime,{process:true,local_ready:true,cloud_connected:true,cloud_state:'polling'});emitNative('leaf-mcp-connections-changed',{});});
+    await page.waitForFunction(()=>document.querySelector('#aiRuntimeStatus').dataset.state==='cloud-connected');
+    await page.locator('#aiEditSetup').click();
+    await page.locator('#aiAdvanced summary').click();
+    await page.locator('#aiTunnelProxy').fill('http://127.0.0.1:1');
+    await page.clock.install();
+    await page.evaluate(()=>aiMock.holdConfigure=true);
+    await page.locator('#aiSaveSetup').click();
+    assert.notEqual(await page.locator('#aiRuntimeStatus').getAttribute('data-state'),'cloud-connected','old cloud success must disappear while replacing configuration');
+    await page.evaluate(()=>{Object.assign(aiMock.runtime,{cloud_connected:false,last_error:'tunnel_network_proxy',consecutive_failures:2});emitNative('leaf-mcp-connections-changed',{});});
+    await page.waitForFunction(()=>document.querySelector('#aiRuntimeStatus').dataset.state==='cloud-error');
+    await page.clock.runFor(30100);
+    await page.waitForFunction(()=>!document.querySelector('#aiSaveSetup').disabled);
+    assert.equal(await page.locator('#aiActionStatus').innerText(),'');
+    assert.match(await page.locator('#aiConnectionError').innerText(),/超时/);
+    assert.equal(await page.locator('#aiCancelSetup').isEnabled(),true);
+    const starts=await page.evaluate(()=>aiMock.calls.filter(c=>c.command==='mcp_start_tunnel').length);
+    await page.evaluate(()=>{aiMock.releaseConfigure();aiMock.holdConfigure=false;});
+    // A late native reply may be observed, but must not launch the retired action.
+    await page.clock.runFor(4100);
+    assert.equal(await page.evaluate(()=>aiMock.calls.filter(c=>c.command==='mcp_start_tunnel').length),starts);
+    assert.equal(await page.locator('#aiTunnelProxy').inputValue(),'http://127.0.0.1:1');
+    await page.locator('#aiTunnelProxy').fill('');
+    await page.locator('#aiSaveSetup').click();
+    await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
+    assert.equal(await page.evaluate(()=>aiMock.clients[0].tunnel.proxy_url),'');
+    assert.equal(await page.evaluate(()=>aiMock.clients[0].has_runtime_key),true);
+    await page.evaluate(()=>{Object.assign(aiMock.runtime,{last_error:null,cloud_connected:true,consecutive_failures:0,proxy_source:'windows-system',cloud_state:'polling'});emitNative('leaf-mcp-connections-changed',{});});
+    await page.waitForFunction(()=>document.querySelector('#aiRuntimeStatus').dataset.state==='cloud-connected');
+    assert.equal(await page.locator('#aiConnectionError').innerText(),'');
+    assert.equal(await page.locator('#mcpEnabled').isChecked(),true);
+    await page.screenshot({path:artifactPath('ai-proxy-recovery.png')});
     await page.close();
   });
   await test('a saved startup proxy error clears after a successful retry',async()=>{
