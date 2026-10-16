@@ -84,8 +84,21 @@ try {
   assert.equal(await box.inputValue(),'甲[^3]');
   await box.fill('新注释正文');
   await box.press('Escape');
-  assert.ok((await doc()).includes('[^1]: 新注释正文'));
+  assert.ok((await doc()).includes('[^1]: 新注释正文'),JSON.stringify({source:await doc(),input:await box.count()?await box.inputValue():null}));
   assert.ok(!(await doc()).includes('[^3]: A'),'替换包含最后引用的注释正文时，也清理其定义');
+
+  // A writer can select the popup text before its first layout frame. Deferred
+  // placement must preserve that selection instead of turning replacement into append.
+  await setDoc('正文可以选中。');
+  await page.evaluate(()=>{
+    v.dispatch({selection:{anchor:0,head:4}});v.focus();
+    document.querySelector('[data-format="footnote"]').click();
+    const input=document.querySelector('.footnote-box textarea');input.focus();input.select();
+  });
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
+  assert.deepEqual(await box.evaluate(input=>[input.selectionStart,input.selectionEnd]),[0,4],'first layout preserves the writer selection');
+  await box.fill('保留选择');await box.press('Escape');
+  assert.ok((await doc()).includes('[^1]: 保留选择'));
 
   // Adjacent markers are parsed as one reference link; each must open its own note.
   await setDoc('甲[^1][^2]。\n\n[^1]: A\n[^2]: B');

@@ -77,6 +77,11 @@ const pages = () => browser.contexts().flatMap(c => c.pages());
 async function nextDocument(before) {
   const page = await until(async () => pages().find(p => !before.includes(p) && p.url().includes('document=1')), 'document window');
   await page.locator('.cm-content').waitFor({ state: 'visible', timeout: 30000 });
+  // CDP sees the DOM while the WebView is still loading in a hidden window.
+  // Interact only after initialization and the real native reveal have finished.
+  await page.waitForFunction(()=>document.querySelector('.shell')?.style.pointerEvents!=='none');
+  const label=await page.evaluate(()=>window.__TAURI_INTERNALS__.metadata.currentWindow.label);
+  await until(()=>invoke(page,'plugin:window|is_visible',{label}),'visible document window');
   return page;
 }
 try {

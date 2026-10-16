@@ -53,6 +53,9 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
     announcement.textContent = '';
     if (kind === 'saved' && resolved(message)) persistent = null;
     if (kind === 'error' || kind === 'manual') saveState = null;
+    if (announce && message && kind !== 'pending' && !quiet(message)) {
+      announcementTimer = setTimeout(() => { announcement.textContent = format(resolveMessage(message)); }, 50);
+    }
     if (saveIndicator && (kind === 'pending' || kind === 'saved' && routineSave.has(copyKeys[message?.key] || message?.key)) && !choices?.length) {
       saveState = {text:message,kind};
       current = null;
@@ -63,9 +66,6 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
     if (kind === 'error' || kind === 'manual') { persistent = next; current = null; }
     else current = next;
     render();
-    if (announce && message && kind !== 'pending' && !quiet(message)) {
-      announcementTimer = setTimeout(() => { announcement.textContent = format(resolveMessage(message)); }, 50);
-    }
     if (kind === 'saved' || kind === 'info' || !kind) {
       timer = setTimeout(() => { current = null; render(); }, 4000);
     }

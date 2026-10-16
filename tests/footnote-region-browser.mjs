@@ -5,7 +5,7 @@ const engines=process.env.LEAF_REGION_ENGINE?[process.env.LEAF_REGION_ENGINE]:['
 for(const [engine,platform] of engines.flatMap(engine=>(engine==='chrome'?['MacIntel','Win32']:['MacIntel']).map(platform=>[engine,platform]))) {
  const browser=await(engine==='webkit'?webkit.launch({headless:true}):chromium.launch(launchOptions));
  try {
-  const page=await browser.newPage({viewport:{width:1200,height:950}}),errors=[];
+  const page=await browser.newPage({locale:'zh-CN',viewport:{width:1200,height:950}}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(platform=>{Object.defineProperty(navigator,'platform',{get:()=>platform});Object.defineProperty(navigator,'userAgentData',{get:()=>undefined});},platform);
   await page.goto('http://127.0.0.1:41732/tests/native-footnote-region.html');
@@ -91,8 +91,17 @@ for(const [engine,platform] of engines.flatMap(engine=>(engine==='chrome'?['MacI
   await page.evaluate(()=>testEditor.openSearch());
   await page.locator('.leaf-search input[name=search]').fill('Pasted');
   await page.locator('.leaf-search button[name=next]').click();
-  await page.waitForTimeout(120);
+  await page.waitForFunction(()=>{const child=document.querySelector('.leaf-endnote')?._editor.view;return child?.state.sliceDoc(child.state.selection.main.from,child.state.selection.main.to)==='Pasted';});
   assert.equal(await page.evaluate(()=>{const child=document.querySelector('.leaf-endnote')._editor.view;return child.state.sliceDoc(child.state.selection.main.from,child.state.selection.main.to);}), 'Pasted', JSON.stringify(await page.evaluate(()=>({source:testEditor.getValue(),selection:v.state.selection.toJSON(),child:document.querySelector('.leaf-endnote')._editor.view.state.selection.toJSON()}))));
+  // An unrelated effect in the same event turn must not retire this selection.
+  await page.evaluate(async()=>{
+    const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');
+    const at=v.state.doc.toString().indexOf('Second');
+    v.dispatch({selection:{anchor:at,head:at+6}});
+    v.dispatch({effects:EditorView.announce.of('Synthetic layout-independent announcement')});
+  });
+  await page.waitForFunction(()=>{const child=document.querySelector('.leaf-endnote')?._editor.view;return child?.state.sliceDoc(child.state.selection.main.from,child.state.selection.main.to)==='Second';});
+  assert.equal(await page.evaluate(()=>{const c=document.querySelector('.leaf-endnote')._editor.view;return c.state.sliceDoc(c.state.selection.main.from,c.state.selection.main.to);}),'Second','unrelated effects preserve footnote search navigation');
   await page.evaluate(()=>{setTestDoc('[^a]: A',0);v.focus();});
   await page.keyboard.type('New body');
   assert.ok((await page.evaluate(()=>testEditor.getValue())).startsWith('New body\n\n[^a]: A'),'note-only file gets a protected body entry');

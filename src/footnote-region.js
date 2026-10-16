@@ -88,7 +88,7 @@ class FootnoteRegion extends WidgetType {
 // A collapsed main-document caret cannot edit an invisible definition. Full
 // document selections and explicit note edits still use normal document history.
 export const footnoteBoundaryGuard = EditorState.transactionFilter.of(tr=>{
-  if(tr.startState.field(sourceMode) || !tr.startState.selection.main.empty || !tr.isUserEvent('delete'))return tr;
+  if(tr.startState.field(sourceMode) || !tr.startState.selection.main.empty || !tr.isUserEvent('delete') || tr.isUserEvent('delete.footnote'))return tr;
   const defs=tr.startState.field(footnoteIndex).definitions;
   let blocked=false;
   tr.changes.iterChangedRanges((from,to)=>{
@@ -123,7 +123,8 @@ export function footnoteRegion(createEditor, applyBody) {
     ViewPlugin.fromClass(class {
       constructor(view){this.view=view;this.revision=0;}
       update(update){
-        const token=++this.revision,range=update.state.selection.main;
+        if(update.selectionSet||update.docChanged||update.state.field(sourceMode)!==update.startState.field(sourceMode))this.revision++;
+        const token=this.revision,range=update.state.selection.main;
         if(this.highlighted&&(update.selectionSet||update.docChanged||update.state.field(sourceMode))) {
           const previous=this.highlighted;this.highlighted=null;
           queueMicrotask(()=>{if(previous.view.dom.isConnected)previous.highlightMatch(null);});
@@ -138,11 +139,13 @@ export function footnoteRegion(createEditor, applyBody) {
         queueMicrotask(()=>{
           const view=this.view;if(!view.dom.isConnected||token!==this.revision)return;
           view.dispatch({effects:EditorView.scrollIntoView(view.state.doc.length,{y:'end'})});
-          requestAnimationFrame(()=>{
-            if(!view.dom.isConnected||view.state.field(sourceMode)||view.state.selection.main.anchor!==range.anchor||view.state.selection.main.head!==range.head)return;
-            const card=[...view.dom.querySelectorAll('.leaf-endnote')].find(card=>card._row.label===def.id&&(card._row.ordinal??0)===ordinal);
-            if(card){const child=card._editor;child.highlightMatch(Math.min(anchor,child.view.state.doc.length),Math.min(head,child.view.state.doc.length));this.highlighted=child;}
-          });
+          // Wait for the scrolled viewport's widgets, not just the next frame.
+          // Layout-only updates must not cancel an unchanged search selection.
+          view.requestMeasure({key:this,read:()=>[...view.dom.querySelectorAll('.leaf-endnote')].find(card=>card._row.label===def.id&&(card._row.ordinal??0)===ordinal),write:card=>{
+            if(!card?.isConnected||!view.dom.isConnected||token!==this.revision||view.state.field(sourceMode)||view.state.selection.main.anchor!==range.anchor||view.state.selection.main.head!==range.head)return;
+            const child=card._editor;
+            child.highlightMatch(Math.min(anchor,child.view.state.doc.length),Math.min(head,child.view.state.doc.length));this.highlighted=child;
+          }});
         });
       }
     }),
@@ -152,9 +155,14 @@ export function footnoteRegion(createEditor, applyBody) {
       const defs=indexFootnotes(tr.newDoc.toString()).definitions;
       const at=tr.newSelection.main.head;
       if(!defs.some(def=>at>=def.lineFrom&&at<=def.to))return tr;
-      const def=defs.find(def=>at>=def.lineFrom&&at<=def.to);
-      const line=tr.newDoc.lineAt(def.lineFrom);
-      const anchor=line.number>1?tr.newDoc.line(line.number-1).to:0;
+      let anchor=at, def;
+      // Consecutive definitions form one protected region. Stepping back just
+      // one line can strand the caret inside the previous invisible note.
+      while((def=defs.find(def=>anchor>=def.lineFrom&&anchor<=def.to))) {
+        const line=tr.newDoc.lineAt(def.lineFrom);
+        if(line.number===1){anchor=0;break;}
+        anchor=tr.newDoc.line(line.number-1).to;
+      }
       return [tr,{selection:{anchor},sequential:true}];
     }),
     // Layout follows actual edits, never loading, source mode, history or an IME

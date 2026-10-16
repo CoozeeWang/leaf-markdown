@@ -2589,9 +2589,11 @@ if (desktop) {
     saved(content, name, path) { const changed = state.resourcePath !== path; state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); if (changed) { setMovedMissingImages(); refreshImages(); } },
     followed(content, name, path, movedImages) { state.resourcePath = path; state.savedContent = content; state.fileName = name; updateDocumentChrome(); setMovedMissingImages(movedImages); refreshImages(); },
   }).catch(error => setStatus(translatedMessage("main.desktop_app_initialization_failed", {"error": error}), 'error')).finally(async () => {
+    // The window can receive input as soon as show() takes effect, before its
+    // IPC promise returns. Restore editing before exposing the native window.
+    editor.setReading(state.reading);
     shell.style.pointerEvents = '';
     await desktopRevealDocument().catch(error => console.error('Document window reveal failed', error));
-    editor.setReading(state.reading);
     if (welcomeScreen.hidden && !state.reading) editor.focus();
     const testMode=await invoke('mcp_test_mode').catch(()=>null);
     nativeTestMode=testMode;

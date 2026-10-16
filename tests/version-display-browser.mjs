@@ -13,9 +13,9 @@ try {
  await page.click('#appearanceButton');
  assert.ok(await version.isVisible(),'the version shows in 设置');
  assert.equal(await version.textContent(),`Leaf ${declared}`);
- // "构建 2b4ee6e · 09-23 18:20"; the trailing + marks a build from a dirty tree.
+ // "构建号 2b4ee6e · 09-23 18:20"; the trailing + marks a build from a dirty tree.
  const stamp=await build.textContent();
- assert.match(stamp,/^构建 ([0-9a-f]{7,8}\+? · )?\d{2}-\d{2} \d{2}:\d{2}$/,'the build stamp carries a commit and a time');
+ assert.match(stamp,/^构建号 ([0-9a-f]{7,8}\+? · )?\d{2}-\d{2} \d{2}:\d{2}$/,'the build stamp carries a commit and a time');
  // The footer is outside the tabpanels, so it has to survive a tab switch.
  await page.click('#settingsTab-recovery');
  assert.ok(await version.isVisible(),'the version stays visible on 保存与恢复');
