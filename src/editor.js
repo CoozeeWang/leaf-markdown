@@ -972,11 +972,12 @@ function openFootnotePopup(view, label, pos, anchor = null) {
   document.addEventListener('mousedown', footnoteBoxOutside, true);
   window.addEventListener('scroll', placeFootnotePopup, true);
   window.addEventListener('resize', placeFootnotePopup);
+  // Establish the initial caret synchronously. A delayed focus/selection reset
+  // can overwrite a selection the writer makes before the first layout frame.
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
   requestAnimationFrame(() => {
-    if (!box.isConnected) return;
-    resizeFootnotePopup();
-    input.focus();
-    input.setSelectionRange(input.value.length, input.value.length);
+    if (box.isConnected) resizeFootnotePopup();
   });
 }
 

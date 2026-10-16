@@ -113,9 +113,9 @@ for (const engine of process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGIN
       }
       await cdp.detach();
     }
-    const loaded=await page.evaluate(()=>Array.from(document.fonts).filter(face=>face.family.includes('Leaf Body')).map(face=>({family:face.family.replaceAll('"',''),style:face.style,weight:face.weight,range:face.unicodeRange,status:face.status})));
-    assert.ok(loaded.some(face=>face.family===`Leaf Body en ${english}`&&face.style==='italic'&&face.status==='loaded'),'Real italic face is loaded when the selected family supplies one');
-    assert.ok(loaded.some(face=>face.family===`Leaf Body en ${english}`&&face.weight==='700'&&face.status==='loaded'),'Real bold face is loaded');
+    const loaded=await page.evaluate(()=>Array.from(document.fonts).filter(face=>face.family.includes('Leaf Body')).map(face=>({family:face.family.replace(/^(["'])(.*)\1$/,'$2'),style:face.style,weight:face.weight,range:face.unicodeRange,status:face.status})));
+    assert.ok(loaded.some(face=>face.family===`Leaf Body en ${english}`&&face.style==='italic'&&face.status==='loaded'),`${engine}/${english}: real italic face is loaded: ${JSON.stringify(loaded)}`);
+    assert.ok(loaded.some(face=>face.family===`Leaf Body en ${english}`&&face.weight==='700'&&face.status==='loaded'),`${engine}/${english}: real bold face is loaded: ${JSON.stringify(loaded)}`);
     await page.click('#settingsClose'); await mode(page,'reading');
     assert.equal(await page.locator('.reading-document > p').first().evaluate(el=>getComputedStyle(el).fontFamily),stack);
     assert.equal(await page.locator('.reading-document h1[data-source-line]').evaluate(el=>getComputedStyle(el).fontFamily),uiFont);

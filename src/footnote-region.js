@@ -123,7 +123,8 @@ export function footnoteRegion(createEditor, applyBody) {
     ViewPlugin.fromClass(class {
       constructor(view){this.view=view;this.revision=0;}
       update(update){
-        const token=++this.revision,range=update.state.selection.main;
+        if(update.selectionSet||update.docChanged||update.state.field(sourceMode)!==update.startState.field(sourceMode))this.revision++;
+        const token=this.revision,range=update.state.selection.main;
         if(this.highlighted&&(update.selectionSet||update.docChanged||update.state.field(sourceMode))) {
           const previous=this.highlighted;this.highlighted=null;
           queueMicrotask(()=>{if(previous.view.dom.isConnected)previous.highlightMatch(null);});
@@ -138,11 +139,13 @@ export function footnoteRegion(createEditor, applyBody) {
         queueMicrotask(()=>{
           const view=this.view;if(!view.dom.isConnected||token!==this.revision)return;
           view.dispatch({effects:EditorView.scrollIntoView(view.state.doc.length,{y:'end'})});
-          requestAnimationFrame(()=>{
-            if(!view.dom.isConnected||view.state.field(sourceMode)||view.state.selection.main.anchor!==range.anchor||view.state.selection.main.head!==range.head)return;
-            const card=[...view.dom.querySelectorAll('.leaf-endnote')].find(card=>card._row.label===def.id&&(card._row.ordinal??0)===ordinal);
-            if(card){const child=card._editor;child.highlightMatch(Math.min(anchor,child.view.state.doc.length),Math.min(head,child.view.state.doc.length));this.highlighted=child;}
-          });
+          // Wait for the scrolled viewport's widgets, not just the next frame.
+          // Layout-only updates must not cancel an unchanged search selection.
+          view.requestMeasure({key:this,read:()=>[...view.dom.querySelectorAll('.leaf-endnote')].find(card=>card._row.label===def.id&&(card._row.ordinal??0)===ordinal),write:card=>{
+            if(!card?.isConnected||!view.dom.isConnected||token!==this.revision||view.state.field(sourceMode)||view.state.selection.main.anchor!==range.anchor||view.state.selection.main.head!==range.head)return;
+            const child=card._editor;
+            child.highlightMatch(Math.min(anchor,child.view.state.doc.length),Math.min(head,child.view.state.doc.length));this.highlighted=child;
+          }});
         });
       }
     }),

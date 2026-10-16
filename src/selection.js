@@ -23,6 +23,8 @@ export const leafSelection = layer({
       if (range.empty) continue;
       const start = view.coordsAtPos(range.from, 1);
       const end = view.coordsAtPos(range.to, -1);
+      const endLine=view.state.doc.lineAt(range.to);
+      const ltrEnd=view.textDirection===Direction.LTR && view.bidiSpans(endLine).every(span=>span.dir===Direction.LTR);
       for (const marker of RectangleMarker.forRange(view, 'cm-selectionBackground', range)) {
         const top = marker.top + baseTop, bottom = top + marker.height;
         let x = marker.left, edge = x + marker.width;
@@ -32,6 +34,10 @@ export const leafSelection = layer({
         const beforeEnd = !end || bottom <= end.top + .5;
         if (Math.abs(x - borrowedLeft) < .5 && (view.textDirection === Direction.LTR ? afterStart : beforeEnd)) x = left;
         if (Math.abs(edge - borrowedRight) < .5 && (view.textDirection === Direction.LTR ? beforeEnd : afterStart)) edge = right;
+        // Wrapped source can leave a stale/rounded final edge on Windows even
+        // when the caret coordinates are exact. Preserve bidi pieces, and use
+        // the actual endpoint for the final row of a wholly LTR line.
+        if(end && ltrEnd && Math.abs(top-end.top)<.5 && Math.abs(bottom-end.bottom)<.5)edge=end.right-baseLeft;
         markers.push(new RectangleMarker(marker.className, x, marker.top, Math.max(0, edge - x), marker.height));
       }
     }
