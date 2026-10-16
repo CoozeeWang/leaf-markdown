@@ -200,7 +200,7 @@ try {
   }
   // Nothing above the heading's text or in the blank row after the selected
   // paragraph is painted. Do not sample the next paragraph's real text.
-  const aboveSelection = await column(sampleX, Math.floor(geo.heading.text.top) - 3, Math.floor(geo.heading.text.top) - 1);
+  const aboveSelection = await column(sampleX, Math.min(Math.round(geo.heading.box.top) + 1, Math.floor(geo.heading.text.top) - 3), Math.floor(geo.heading.text.top) - 1);
   for (const row of aboveSelection) assert.ok(isCanvas(row.rgb), `no band above the selected text: y=${row.y} ${show(row.rgb)}`);
   const belowSelection = await column(sampleX, Math.round(geo.followingBlank.box.top) + 2, Math.round(geo.followingBlank.box.bottom) - 2);
   for (const row of belowSelection) assert.ok(isCanvas(row.rgb), `nothing below the selection: y=${row.y} ${show(row.rgb)}`);

@@ -47,8 +47,12 @@ for (const [name, engine, options] of [['chromium',chromium,launchOptions],['web
    await verifyViews(false);
    await page.keyboard.press('ControlOrMeta+z');
    if(steps===1)assert.equal(await get(),source,'one undo restores indentation and inserted separator together');
-   await page.keyboard.press('ControlOrMeta+Shift+z');
+   await page.keyboard.press('ControlOrMeta+Shift+Z');
    assert.equal(await get(),detached,`redo restores the outdent: ${name}, steps=${steps}, source=${JSON.stringify(source)}`);
+   if(process.platform==='win32') {
+    await page.keyboard.press('Control+z');await page.keyboard.press('Control+y');
+    assert.equal(await get(),detached,'Windows Ctrl+Y also restores the same image outdent');
+   }
    await page.evaluate(()=>{const at=v.state.doc.toString().indexOf('![');v.dispatch({selection:{anchor:at}});v.focus();});
    await page.keyboard.press('Shift+Tab');
    assert.equal(await get(),detached,'repeated outdent adds no blank lines');

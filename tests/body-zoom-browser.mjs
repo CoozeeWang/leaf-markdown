@@ -16,6 +16,7 @@ try {
       Object.defineProperty(navigator, 'userAgentData', {get: () => undefined});
     }, platform);
     await page.goto('http://127.0.0.1:41732');
+    await page.waitForSelector('.shell[data-body-fonts=ready]');
     await page.click('#welcomeNewButton');
     await page.evaluate(async () => {
       const {EditorView} = await import('/node_modules/@codemirror/view/dist/index.js');
@@ -37,7 +38,12 @@ try {
       assert.equal(await page.locator('#zoomLevel').getAttribute('aria-expanded'), 'true');
       await page.click(`#zoomPopover [role="menuitemradio"][data-zoom="${value}"]`);
       await page.waitForFunction(value => document.querySelector('#zoomLevel').textContent === `${value}%`, value);
-      if (await page.locator('#editor').isVisible()) await page.waitForFunction(value => Math.abs(v.scaleY - value / 100) < .02, value);
+      if (await page.locator('#editor').isVisible()) {
+        await page.waitForFunction(value => Math.abs(v.scaleY - value / 100) < .02, value);
+        // Scale changes schedule a second measurement to restore the viewport.
+        // A displayed percentage/scale alone does not mean that scroll is done.
+        await page.evaluate(()=>new Promise(resolve=>v.requestMeasure({read:()=>null,write:()=>requestAnimationFrame(()=>requestAnimationFrame(resolve))})));
+      }
     };
     await resetDocument(source);
     const geometry = () => page.evaluate(() => ({
@@ -70,7 +76,7 @@ try {
       assert.equal(hit, position, `${engine.name()} ${value}% coordinates round-trip`);
       const point = await page.evaluate(position => {const r = v.coordsAtPos(position); return {x:r.left,y:(r.top+r.bottom)/2};}, position);
       await page.mouse.click(point.x, point.y);
-      assert.equal(await page.evaluate(() => v.state.selection.main.head), position, 'real mouse hits the displayed text');
+      assert.equal(await page.evaluate(() => v.state.selection.main.head), position, `${engine.name()} ${platform} ${value}% real mouse hits the displayed text`);
       await page.keyboard.type('Z');
       assert.equal(await text(), source.slice(0, position) + 'Z' + source.slice(position));
       await page.keyboard.press(`${mod}+z`);

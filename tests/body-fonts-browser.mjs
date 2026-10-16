@@ -106,7 +106,7 @@ for (const engine of process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGIN
       for(const [script,selector] of [['en','#font-proof-en'],['zh','#font-proof-zh']]) {
         const {nodeId}=await cdp.send('DOM.querySelector',{nodeId:root.nodeId,selector});
         const {fonts}=await cdp.send('CSS.getPlatformFontsForNode',{nodeId});
-        const expected=script==='en' ? {georgia:/Georgia/i,palatino:/Palatino/i,serif:/Georgia|Times|Liberation Serif/i}[english] : {songti:/Songti/i,pingfang:/PingFang/i,serif:/Songti|SimSun|Noto Serif/i}[chinese];
+        const expected=script==='en' ? {georgia:/Georgia/i,palatino:/Palatino/i,serif:/Georgia|Times|Liberation Serif/i}[english] : {songti:/Songti/i,pingfang:/PingFang/i,simsun:/SimSun|宋体/i,yahei:/Microsoft YaHei|微软雅黑/i,serif:/Songti|SimSun|Noto Serif/i}[chinese];
         assert.ok(fonts.some(font=>expected.test(font.familyName) && font.glyphCount>0),`${script}: requested local font renders glyphs: ${JSON.stringify(fonts)}`);
         if(script==='en') assert.ok(fonts.every(font=>expected.test(font.familyName)),`Combining Latin accents stay in the chosen English family: ${JSON.stringify(fonts)}`);
         console.log(`${engine} actual ${script} fonts: ${fonts.map(font=>font.familyName).join(', ')}`);

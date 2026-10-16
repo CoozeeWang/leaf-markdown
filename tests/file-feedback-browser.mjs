@@ -54,17 +54,23 @@ try{
  // An untitled document invokes the save chooser, whose cancellation must retain it.
  const blank=await browser.newPage({viewport:{width:720,height:480}});
  await blank.addInitScript(()=>{
+  Object.defineProperty(navigator,'platform',{get:()=> 'Win32'});Object.defineProperty(navigator,'userAgentData',{get:()=>undefined});
   window.isTauri=true;window.callbacks={};window.handlers={};window.calls=[];let id=0;
   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},transformCallback:fn=>{callbacks[++id]=fn;return id;},invoke:async(command,args)=>{
       if (command === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
    calls.push({command,args});
    if(command==='plugin:event|listen'){handlers[args.event]=callbacks[args.handler];return 1;}
+   if(command==='plugin:window|show'){await new Promise(resolve=>window.resumeReveal=resolve);return null;}
    if(command==='initial_path'||command==='recovery_initial'||command==='plugin:dialog|save')return null;
    if(command==='recovery_list')return [];if(command==='recovery_retention')return 30;
    return null;
   }};
  });
  await blank.goto('http://127.0.0.1:41732/?document=1');
+ await blank.waitForFunction(()=>typeof resumeReveal==='function');
+ await blank.locator('#editor > .cm-editor > .cm-scroller > .cm-content').fill('Ready when the native window appears.');
+ assert.equal(await blank.evaluate(async()=>{const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');return EditorView.findFromDOM(document.querySelector('#editor .cm-content')).state.doc.toString();}),'Ready when the native window appears.','editing is ready before native show IPC resolves');
+ await blank.evaluate(()=>resumeReveal());
  await blank.waitForFunction(()=>handlers['leaf-close']&&document.querySelector('.shell')?.style.pointerEvents==='');
  await blank.evaluate(async()=>{const {desktopRestore}=await import('/src/desktop.js');await desktopRestore('未命名文档的修改');handlers['leaf-close']({});});
  await blank.getByRole('button',{name:'保存并关闭',exact:true}).click();
