@@ -369,7 +369,7 @@ impl LeafMcpBroker {
         let descriptor=super::application_data(app).map_err(|_|"descriptor_directory")?.join("mcp/chatgpt.json");
         super::chatgpt_tunnel::validate_saved(&config,&descriptor)?;
         let current=self.inner.tunnel.lock().unwrap().status();
-        if current.process&&current.generation==profile.generation{return self.tunnel_status();}
+        if current.process&&current.generation==profile.generation{self.inner.connection_errors.lock().unwrap().remove("chatgpt");return self.tunnel_status();}
         let epoch=self.inner.tunnel.lock().unwrap().status().epoch;
         let broker=self.clone();let key=tauri::async_runtime::spawn_blocking(move||broker.inner.profiles.lock().unwrap().as_mut().ok_or("profiles_unavailable")?.runtime_key(&SessionSecrets,&ai_credentials::GuiRuntimeSecretStore)).await.map_err(|_|"runtime_key_unavailable")??;
         if self.inner.tunnel.lock().unwrap().status().epoch!=epoch{return Err("stale_runtime".into());}
@@ -378,7 +378,7 @@ impl LeafMcpBroker {
         #[cfg(feature="native-smoke")] let synthetic=super::chatgpt_tunnel::is_synthetic_executable(&config.executable);
         let spec=super::chatgpt_tunnel::TunnelLaunchSpec{proxy_url:config.proxy_url,executable:config.executable,profile:config.profile,generation:profile.generation,health_file:Some(config.health_file.clone()),#[cfg(feature="native-smoke")]synthetic};
         let _=std::fs::remove_file(&config.health_file);
-        self.inner.tunnel.lock().unwrap().start(&spec,&key)?;self.tunnel_status()
+        self.inner.tunnel.lock().unwrap().start(&spec,&key)?;self.inner.connection_errors.lock().unwrap().remove("chatgpt");self.tunnel_status()
     }
     pub async fn stop_tunnel(&self,app:&tauri::AppHandle)->Result<Value,String>{
         let _serial=self.inner.queue.lock().await;self.inner.tunnel.lock().unwrap().stop()?;self.invalidate_client(app,"chatgpt").await;

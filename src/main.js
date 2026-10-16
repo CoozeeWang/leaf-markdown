@@ -1901,7 +1901,8 @@ function renderAiConnections() {
   const diagnostics={...value.tunnel?.diagnostics,tunnel:runtime?{local_ready:runtime.local_ready,cloud_connected:runtime.cloud_connected,cloud_state:runtime.cloud_state,proxy_source:runtime.proxy_source,consecutive_failures:runtime.consecutive_failures,http_status:runtime.http_status,tunnel_instance:runtime.tunnel_instance,last_error:runtime.last_error}:null};
   aiNode('aiDiagnosticsText').textContent=JSON.stringify(diagnostics,null,2);
   aiNode('aiCopyDiagnostics').disabled=controls.disabled||!value.tunnel?.diagnostics;
-  if (runtime?.last_error&&!cloudError) showAiError(runtime.last_error);
+  if (runtime?.last_error&&!cloudError) showAiError(runtime.last_error,'runtime');
+  else if(aiNode('aiConnectionError').dataset.errorOrigin==='runtime')aiNode('aiConnectionError').textContent='';
   for (const id of ['aiTunnelId','aiRuntimeKey','aiTunnelProxy']) {
     aiNode(id).disabled = !desktop || !chatgpt || value.busy;
     aiNode(id).readOnly = !value.editing;
@@ -1938,7 +1939,8 @@ function restoreAiFields() {
   aiNode('aiTunnelProgram').value = aiConnection.executable.split(/[\\/]/).at(-1) || '';
   aiNode('aiRuntimeKey').value = '';
 }
-function showAiError(error) {
+function showAiError(error, origin='action') {
+  aiNode('aiConnectionError').dataset.errorOrigin=origin;
   // Native failures may contain arbitrary OS/user text. Never echo credential
   // input or opaque diagnostics into DOM; the recoverable action is stable.
   const codes = new Set(['invalid_tunnel_proxy','tunnel_proxy_auto_config','tunnel_system_proxy_unavailable','invalid_tunnel_id','invalid_tunnel_executable','invalid_runtime_key','tunnel_unconfigured','tunnel_executable_missing','tunnel_cli_failed','tunnel_cli_rejected','tunnel_cli_init_rejected','tunnel_cli_init_timeout','tunnel_cli_doctor_rejected','tunnel_cli_doctor_timeout','mcp_preference_read','mcp_preference_invalid','mcp_preference_write','tunnel_cli_timeout','tunnel_cli_contract_changed','tunnel_profile_changed','tunnel_profile_reconfigure_required','tunnel_profile_unavailable','tunnel_profile_write','tunnel_spawn_failed','tunnel_start_timeout','tunnel_exited','stale_configuration','credential_unavailable','runtime_key_unavailable','runtime_key_required','runtime_gui_only','invalid_runtime_reference','connection_disabled','helper_not_installed']);
@@ -1956,10 +1958,11 @@ async function refreshAiConnections() {
     if (!profiles?.clients || profiles.clients.length !== 3) throw new Error('profiles_unavailable');
     const initial = !aiConnection.profiles;
     if (initial) aiConnection.profiles = profiles;
-    else {aiConnection.profiles.enabled = profiles.enabled; for (const profile of profiles.clients) acceptAiProfile(profile);}
+    else {aiConnection.profiles.enabled = profiles.enabled;aiConnection.profiles.connection_errors=profiles.connection_errors; for (const profile of profiles.clients) acceptAiProfile(profile);}
     acceptAiTunnel(tunnel);
     const startupError=Object.values(profiles.connection_errors || {})[0];
-    if (startupError) showAiError(startupError);
+    if (startupError) showAiError(startupError,'startup');
+    else if(aiNode('aiConnectionError').dataset.errorOrigin==='startup')aiNode('aiConnectionError').textContent='';
     if (initial) {aiConnection.editing = !tunnel.runtime.saved_config; restoreAiFields();}
     renderAiConnections();
   } catch (error) {if (serial === aiConnection.read) {showAiError(error); renderAiConnections();}}
@@ -2011,6 +2014,7 @@ async function enableConfiguredAiConnections() {
   }
   try {if (aiConnection.tunnel?.runtime.saved_config) acceptAiTunnel(await invoke('mcp_start_tunnel'));}
   catch (error) {failure ??= error;}
+  aiConnection.profiles=await invoke('mcp_profiles');
   failure ??= Object.values(aiConnection.profiles.connection_errors || {})[0];
   if (failure) throw failure;
 }

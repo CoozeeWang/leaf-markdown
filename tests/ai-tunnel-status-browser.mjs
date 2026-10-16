@@ -35,10 +35,23 @@ try {
     assert.equal(await page.locator('#aiAddChatGPT').isDisabled(),false);
     assert.doesNotMatch(await page.locator('#aiRuntimeStatus').innerText(),/网络或代理连接失败/);
     assert.equal(await page.locator('#aiConnectionError').innerText(),'','runtime recovery leaves no stale error banner');
+    await page.evaluate(()=>{Object.assign(aiMock.runtime,{process:false,local_ready:false,cloud_connected:false});aiMock.connectionErrors.chatgpt='tunnel_proxy_auto_config';emitNative('leaf-mcp-connections-changed',{});});
+    await page.waitForFunction(()=>document.querySelector('#aiConnectionError').textContent.includes('自动代理'));
+    await page.locator('#aiRetryTunnel').click();
+    await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
+    assert.equal(await page.locator('#aiConnectionError').innerText(),'','successful retry must remove the stale native startup error');
     await page.locator('#aiEditSetup').click();await page.locator('#aiTunnelProxy').fill('http://proxy.example:8091');
     await page.locator('#aiCancelSetup').click();
     assert.equal(await page.locator('#aiTunnelProxy').inputValue(),'http://127.0.0.1:19731');
     await page.locator('#mcpEnabled').uncheck();assert.equal(await page.locator('#aiTunnelProxy').isDisabled(),true);
+    await page.close();
+  });
+  await test('a saved startup proxy error clears after a successful retry',async()=>{
+    const page=await nativePage(browser,'windows','tunnel_proxy_auto_config');
+    assert.match(await page.locator('#aiConnectionError').innerText(),/自动代理/);
+    await page.locator('#aiRetryTunnel').click();
+    await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
+    assert.equal(await page.locator('#aiConnectionError').innerText(),'');
     await page.close();
   });
 } finally {await browser.close();}

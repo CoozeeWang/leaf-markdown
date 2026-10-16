@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-export async function nativePage(browser,os='macos') {
+export async function nativePage(browser,os='macos',startupError=null) {
   const page = await browser.newPage({viewport:{width:720,height:720}});
   page.on('pageerror', error=>console.error('AI UI page error:',error.message));
   await page.route('https://api.github.com/**', route => route.fulfill({json:{draft:false,prerelease:false,tag_name:'v0.0.16',assets:[{name:'tunnel-client-v0.0.16-darwin-arm64.zip',state:'uploaded',browser_download_url:'https://github.com/openai/tunnel-client/releases/download/v0.0.16/tunnel-client-v0.0.16-darwin-arm64.zip'}]}}));
-  await page.addInitScript(os => {
+  await page.addInitScript(({os,startupError}) => {
     window.isTauri = true;
     localStorage.setItem('leaf-settings-tab','ai');
     const callbacks = {}, handlers = {}; let id = 0;
@@ -11,7 +11,9 @@ export async function nativePage(browser,os='macos') {
     const clients = ['chatgpt','claude-desktop','workbuddy'].map(client => ({client,configured:false,enabled:false,generation:0,tunnel:null,has_runtime_key:false}));
     const runtime = {cloud_connected:false,cloud_state:'starting',proxy_source:'direct',consecutive_failures:0,generation:0,epoch:0,saved_config:false,runtime_present:false,process:false,local_ready:false,host_verified:false,last_error:null};
     const diagnostics={schema_version:1,instance_id:'0123456789abcdef',platform:os,build:'synthetic-build',client:'chatgpt',tunnel_tag:'000011112222',generation:0,last_call:null};
-    window.aiMock = {diagnostics,enabled:false, clients, runtime, calls:[], fail:null, hold:false, pending:[], keySeen:false};
+    if(startupError){Object.assign(clients[0],{configured:true,enabled:true,generation:2,has_runtime_key:true,tunnel:{tunnel_id:'tunnel_00000000000000000000000000000000',executable:'/synthetic/tunnel-client',proxy_url:''}});Object.assign(runtime,{saved_config:true,runtime_present:true,generation:2});}
+    window.aiMock = {diagnostics,connectionErrors:startupError?{chatgpt:startupError}:{},enabled:false, clients, runtime, calls:[], fail:null, hold:false, pending:[], keySeen:false};
+    if(startupError)aiMock.enabled=true;
     const copy = value => JSON.parse(JSON.stringify(value));
     window.emitNative = (event,payload) => handlers[event]?.({event,payload});
     window.aiEditorReady = () => !!handlers['leaf-mcp-editor'];
@@ -36,12 +38,12 @@ export async function nativePage(browser,os='macos') {
         aiMock.calls.push({command,args:safe});
         if (aiMock.fail===command || (aiMock.failChatGPT && command==='mcp_enable_client' && args.client==='chatgpt')) throw 'synthetic_connection_error';
         if (command === 'mcp_profiles') {
-          const snapshot = copy({enabled:aiMock.enabled,clients});
+          const snapshot = copy({enabled:aiMock.enabled,clients,connection_errors:aiMock.connectionErrors});
           if (aiMock.hold) return new Promise(resolve => aiMock.pending.push(()=>resolve(snapshot)));
           return snapshot;
         }
         if (command === 'mcp_tunnel_status') return copy({profile:clients[0],runtime,diagnostics});
-        if (command === 'mcp_set_enabled') {aiMock.enabled=args.enabled; if(!args.enabled){clients.forEach(p=>{p.enabled=false;p.generation++;});runtime.process=runtime.local_ready=false;runtime.epoch++;}return copy({enabled:aiMock.enabled,clients});}
+        if (command === 'mcp_set_enabled') {aiMock.enabled=args.enabled; if(!args.enabled){clients.forEach(p=>{p.enabled=false;p.generation++;});runtime.process=runtime.local_ready=false;runtime.epoch++;}return copy({enabled:aiMock.enabled,clients,connection_errors:aiMock.connectionErrors});}
         if (command === 'mcp_authorize') {
           const binding={document_id:'doc-ui',session_id:args.sessionId,authorization_epoch:2,mutation_generation:0,revision:args.revision};
           await window.emitNative('leaf-mcp-editor',{call_id:'grant-ui',operation:'binding',args:binding});
@@ -55,12 +57,12 @@ export async function nativePage(browser,os='macos') {
         if (command === 'mcp_enable_client') {profile.enabled=true;profile.generation++;return {profile:copy(profile),descriptor:'/synthetic/descriptor.json'};}
         if (command === 'mcp_revoke_client') {profile.configured=false;profile.enabled=false;profile.generation++;if(profile.client==='chatgpt'){profile.has_runtime_key=false;profile.tunnel=null;runtime.saved_config=runtime.process=runtime.local_ready=false;runtime.epoch++;}return copy(profile);}
         if (command === 'mcp_export_stdio') return {command:'/synthetic/Leaf.app/leaf-mcp-adapter',args:['--descriptor',`/synthetic/${profile.client}.json`]};
-        if (command === 'mcp_start_tunnel') {runtime.process=true;runtime.local_ready=true;runtime.generation=clients[0].generation;runtime.epoch++;return copy({profile:clients[0],runtime,diagnostics});}
+        if (command === 'mcp_start_tunnel') {delete aiMock.connectionErrors.chatgpt;runtime.process=true;runtime.local_ready=true;runtime.generation=clients[0].generation;runtime.epoch++;return copy({profile:clients[0],runtime,diagnostics});}
         if (command === 'mcp_stop_tunnel') {runtime.process=runtime.local_ready=false;runtime.epoch++;return copy({profile:clients[0],runtime,diagnostics});}
         return null;
       }
     };
-  },os);
+  },{os,startupError});
   await page.goto(`${process.env.LEAF_TEST_BASE_URL || 'http://127.0.0.1:41732'}/?document=1`);
   await page.locator('#appearanceButton').click();
   assert.equal(await page.locator('#settingsTab-ai').getAttribute('aria-selected'),'true', 'restoring the AI tab must run its setup checks without another click');
