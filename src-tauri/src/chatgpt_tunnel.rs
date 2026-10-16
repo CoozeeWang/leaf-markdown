@@ -65,7 +65,13 @@ impl TunnelManager {
         if spec.synthetic {command.env("LEAF_MCP_TEST_PROCESS_ROLE","chatgpt-tunnel-fixture").stderr(Stdio::inherit());if let Some(root)=std::env::var_os("LEAF_MCP_TEST_DIR"){command.env("LEAF_MCP_TEST_DIR",root);}}
         #[cfg(unix)] {use std::os::unix::process::CommandExt;command.process_group(0);}
         #[cfg(not(windows))] {self.child=Some(command.spawn().map_err(|_|"tunnel_spawn_failed")?);}
-        #[cfg(windows)] {self.child=Some(windows_tree::OwnedJob::spawn(&command)?);}
+        #[cfg(windows)] {
+            // Controlled network tests can capture their synthetic child only.
+            // Production never retains connector logs or credential-bearing output.
+            #[cfg(test)] let log=std::env::var_os("LEAF_PROXY_TEST_LOG").map(std::fs::File::create).transpose().map_err(|_|"test_log_failed")?;
+            #[cfg(not(test))] let log:Option<std::fs::File>=None;
+            self.child=Some(windows_tree::OwnedJob::spawn_with_output(&command,log.as_ref())?);
+        }
         self.health_file=spec.health_file.clone();self.started=Some(Instant::now());self.last_probe=None;
         self.status.proxy_source=route.source.into();self.status.cloud_state="starting".into();self.status.cloud_connected=false;self.status.consecutive_failures=0;self.status.http_status=0;self.status.tunnel_instance=None;
         self.status.generation=spec.generation;self.status.epoch+=1;self.status.process=true;
@@ -260,7 +266,9 @@ mod windows_tree {
             let mut env=Vec::<u16>::new();for(k,v)in command.get_envs().filter_map(|(k,v)|v.map(|v|(k,v))){env.extend(wide(std::ffi::OsStr::new(&format!("{}={}",k.to_string_lossy(),v.to_string_lossy()))));}env.push(0);
             let mut startup:STARTUPINFOW=std::mem::zeroed();startup.cb=std::mem::size_of_val(&startup) as u32;let mut info:PROCESS_INFORMATION=std::mem::zeroed();
             let stdout=output.map(|file|{use std::os::windows::io::AsRawHandle;file.as_raw_handle() as HANDLE});
-            if let Some(handle)=stdout {if windows_sys::Win32::Foundation::SetHandleInformation(handle,windows_sys::Win32::Foundation::HANDLE_FLAG_INHERIT,windows_sys::Win32::Foundation::HANDLE_FLAG_INHERIT)==0{return Err("tunnel_cli_failed".into());}startup.dwFlags=STARTF_USESTDHANDLES;startup.hStdOutput=handle;}
+            if let Some(handle)=stdout {if windows_sys::Win32::Foundation::SetHandleInformation(handle,windows_sys::Win32::Foundation::HANDLE_FLAG_INHERIT,windows_sys::Win32::Foundation::HANDLE_FLAG_INHERIT)==0{return Err("tunnel_cli_failed".into());}startup.dwFlags=STARTF_USESTDHANDLES;startup.hStdOutput=handle;
+                #[cfg(test)] if std::env::var_os("LEAF_PROXY_TEST_LOG").is_some(){startup.hStdError=handle;}
+            }
             let created=CreateProcessW(executable.as_ptr(),line.as_mut_ptr(),std::ptr::null(),std::ptr::null(),i32::from(stdout.is_some()),CREATE_SUSPENDED|CREATE_UNICODE_ENVIRONMENT|CREATE_NO_WINDOW,env.as_ptr().cast(),std::ptr::null(),&startup,&mut info);
             if let Some(handle)=stdout {windows_sys::Win32::Foundation::SetHandleInformation(handle,windows_sys::Win32::Foundation::HANDLE_FLAG_INHERIT,0);}
             if created==0{return Err("tunnel_spawn_failed".into());}
@@ -381,10 +389,14 @@ mod tests {
         let config=prepare_profile_with_helper(&format!("tunnel_{}","0".repeat(32)),&executable,&directory.path().join("profiles"),&directory.path().join("descriptor.json"),"synthetic-not-a-key",&helper).unwrap();
         // The network probe needs a passive live stdio child, not another
         // invocation of this Rust test harness with --descriptor arguments.
-        let passive=if cfg!(windows){format!("\"{}\" /d /c more",std::env::var("COMSPEC").unwrap().replace('\\',"/"))}else{"/bin/cat".into()};
+        // The harness supplies its existing Node executable on Windows. Hold
+        // stdin without shell/PATHEXT or interactive console-filter behavior.
+        let passive=if cfg!(windows){format!("\"{}\" -e \"process.stdin.resume()\"",std::env::var("LEAF_TEST_NODE_PATH").expect("Windows vendor harness must supply its Node executable").replace('\\',"/"))}else{"/bin/cat".into()};
         let text=std::fs::read_to_string(&config.profile).unwrap();
         let text=text.lines().map(|line|if line.trim_start().starts_with("command: "){format!("      command: {}",serde_json::to_string(&passive).unwrap())}else{line.into()}).collect::<Vec<_>>().join("\n");
         std::fs::write(&config.profile,text+"\n").unwrap();
+        let log=directory.path().join("synthetic-connector.log");
+        #[cfg(windows)] std::env::set_var("LEAF_PROXY_TEST_LOG",&log);
         let spec=TunnelLaunchSpec{executable,profile:config.profile,generation:1,health_file:Some(config.health_file),proxy_url:if mode=="explicit"{std::env::var("LEAF_PROXY_TEST_URL").unwrap()}else{String::new()},#[cfg(feature="native-smoke")]synthetic:false};
         let mut manager=TunnelManager::default();manager.configured(true,true);manager.start(&spec,"synthetic-not-a-key").unwrap();
         let start=Instant::now();
@@ -393,7 +405,7 @@ mod tests {
             if status.last_error.as_deref()==Some("tunnel_network_proxy") {
                 assert!(status.process&&status.local_ready&&status.saved_config);assert!(!status.cloud_connected);assert!(status.consecutive_failures>0);assert_eq!(status.proxy_source,mode);break;
             }
-            assert!(status.process,"official client must remain running");
+            assert!(status.process,"official client must remain running: {}",std::fs::read_to_string(&log).unwrap_or_default());
             assert!(start.elapsed()<Duration::from_secs(25),"official polling health did not report the controlled proxy failure: {}",serde_json::to_string(&status).unwrap());
             std::thread::sleep(Duration::from_millis(100));
         }

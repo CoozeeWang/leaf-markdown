@@ -74,13 +74,19 @@ jobs:
           npx playwright install chromium
           npm run test:browser -- ai-tunnel-status-browser.mjs
           cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf tunnel -- --test-threads=1
+      - name: Verify Windows official tunnel proxy
+        if: inputs.platform == 'windows' && inputs.verification_scope == 'chatgpt-proxy'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./tests/windows-mcp-config.ps1 -ProxyOnly -VendorOnly
       - name: Verify Windows MCP configuration and native restart
         if: inputs.platform == 'windows'
         shell: pwsh
         run: |
           npm run desktop:build -- --debug --no-bundle --features native-smoke --config src-tauri/tauri.mcp-test.conf.json
           if ($LASTEXITCODE -ne 0) { throw 'Isolated MCP GUI/helper build failed' }
-          ./tests/windows-mcp-config.ps1 -ProxyOnly:($env:LEAF_VERIFICATION_SCOPE -eq 'chatgpt-proxy')
+          ./tests/windows-mcp-config.ps1 -ProxyOnly:($env:LEAF_VERIFICATION_SCOPE -eq 'chatgpt-proxy') -SkipVendor:($env:LEAF_VERIFICATION_SCOPE -eq 'chatgpt-proxy')
           if ($LASTEXITCODE -ne 0) { throw 'Windows MCP configuration checks failed' }
         env:
           LEAF_VERIFICATION_SCOPE: ${{ inputs.verification_scope }}

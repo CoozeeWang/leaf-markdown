@@ -1,8 +1,9 @@
 # Real vendor parser + isolated native broker/host checks. No real API key.
-param([switch]$ProxyOnly)
+param([switch]$ProxyOnly,[switch]$VendorOnly,[switch]$SkipVendor)
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Run in a disposable GitHub Actions Windows runner only' }
 # The complete Rust suite runs in the preceding workflow step.
+if (!$SkipVendor) {
 $archive = 'tunnel-client-v0.0.16-windows-amd64.zip'
 # Hosted runners share anonymous API quotas. Send the read-only job token only
 # to the fixed metadata endpoint, never to a redirected asset download.
@@ -23,10 +24,14 @@ $env:LEAF_TEST_TUNNEL_CLIENT = $client.FullName
 cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf official_tunnel_client_prepares_profile_with_spaces_and_unicode -- --nocapture
 if ($LASTEXITCODE -ne 0) { throw 'Production profile preparation failed against official tunnel-client' }
 if ($ProxyOnly) {
+  $env:LEAF_TEST_NODE_PATH = (Get-Command node.exe -ErrorAction Stop).Source
   cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf official_tunnel_client_routes_through_explicit_and_environment_proxy -- --nocapture --test-threads=1
   if ($LASTEXITCODE -ne 0) { throw 'Official tunnel proxy routing and polling status regression failed' }
+  Remove-Item Env:LEAF_TEST_NODE_PATH
 }
 Remove-Item Env:LEAF_TEST_TUNNEL_CLIENT
+}
+if ($VendorOnly) { return }
 $nativeFailures = @()
 node scripts/test-mcp-startup.mjs
 if ($LASTEXITCODE -ne 0) { $nativeFailures += 'Native consent restart regression failed' }
