@@ -21,6 +21,10 @@ macOS 原生字体检查使用独立 WKWebView：在 `src-tauri` 运行 `cargo r
 
 The runner owns its Vite server on port 41732 and fails if that port is occupied. It runs pinned Chromium by default. Screenshots are written to ignored `test-results/`. Browser platform emulation does not replace native Windows testing.
 
+浏览器与原生异步回归应等待实际字体加载、布局稳定、编辑区可编辑及原生窗口可见等所需状态，不用固定延时代替就绪判断。平台按键使用运行系统的真实 OS 语义；修改平台标识不能改变宿主的按键行为。字体的本机 face 能力须独立探测：Chromium／macOS WebKit 可用时要求真实粗体、斜体字形；Windows Cairo 不支持相应 face 时仍检查实际字形回退，不跳过该回归。脚注搜索与浮框选择须核对文档身份、选区和历史保护；延迟附件回调须重新核对目标文档与授权，关闭、切换文档或撤权后不得写入错误文档或越过授权边界。
+
+Async browser and native regressions wait for actual font, layout, editability and native visibility readiness instead of fixed delays. Use the host OS keyboard semantics and probe local font-face capabilities independently. Require real bold/italic faces when available in Chromium and macOS WebKit; when Windows Cairo lacks a face, verify the actual glyph fallback without skipping the regression. Footnote search and popover selection must preserve document identity, selection and history; delayed attachment callbacks must recheck the target document and authorization before writing.
+
 行内格式生成由 `inline-format.test.js` 检查真实 Markdown 解析、标点外侧补空格、首尾空白、CRLF、段落、结构保护、脚注及反引号。`inline-format-browser.mjs` 检查格式按钮、Mac／Windows 快捷键路径、实际字形样式、取消格式及一次撤销／重做；`LEAF_INLINE_ENGINE=webkit` 可检查 WebKit。平台模拟不等于 Windows 安装版实测。
 
 macOS 原生格式检查使用开发服务器，在 `src-tauri` 运行 `cargo run --locked --example native-table-keys -- ../tests/native-inline-format.html http://127.0.0.1:41732/tests/native-inline-format.html`。夹具检查实际 WKWebView 中的共享格式入口、字形、CRLF、脚注、行内代码和撤销；不代替安装版操作、原生快捷键或 Windows 实测。
