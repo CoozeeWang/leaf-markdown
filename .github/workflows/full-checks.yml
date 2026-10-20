@@ -17,6 +17,10 @@ on:
         type: choice
         options: [all, browser, native]
         default: all
+      browser_suites:
+        description: 'Optional space-separated browser suite filenames; empty runs the core set'
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -42,7 +46,13 @@ jobs:
       - run: npm ci
       - run: npx playwright install chromium webkit
       - run: npm run check
-      - run: npm run test:browser
+      - name: Browser regression suites
+        shell: bash
+        env:
+          LEAF_BROWSER_SUITES: ${{ inputs.browser_suites }}
+        run: |
+          set -f
+          npm run test:browser -- $LEAF_BROWSER_SUITES
       - uses: actions/upload-artifact@v4
         if: always()
         with:
