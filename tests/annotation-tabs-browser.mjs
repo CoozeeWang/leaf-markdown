@@ -96,7 +96,9 @@ for (const engine of [chromium, webkit]) {
       assert.ok(await page.locator(target).evaluate(el => getComputedStyle(el).outlineStyle !== 'none'));
     }
     await page.locator('.annotation-tabs [aria-selected=true]').press('Tab');
-    assert.ok(await page.locator('[data-close=notes]').evaluate(el => el === document.activeElement));
+    // Safari's system keyboard-navigation preference may skip native buttons.
+    // Tab must leave this single-stop tablist, regardless of the next OS target.
+    assert.ok(await page.locator('.annotation-tabs').evaluate(el => !el.contains(document.activeElement)));
     await page.evaluate(source => v.dispatch({changes:{from:0,to:v.state.doc.length,insert:source}}), source);
     const restored = await snapshot();
     for (const tab of tabs) await page.click(tab);
