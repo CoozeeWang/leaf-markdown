@@ -70,7 +70,10 @@ for (const engine of [chromium, webkit]) {
               assert.equal(await page.locator(other).getAttribute('aria-label'), labels[language][1-i]);
               assert.equal(await page.locator(other).getAttribute('data-tooltip'), labels[language][1-i]);
               assert.equal(await page.locator(other).getAttribute('tabindex'), '-1');
-              for (const id of ['#commentsCount', '#notesCount']) assert.equal(await page.locator(id).innerText(), '1');
+              for (const id of ['#commentsCount', '#notesCount']) {
+                assert.equal(await page.locator(id).innerText(), '1');
+                assert.equal(await page.locator(id).evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
+              }
               await checkLayout({language, theme, width, size, tab});
             }
           }
