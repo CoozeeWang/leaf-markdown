@@ -4,7 +4,7 @@ import {mkdirSync} from 'node:fs';
 
 const base = process.env.LEAF_TEST_BASE_URL || 'http://127.0.0.1:41732';
 const source = '# Sidebar sample\n\nText {==range==}{>>Comment sample<<} and note[^one].\n\n[^one]: Footnote sample.';
-const labels = {'zh-Hans': ['批注', '脚注'], 'zh-Hant-TW': ['批註', '腳註'], en: ['Comments', 'Footnotes']};
+const labels = {'zh-Hans': ['批注', '脚注'], 'zh-Hant-TW': ['批註', '註腳'], en: ['Comments', 'Footnotes']};
 mkdirSync('test-results', {recursive: true});
 
 for (const engine of [chromium, webkit]) {
