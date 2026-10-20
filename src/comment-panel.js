@@ -9,9 +9,9 @@ import {commentQuote} from './comments.js';
 export function setupCommentPanel({editor,getMode,open,status,locate}) {
  const list=document.querySelector('#commentsList'),commentsTab=document.querySelector('#commentsTab'),notesTab=document.querySelector('#notesTab'),notesList=document.querySelector('#notesList');
  let tab='comments',chosen=false,editing=null,current=null,rendering=false;
- const selectTab=(value,explicit=true)=>{tab=value;if(explicit)chosen=true;commentsTab.setAttribute('aria-selected',String(tab==='comments'));notesTab.setAttribute('aria-selected',String(tab==='notes'));list.hidden=tab!=='comments';notesList.hidden=tab!=='notes';};
+ const selectTab=(value,explicit=true)=>{tab=value;if(explicit)chosen=true;commentsTab.setAttribute('aria-selected',String(tab==='comments'));notesTab.setAttribute('aria-selected',String(tab==='notes'));commentsTab.tabIndex=tab==='comments'?0:-1;notesTab.tabIndex=tab==='notes'?0:-1;list.hidden=tab!=='comments';notesList.hidden=tab!=='notes';};
  commentsTab.onclick=()=>{finish();selectTab('comments');render();};notesTab.onclick=()=>{finish();selectTab('notes');};
- for(const button of [commentsTab,notesTab])button.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();(button===commentsTab?notesTab:commentsTab).click();(tab==='comments'?commentsTab:notesTab).focus();});
+ for(const button of [commentsTab,notesTab])button.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const target=e.key==='Home'?commentsTab:e.key==='End'?notesTab:button===commentsTab?notesTab:commentsTab;target.click();target.focus();});
  function finish(){if(!editing)return;editing=null;editor.view.dispatch({annotations:isolateHistory.of('full')});render();}
  function edit(id){if(getMode()==='reading'||!editor.mutationAllowed())return;editing=id;current=id;editor.view.dispatch({annotations:isolateHistory.of('full')});render();list.querySelector(`[data-comment-id="${id}"] textarea`)?.focus();}
  function reveal(id,{edit:newEntry=false}={}){open();selectTab('comments');current=id;editor.activateComment(id);render();list.querySelector(`[data-comment-id="${id}"]`)?.scrollIntoView({block:'nearest'});if(newEntry)edit(id);}
