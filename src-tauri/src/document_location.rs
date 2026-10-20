@@ -2,6 +2,23 @@
 //! be mistaken for the document the user opened.
 use std::{fs::File, io::{self, Read}, path::{Path, PathBuf}};
 
+// Resolve only the native recipient's current registration, never another
+// document or the recent-files list. Missing paths remain actionable so the UI
+// can report an external removal without changing the document.
+pub fn can_reveal(documents: &std::collections::HashMap<String, Option<PathBuf>>, label: &str) -> bool {
+    label.strip_prefix("document-").is_some_and(|suffix| !suffix.is_empty())
+        && documents.get(label).is_some_and(Option::is_some)
+}
+
+pub fn reveal_target(documents: &std::collections::HashMap<String, Option<PathBuf>>, label: &str) -> Result<PathBuf, &'static str> {
+    if !label.strip_prefix("document-").is_some_and(|suffix| !suffix.is_empty()) || !documents.contains_key(label) {
+        return Err("main.open_or_create_a_document_first");
+    }
+    let path = documents.get(label).and_then(Option::as_ref).ok_or("main.save_the_document_first_na0010")?;
+    if !path.is_file() { return Err("main.the_document_is_no_longer_at_its"); }
+    Ok(path.clone())
+}
+
 pub struct Anchor {
     file: File,
     identity: Identity,
@@ -143,6 +160,42 @@ fn path_from_handle(_file: &File) -> io::Result<PathBuf> { Err(io::Error::new(io
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn reveal_uses_each_registered_recipient_without_changing_files() {
+        let dir=tempfile::tempdir().unwrap();
+        let first=dir.path().join("first note.md");let second=dir.path().join("第二份.md");
+        fs::write(&first,"First unchanged").unwrap();fs::write(&second,"Second unchanged").unwrap();
+        let documents=std::collections::HashMap::from([("document-a".into(),Some(first.clone())),("document-b".into(),Some(second.clone()))]);
+        assert_eq!(reveal_target(&documents,"document-a"),Ok(first.clone()));
+        assert_eq!(reveal_target(&documents,"document-b"),Ok(second.clone()));
+        assert_eq!(fs::read_to_string(first).unwrap(),"First unchanged");
+        assert_eq!(fs::read_to_string(second).unwrap(),"Second unchanged");
+    }
+    #[test]
+    fn reveal_rejects_unnamed_auxiliary_and_unregistered_recipients() {
+        let documents=std::collections::HashMap::from([("document-untitled".into(),None),("main".into(),Some(PathBuf::from("not-a-document.md")))]);
+        for label in ["main","desktop-update","export-1","document-","document-missing"] {
+            assert!(!can_reveal(&documents,label));
+            assert_eq!(reveal_target(&documents,label),Err("main.open_or_create_a_document_first"));
+        }
+        assert!(!can_reveal(&documents,"document-untitled"));
+        assert_eq!(reveal_target(&documents,"document-untitled"),Err("main.save_the_document_first_na0010"));
+    }
+    #[test]
+    fn reveal_follows_save_as_and_confirmed_relocation_and_reports_missing() {
+        let dir=tempfile::tempdir().unwrap();let old=dir.path().join("old.md");let saved=dir.path().join("saved-as.md");let moved=dir.path().join("moved.md");
+        fs::write(&old,"Original").unwrap();fs::write(&saved,"Saved copy").unwrap();
+        let mut documents=std::collections::HashMap::from([("document-a".into(),None)]);
+        assert!(!can_reveal(&documents,"document-a"));
+        documents.insert("document-a".into(),Some(saved.clone()));
+        assert!(can_reveal(&documents,"document-a"));assert_eq!(reveal_target(&documents,"document-a"),Ok(saved.clone()));
+        fs::rename(&saved,&moved).unwrap();documents.insert("document-a".into(),Some(moved.clone()));
+        assert_eq!(reveal_target(&documents,"document-a"),Ok(moved.clone()));
+        fs::remove_file(&moved).unwrap();assert!(can_reveal(&documents,"document-a"));
+        assert_eq!(reveal_target(&documents,"document-a"),Err("main.the_document_is_no_longer_at_its"));
+        assert_eq!(fs::read_to_string(old).unwrap(),"Original");
+    }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     #[test]
