@@ -76,6 +76,14 @@ for (const engine of [chromium, webkit]) {
                 assert.notEqual(badge.background, 'rgba(0, 0, 0, 0)');
                 assert.ok(badge.height <= 16 && badge.width < 20, JSON.stringify(badge));
               }
+              const colors = await page.locator('.annotation-tabs button').evaluateAll(buttons => buttons.map(button => {
+                const style = getComputedStyle(button.querySelector('.drawer-count'));
+                const brightness = value => { const rgb = value.match(/[\d.]+/g).slice(0,3).map(Number); return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722; };
+                return {active:button.getAttribute('aria-selected')==='true',background:brightness(style.backgroundColor),text:brightness(style.color)};
+              }));
+              const activeColor = colors.find(color => color.active), inactiveColor = colors.find(color => !color.active);
+              assert.ok(activeColor.background < activeColor.text && inactiveColor.background > inactiveColor.text, JSON.stringify({theme,colors}));
+              assert.ok(activeColor.background < inactiveColor.background, JSON.stringify({theme,colors}));
               await checkLayout({language, theme, width, size, tab});
             }
           }
