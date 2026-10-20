@@ -1,8 +1,17 @@
+.notes-drawer .drawer-header{padding-inline:6px;gap:2px}
+.notes-drawer .drawer-header>[data-close]{flex:none}
+.notes-drawer .drawer-header>[data-close] .ui-icon{transform:rotate(-90deg)}
 .annotation-tabs{display:flex;gap:8px;align-items:center;flex:1;min-width:0}
 .annotation-rail{gap:8px}
 .annotation-rail .icon-control{width:32px;height:28px;flex:none;padding:4px;border:0;border-radius:0}
-.drawer-header .annotation-tabs button{font:inherit;border:0;border-radius:0;background:none;color:var(--muted);padding:6px 9px;display:flex;gap:6px;align-items:center;min-height:30px;width:auto;height:auto;white-space:nowrap;flex:none}
-.annotation-tabs button[aria-selected="true"]{color:var(--text);box-shadow:inset 0 -2px var(--accent)}
+.drawer-header .annotation-tabs button{font:500 var(--ui-caption)/1.4 var(--ui-font);border:0;border-radius:0;background:none;color:var(--muted);padding:6px 2px;display:flex;gap:4px;align-items:center;min-height:30px;width:auto;height:auto;white-space:nowrap;flex:none}
+.annotation-tab-icon{display:flex;flex:none}
+.annotation-tabs button[aria-selected="true"] .annotation-tab-icon,.annotation-tabs button[aria-selected="false"] .annotation-tab-label{display:none}
+.notes-drawer .annotation-tabs button .drawer-count{min-width:14px;height:16px;padding:0 3px;border-radius:4px;background:var(--accent-soft);color:var(--accent-strong);font:500 var(--ui-metadata)/16px var(--ui-font)}
+.notes-drawer .annotation-tabs button[aria-selected="true"] .drawer-count{background:var(--accent-strong);color:var(--surface-strong)}
+:root[data-theme="dark"] .notes-drawer .annotation-tabs button .drawer-count{background:var(--muted);color:var(--canvas)}
+:root[data-theme="dark"] .notes-drawer .annotation-tabs button[aria-selected="true"] .drawer-count{background:var(--accent-soft);color:var(--text)}
+.annotation-tabs button[aria-selected="true"]{color:var(--accent-strong);font-weight:600;box-shadow:inset 0 -2px var(--accent)}
 .annotation-tabs button:focus-visible{outline:1px solid var(--accent);outline-offset:-1px;border-radius:4px}
 .comments-list{overflow:auto;min-height:0;height:calc(100% - 46px);display:grid;align-content:start;gap:12px;padding:12px 12px 24px}
 .comment-card{padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--canvas);overflow-wrap:anywhere;font-size:13px;line-height:1.7}
