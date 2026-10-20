@@ -72,7 +72,9 @@ for (const engine of [chromium, webkit]) {
               assert.equal(await page.locator(other).getAttribute('tabindex'), '-1');
               for (const id of ['#commentsCount', '#notesCount']) {
                 assert.equal(await page.locator(id).innerText(), '1');
-                assert.equal(await page.locator(id).evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
+                const badge = await page.locator(id).evaluate(el => ({background:getComputedStyle(el).backgroundColor,height:el.getBoundingClientRect().height,width:el.getBoundingClientRect().width}));
+                assert.notEqual(badge.background, 'rgba(0, 0, 0, 0)');
+                assert.ok(badge.height <= 16 && badge.width < 20, JSON.stringify(badge));
               }
               await checkLayout({language, theme, width, size, tab});
             }
