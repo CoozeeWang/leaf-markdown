@@ -846,5 +846,6 @@
   "ai.advanced_title": "高级设置／故障排查",
   "ai.key_requirement": "首次配置必填；已保存时留空保留",
   "ai.action_timeout": "连接操作超时。可直接修改代理并重新保存，无需重启 Leaf；已保存的密钥保留。",
-  "ai.troubleshoot": "检查网络和代理"
+  "ai.troubleshoot": "检查网络和代理",
+  "native.show_in_explorer": "在文件资源管理器中显示"
 }

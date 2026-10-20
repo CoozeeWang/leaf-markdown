@@ -832,5 +832,6 @@
   "AI0128": "ai.advanced_title",
   "AI0129": "ai.key_requirement",
   "AI0130": "ai.action_timeout",
-  "AI0131": "ai.troubleshoot"
+  "AI0131": "ai.troubleshoot",
+  "NA0163": "native.show_in_explorer"
 }

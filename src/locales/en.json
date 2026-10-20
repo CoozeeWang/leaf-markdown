@@ -846,5 +846,6 @@
   "ai.advanced_title": "Advanced settings / Troubleshooting",
   "ai.key_requirement": "Required for first setup; leave blank to keep a saved key",
   "ai.action_timeout": "Connection setup timed out. Edit the proxy and save again without restarting Leaf. Saved keys are retained.",
-  "ai.troubleshoot": "Check network and proxy"
+  "ai.troubleshoot": "Check network and proxy",
+  "native.show_in_explorer": "Show in File Explorer"
 }

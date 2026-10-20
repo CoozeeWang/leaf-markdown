@@ -1,3 +1,4 @@
+import {createDocumentReveal} from './document-reveal.js';
 import { t, h, aliases, currentLanguage, languagePreference, setLanguagePreference, onLanguageChange, refreshTranslations, setText, setAttr, message as translatedMessage } from './i18n.js';
 import { calloutBadge } from './callout-icons.js';
 import { inlineRename } from './inline-rename.js';
@@ -2133,11 +2134,9 @@ function openRecoveryRecords(current = false) {
 }
 document.querySelector('#settingsRecovery').onclick = () => openRecoveryRecords();
 document.querySelector('#documentHistory').onclick = () => openRecoveryRecords(true);
+const revealCurrentDocument=createDocumentReveal({invoke,status:setStatus});
 if (desktop) {
-  document.querySelector('#documentReveal').onclick = async () => {
-    try { await invoke('reveal_document'); }
-    catch (error) { setStatus(translatedMessage("main.could_not_show_the_file_in_the", {"error": error}), 'error'); }
-  };
+  document.querySelector('#documentReveal').onclick = revealCurrentDocument;
   document.querySelector('#documentRename').onclick = renameCurrentDocument;
 }
 document.querySelector('#saveButton').onclick = saveFile;
@@ -2564,6 +2563,7 @@ if (desktop) {
     exportPdf,
     cycleMode,
     rename: renameCurrentDocument,
+    reveal: revealCurrentDocument,
     async renameNative(name){
       try {
         const extension=state.fileName.match(/\.(md|markdown|mdown)$/i)?.[0]||'.md';

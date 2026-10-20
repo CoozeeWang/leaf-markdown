@@ -204,11 +204,20 @@ fn document_menu_item(app:&tauri::AppHandle,id:&str)->Option<tauri::menu::MenuIt
     }
     find(app.menu()?.items().ok()?,id)
 }
+fn refresh_reveal_menu(app:&tauri::AppHandle) {
+    let enabled=menu_window(app).is_some_and(|window|document_location::can_reveal(&app.state::<Documents>().0.lock().unwrap(),window.label()));
+    if let Some(item)=document_menu_item(app,"reveal-document") {let _=item.set_enabled(enabled);}
+}
+fn refresh_reveal_menu_on_main(app:&tauri::AppHandle) {
+    let handle=app.clone();let _=app.run_on_main_thread(move||refresh_reveal_menu(&handle));
+}
 fn refresh_document_menu(app:&tauri::AppHandle) {
+    refresh_reveal_menu(app);
     let locked=menu_window(app).is_some_and(|window|app.state::<mcp::LeafMcpBroker>().window_locked(window.label()));
     for id in MUTATING_MENU_IDS {if let Some(item)=document_menu_item(app,id){let _=item.set_enabled(!locked);}}
 }
 fn dispatch_document_menu(app:&tauri::AppHandle,label:&str,command:&str)->Result<bool,String> {
+    if command=="reveal-document"&&!document_location::can_reveal(&app.state::<Documents>().0.lock().unwrap(),label){return Ok(false);}
     let broker=app.state::<mcp::LeafMcpBroker>();
     if MUTATING_MENU_IDS.contains(&command)&&broker.window_locked(label){return Ok(false);}
     #[cfg(target_os="macos")]
@@ -354,8 +363,8 @@ fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
 #[tauri::command(async)]
 fn reveal_document(window: tauri::WebviewWindow, docs: tauri::State<Documents>) -> Result<(), String> {
     if !window.label().starts_with("document-") { return Err(crate::i18n::error("main.open_or_create_a_document_first", serde_json::json!({})).into()); }
-    let path = docs.0.lock().unwrap().get(window.label()).cloned().flatten().ok_or(crate::i18n::error("main.save_the_document_first_na0010", serde_json::json!({})).to_string())?;
-    if !path.is_file() { return Err(crate::i18n::error("main.the_document_is_no_longer_at_its", serde_json::json!({})).into()); }
+    let path = document_location::reveal_target(&docs.0.lock().unwrap(),window.label())
+        .map_err(|key|crate::i18n::error(key,serde_json::json!({})))?;
     reveal_in_file_manager(&path)
 }
 // Shows the attachment in the file manager instead of opening it: a picture the
@@ -967,6 +976,7 @@ fn write_document_io(app: tauri::AppHandle, window: tauri::WebviewWindow, docs: 
     }
     documents.insert(window.label().to_owned(), Some(target.clone()));
     drop(documents);
+    refresh_reveal_menu_on_main(&app);
     rebind_anchor(&anchors, window.label(), saved_file);
     // Disk is already saved. A cleanup failure must not be reported as a failed
     // write, since that would leave the editor's comparison baseline stale.
@@ -1248,6 +1258,8 @@ fn main() {
             let open = MenuItem::with_id(handle, "open", "打开…", true, Some("CmdOrCtrl+O"))?;
             let save = MenuItem::with_id(handle, "save", "保存", true, Some("CmdOrCtrl+S"))?;
             let save_as = MenuItem::with_id(handle, "save-as", "另存为…", true, Some("CmdOrCtrl+Shift+S"))?;
+            let reveal_key=if cfg!(target_os="macos"){"resources.show_in_finder"}else{"native.show_in_explorer"};
+            let reveal = MenuItem::with_id(handle,"reveal-document",i18n::text("zh-Hans",reveal_key),false,None::<&str>)?;
             let export = MenuItem::with_id(handle, "export-pdf", "导出 PDF…", true, Some("CmdOrCtrl+E"))?;
             let recovery_menu = MenuItem::with_id(handle, "recovery", "历史版本与草稿…", true, None::<&str>)?;
             let find = MenuItem::with_id(handle, "find", "查找与替换", true, Some("CmdOrCtrl+F"))?;
@@ -1267,7 +1279,7 @@ fn main() {
             let about_metadata = None;
             let app_menu = Submenu::with_items(handle, "Leaf", true, &[&PredefinedMenuItem::about(handle, Some("关于 Leaf"), about_metadata)?, &settings, &quit])?;
             let recent_menu = Submenu::new(handle, "最近打开", true)?;
-            let file = Submenu::with_items(handle, "文件", true, &[&new, &open, &recent_menu, &save, &save_as, &recovery_menu, &export, &PredefinedMenuItem::close_window(handle, Some("关闭窗口"))?])?;
+            let file = Submenu::with_items(handle, "文件", true, &[&new, &open, &recent_menu, &PredefinedMenuItem::separator(handle)?, &save, &save_as, &reveal, &PredefinedMenuItem::separator(handle)?, &recovery_menu, &export, &PredefinedMenuItem::separator(handle)?, &PredefinedMenuItem::close_window(handle, Some("关闭窗口"))?])?;
             // Undo and redo are deliberately not PredefinedMenuItem: on macOS
             // those bind Cmd-Z to the webview's native undo stack, which cannot
             // see changes the editor applies programmatically (formatting,

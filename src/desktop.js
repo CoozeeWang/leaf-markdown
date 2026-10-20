@@ -155,6 +155,7 @@ export async function initDesktop(callbacks) {
     if (payload === 'open') await desktopOpen();
     if (payload === 'save') await desktopSave();
     if (payload === 'save-as') await desktopSave(true);
+    if (payload === 'reveal-document') await hooks.reveal?.();
     if (payload === 'find') hooks.find();
     if (payload === 'settings') hooks.settings?.();
     if (payload === 'copy-rich') hooks.copyRich?.();
