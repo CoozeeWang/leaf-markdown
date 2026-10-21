@@ -1368,8 +1368,10 @@ async function renderRecentFiles() {
   }
 }
 
+let browserDocumentGeneration = 0;
 async function setDocument(content, name, handle = null, file = null) {
   if (!editor.mutationAllowed()) throw new Error('document_locked');
+  browserDocumentGeneration++;
   setMovedMissingImages();
   statusNotices.reset();
   collapsedOutline.clear();
@@ -1428,10 +1430,14 @@ async function openFile() {
 }
 
 async function hasExternalConflict() {
-  if (!state.fileHandle || !state.lastModified) return false;
-  const file = await state.fileHandle.getFile();
+  const handle = state.fileHandle, generation = browserDocumentGeneration;
+  const current = () => generation === browserDocumentGeneration && handle === state.fileHandle;
+  if (!handle || !state.lastModified) return false;
+  const file = await handle.getFile();
+  if (!current()) return false;
   if (file.lastModified === state.lastModified) return false;
   const diskNow = await file.text();
+  if (!current()) return false;
   if (diskNow === state.diskContent || diskNow === state.content) {
     state.lastModified = file.lastModified;
     return false;
@@ -1442,9 +1448,14 @@ async function hasExternalConflict() {
 
 async function saveToHandle(isAutoSave = false, force = false) {
   if (!state.fileHandle || state.saving) return false;
+  const handle = state.fileHandle, generation = browserDocumentGeneration;
+  const current = () => generation === browserDocumentGeneration && handle === state.fileHandle;
+  let written = false;
   state.saving = true;
   try {
-    if (!force && await hasExternalConflict()) {
+    const conflict = !force && await hasExternalConflict();
+    if (!current()) return false;
+    if (conflict) {
       if (isAutoSave) {
         setStatus(translatedMessage("main.file_changed_externally_autosave_paused_save_as"), 'error');
         return false;
@@ -1454,24 +1465,31 @@ async function saveToHandle(isAutoSave = false, force = false) {
         return false;
       }
     }
+    const content = state.content;
     setStatus(translatedMessage("main.saving"), 'pending');
     saveSnapshot(state.diskContent);
-    const writable = await state.fileHandle.createWritable();
-    await writable.write(state.content);
+    const writable = await handle.createWritable();
+    await writable.write(content);
     await writable.close();
-    const file = await state.fileHandle.getFile();
-    state.diskContent = state.content;
-    state.savedContent = state.content;
+    const file = await handle.getFile();
+    written = true;
+    if (!current()) return true;
+    state.diskContent = content;
+    state.savedContent = content;
     state.lastModified = file.lastModified;
     state.conflict = false;
     updateDocumentChrome();
-    setStatus(translatedMessage(isAutoSave ? "main.autosaved" : "main.saved"), 'saved');
+    const dirty = state.content !== content;
+    setStatus(translatedMessage(dirty ? "main.waiting_to_autosave" : isAutoSave ? "main.autosaved" : "main.saved"), dirty ? 'pending' : 'saved');
     return true;
   } catch (error) {
-    setStatus(translatedMessage("main.your_changes_have_not_been_saved_try", {"error": error.message}), 'error');
+    if (current()) setStatus(translatedMessage("main.your_changes_have_not_been_saved_try", {"error": error.message}), 'error');
     return false;
   } finally {
     state.saving = false;
+    // A timer may have fired while I/O was busy. Requeue only a successful save
+    // or a replacement document; failures still require an explicit retry.
+    if ((written || !current()) && state.fileHandle && state.content !== state.savedContent) scheduleSave();
   }
 }
 

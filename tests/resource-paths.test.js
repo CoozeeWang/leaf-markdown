@@ -22,3 +22,11 @@ test('a copied image keeps its definition and excludes links, remote images and 
  assert.equal(rewriteResourcePaths(copied,[['稿.assets/photo.png','目标.assets/photo-1.png']]),'![图](目标.assets/photo-1.png) [附件](note.pdf)');
  assert.equal(materializeImageReferences('![图][] ![图]', '![图][] ![图]\n\n[图]: 稿.assets/photo.png'), '![图](稿.assets/photo.png) ![图](稿.assets/photo.png)');
 });
+
+// Both runtimes consume this fixture, including constructs the old native
+// line scanner skipped while the editor correctly recognized them as links.
+test('shared native/frontend resource rewrite contract', async () => {
+ const {readFile}=await import('node:fs/promises');
+ const cases=JSON.parse(await readFile(new URL('./fixtures/resource-rewrite.json',import.meta.url),'utf8'));
+ for(const item of cases) assert.equal(rewriteResourcePaths(item.source,item.mappings),item.expected,item.name);
+});

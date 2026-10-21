@@ -30,7 +30,10 @@ function completed(child) { return new Promise((res, rej) => { child.on('error',
 async function build(args) { const child = start(process.execPath, ['node_modules/@tauri-apps/cli/tauri.js', 'build', ...args]); child.stdout.pipe(process.stdout); child.stderr.pipe(process.stderr); await completed(child); }
 async function waitJson(name, timeout = 65000) {
   const until = Date.now() + timeout;
-  while (Date.now() < until) { try { return JSON.parse(await readFile(join(directory, name), 'utf8')); } catch {} await new Promise(r => setTimeout(r, 100)); }
+  while (Date.now() < until) { try { return JSON.parse(await readFile(join(directory, name), 'utf8')); } catch {}
+    const failed=await readFile(join(directory,'adapter-result.json'),'utf8').then(JSON.parse).catch(()=>null);
+    if(failed?.pass===false)throw new Error(`native adapter failed: ${failed.failure}`);
+    await new Promise(r => setTimeout(r, 100)); }
   throw new Error(`native evidence missing: ${name}`);
 }
 function helper(binary, descriptor) {

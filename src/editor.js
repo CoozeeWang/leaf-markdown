@@ -1097,6 +1097,7 @@ export class RendererMutationReceipts {
       if(existing.pending)return existing.pending;
       throw new Error('mutation_outcome_unknown');
     }
+    if(this.entries.size>=4096)throw new Error('mutation_history_limit');
     const entry={digest,receipt:null,pending:null};this.entries.set(id,entry);
     entry.pending=Promise.resolve().then(mutate).then(receipt=>{entry.receipt=Object.freeze(receipt);return entry.receipt;}).finally(()=>{entry.pending=null;});
     return entry.pending;

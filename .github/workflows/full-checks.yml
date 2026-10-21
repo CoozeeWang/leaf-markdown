@@ -18,7 +18,7 @@ on:
         options: [all, browser, native]
         default: all
       browser_suites:
-        description: 'Optional space-separated browser suite filenames; empty runs the core set'
+        description: 'Optional space-separated browser suite filenames; empty runs every browser suite'
         type: string
         default: ''
 permissions:

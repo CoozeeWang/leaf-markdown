@@ -192,3 +192,32 @@ Configuration/profile and recovery-record replacement uses the same completed te
 Windows private directories grant the current user inheritable file/container access; private files keep a file-only grant. Startup repairs the earlier directory grant before reading saved profiles or ledger data. Protecting the shared application directory must preserve existing profile files and nested MCP paths. A Windows regression checks that sequence, repairs a simulated legacy grant, reloads the profiles and traverses/removes the synthetic tree. Native drivers wait for child shutdown and retry temporary cleanup locks without hiding an earlier assertion failure.
 
 文件菜单定位文档复用原生窗口注册表与文档名菜单的同一 IPC。`document_location` 的 Rust 回归覆盖窗口隔离、首次保存、另存为、已确认移动／改名及位置失效；`document-reveal.test.js` 覆盖无前端路径和三语错误提示。仍需在真实安装版展开原生菜单，核对活动窗口、禁用状态和 Finder／文件资源管理器选中的文件。
+
+
+## Health-check regression contracts
+
+`tests/fixtures/resource-rewrite.json` is shared by the frontend Lezer tests and
+native CommonMark destination rewriting. It covers reference definitions, list
+indentation, unmatched backticks, code protection, titles, Unicode and CRLF.
+`browser-save.test.js` exercises the actual browser save function with delayed,
+failing and document-replacement I/O; it does not touch real files.
+
+The default browser core includes MCP editing, identity and reader suites.
+The manual full-platform workflow runs every browser suite when no explicit
+selection is supplied. Source-contract tests only inspect code declarations;
+`MCP native regressions` separately executes isolated native drivers on macOS,
+including lost acknowledgements, identity conflicts and adapter lifecycle.
+These layers do not replace Windows or installed-host acceptance.
+
+MCP read replies retain at most 128 snapshots and 16 MiB in memory. Repeated read
+request IDs replay only while cached; after eviction the requested revision is
+revalidated, so clients needing a fresh snapshot should always use a fresh ID.
+Task acknowledgements are never evicted within their authorization lifetime.
+Closing a document retires its response cache and completed/rejected mutation
+records; restart retires completed records from previous sessions. PREPARED,
+APPLIED and UNKNOWN outcomes remain as reconciliation evidence. Cleanup failure
+keeps the original records. A 4096-record safety limit refuses new work before
+mutation rather than evicting evidence; existing requests can still reconcile.
+Close and reopen completed documents to release their history. If unresolved
+outcomes fill the ledger, preserve it for diagnosis rather than deleting it.
+The renderer likewise refuses new receipts at its limit without losing retries.

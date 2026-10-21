@@ -73,7 +73,7 @@ test('comment mutation union preserves CRLF Unicode body and hidden format, reje
   assert.throws(()=>api.planMcpCommentBatch(source,{operations:[op(notes[0],'delete')]},{...ctx,scope:{from:notes[0].anchor.from,to:source.length}}),/comment_missing/);
 });
 
-test('native comments task proof executes standard MCP tools with renderer receipts and task undo',async()=>{
+test('source contract declares the native comments task driver; execution is a separate native suite',async()=>{
   const driver=await readFile(new URL('../src-tauri/src/mcp_test_driver.rs',import.meta.url),'utf8');
   const runner=await readFile(new URL('../scripts/test-mcp-native.mjs',import.meta.url),'utf8');
   assert.ok(driver.includes('async fn comments_task_gate('),'actual native comments task scenario must exist');

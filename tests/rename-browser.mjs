@@ -9,8 +9,8 @@ try{
  await page.getByLabel('属性名：author',{exact:true}).fill('作者');await page.getByLabel('属性名：author',{exact:true}).press('Enter');
  assert.match(await source(),/"作者": Alice # keep comment/);
  await page.getByLabel('属性名：作者',{exact:true}).fill('other');await page.getByLabel('属性名：作者',{exact:true}).press('Enter');
- assert.match(await page.locator('.leaf-property-error').innerText(),/已存在/);assert.match(await source(),/"作者": Alice/);
- await page.getByLabel('属性名：作者',{exact:true}).fill('');await page.getByLabel('属性名：作者',{exact:true}).press('Enter');assert.match(await page.locator('.leaf-property-error').innerText(),/属性值仍有内容/);
+ assert.match(await page.locator('.leaf-property-error').filter({hasText:/已存在|属性值仍有内容/}).innerText(),/已存在/);assert.match(await source(),/"作者": Alice/);
+ await page.getByLabel('属性名：作者',{exact:true}).fill('');await page.getByLabel('属性名：作者',{exact:true}).press('Enter');assert.match(await page.locator('.leaf-property-error').filter({hasText:/已存在|属性值仍有内容/}).innerText(),/属性值仍有内容/);
  await page.locator('.leaf-default-title h1').dblclick();await page.getByLabel('新文件名').waitFor();assert.equal(await page.locator('[role=dialog]:visible').count(),0);assert.equal(await page.getByLabel('新文件名').evaluate(e=>getComputedStyle(e).outlineStyle),'none');await page.getByLabel('新文件名').press('Escape');
  await page.keyboard.press('ControlOrMeta+r');await page.locator('.leaf-file-name-title').dblclick();await page.getByLabel('新文件名').waitFor();assert.equal(await page.locator('[role=dialog]:visible').count(),0);assert.equal(await page.getByLabel('新文件名').evaluate(e=>getComputedStyle(e).outlineStyle),'none');await page.getByLabel('新文件名').press('Escape');assert.deepEqual(errors,[]);
  console.log('PASS property key rename preserves value/comment, rejects duplicate/empty, both document modes rename in place');

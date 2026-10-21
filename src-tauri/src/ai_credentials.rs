@@ -23,7 +23,7 @@ impl McpPreferences {
 }
 pub fn native_build_identity()->String {
     let mut hash=Sha256::new();
-    for source in [include_str!("ai_credentials.rs"),include_str!("atomic_file.rs"),include_str!("ai_client_install.rs"),include_str!("claude_stdio.cjs"),include_str!("mcp.rs"),include_str!("chatgpt_tunnel.rs"),include_str!("tunnel_proxy.rs"),include_str!("main.rs"),include_str!("bin/leaf-mcp-adapter.rs"),include_str!("../Cargo.toml")] {hash.update(source.as_bytes());}
+    for source in [include_str!("ai_credentials.rs"),include_str!("atomic_file.rs"),include_str!("ai_client_install.rs"),include_str!("claude_stdio.cjs"),include_str!("mcp.rs"),include_str!("mcp_retention.rs"),include_str!("chatgpt_tunnel.rs"),include_str!("tunnel_proxy.rs"),include_str!("main.rs"),include_str!("bin/leaf-mcp-adapter.rs"),include_str!("../Cargo.toml")] {hash.update(source.as_bytes());}
     format!("{}:{:x}:{}:{}:{}:{}",env!("CARGO_PKG_VERSION"),hash.finalize(),std::env::consts::OS,std::env::consts::ARCH,if cfg!(feature="native-smoke"){"native-smoke"}else{"production"},if cfg!(debug_assertions){"debug"}else{"release"})
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

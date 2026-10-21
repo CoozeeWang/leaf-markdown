@@ -86,6 +86,9 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     broker.inner.credentials.lock().unwrap().insert("synthetic-client".into(),token.clone());
     *broker.inner.enabled.lock().unwrap()=true;
     let port=broker.serve_http(app.clone(),"synthetic-client".into(),token.clone()).await?;
+    // The adapter scenario owns this isolated process and exits after its own
+    // report. Do not run a second tracer against the same buffer concurrently.
+    if std::env::var_os("LEAF_MCP_ADAPTER_TEST").is_some() {std::future::pending::<()>().await;}
     let mut headers=std::collections::HashMap::new();
     headers.insert("origin".parse().unwrap(),"https://untrusted.invalid".parse().unwrap());
     let origin=StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp")).auth_header(token.clone()).custom_headers(headers).reinit_on_expired_session(false);
@@ -102,7 +105,7 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
         let snapshot=broker.bridge(app,label,"snapshot",json!({})).await?;
         let records=broker.inner.ledger.records.lock().unwrap().values().cloned().collect::<Vec<_>>();
         ensure(records.iter().any(|r|r.state=="PREPARED"),"pending ledger survived actual process restart")?;
-        ensure(records.iter().any(|r|r.state=="FINALIZED"),"finalized ledger survived actual process restart")?;
+        ensure(!records.iter().any(|r|r.state=="FINALIZED"||r.state=="REJECTED"),"retired completed ledger is pruned on restart")?;
         for record in records.iter().filter(|r|r.state=="PREPARED"||r.state=="FINALIZED") {
             let args=json!({"document_id":"retired-document","session_id":record.session_id,"authorization_epoch":record.authorization_epoch,"task_id":record.task_id,"request_id":record.request_id,"revision":record.source_revision,"changes":[]});
             ensure(tool(&client,"apply_edit_batch",args.clone()).await.is_err(),"restart cannot resurrect pending or finalized session")?;
@@ -173,7 +176,7 @@ async fn run(app:&tauri::AppHandle,label:&str,mode:&str)->Result<(),String> {
     let undo=broker.bridge(app,label,"test",json!({"action":"undo"})).await?;ensure(undo["content"]=="","single tracer undo")?;
     let redo=broker.bridge(app,label,"test",json!({"action":"redo"})).await?;ensure(redo["content"]=="Synthetic draft","single tracer redo")?;
     if mode=="task-history-gate" {history_gate(app,label,broker,&client).await?;}
-    if mode=="renderer-ack-loss" {ack_loss_gate(app,label,broker,&client).await?;edge_gate(app,label,broker,&client).await?;}
+    if mode=="renderer-ack-loss" {edge_gate(app,label,broker,&client).await?;ack_loss_gate(app,label,broker,&client).await?;}
     if mode=="all-write-entrances" {entrances_gate(app,label,broker,&client).await?;}
     if mode=="stop-late-second-window" {stop_late_gate(app,broker,&client).await?;}
     if mode=="file-identity-conflict" {file_identity_gate(app,broker,&client).await?;}
@@ -971,9 +974,9 @@ async fn edge_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafMcpB
     ensure(before["line_ending"]=="\r\n","CRLF metadata preserved with LF buffer coordinates")?;
     let d=broker.register(label);let d=broker.authorize(app,label,&d.session_id,"synthetic-client",json!({"from":0,"to":content.encode_utf16().count()})).await?;
     let binding=json!({"document_id":d.document_id,"session_id":d.session_id,"authorization_epoch":d.authorization_epoch});
-    let list=tool(client,"list_documents",json!({})).await?;ensure(tool(client,"list_documents",json!({})).await?==list,"stable opened session ordering")?;
+    let list=tool(client,"list_documents",json!({})).await?;ensure(tool(client,"list_documents",json!({})).await?["documents"]==list["documents"],"stable opened session ordering")?;
     let mut page=binding.clone();page["revision"]=before["revision"].clone();page["from"]=json!(0);page["to"]=json!(6);
-    let first=tool(client,"read_document",page.clone()).await?;ensure(tool(client,"read_document",page.clone()).await?==first,"fixed revision reads stable")?;
+    let first=tool(client,"read_document",page.clone()).await?;let mut repeated=tool(client,"read_document",page.clone()).await?;let mut stable=first.clone();repeated.as_object_mut().unwrap().remove("_meta");stable.as_object_mut().unwrap().remove("_meta");ensure(repeated==stable,"fixed revision reads stable apart from call diagnostics")?;
     page["request_id"]=json!("stable-read-id");let identified=tool(client,"read_document",page.clone()).await?;ensure(tool(client,"read_document",page.clone()).await?==identified,"idempotent read identity")?;
     let mut conflicting=page.clone();conflicting["from"]=json!(1);ensure(tool(client,"read_document",conflicting).await.is_err(),"changed read arguments cannot reuse identity")?;
     page.as_object_mut().unwrap().remove("request_id");

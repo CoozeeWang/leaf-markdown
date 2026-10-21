@@ -1,0 +1,145 @@
+[
+  {
+    "name": "reference-no-space",
+    "source": "![x][p]\n\n[p]:old.assets/a.png\n",
+    "expected": "![x][p]\n\n[p]:new.assets/a.png\n",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "list-image",
+    "source": "- list\n\n    ![x](old.assets/a.png)\n",
+    "expected": "- list\n\n    ![x](new.assets/a.png)\n",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "unmatched-code",
+    "source": "` unmatched\n\n![x](old.assets/a.png)\n",
+    "expected": "` unmatched\n\n![x](new.assets/a.png)\n",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "code-protection",
+    "source": "`![x](old.assets/a.png)`\n\n    ![x](old.assets/a.png)\n\n```md\n![x](old.assets/a.png)\n```\n",
+    "expected": "`![x](old.assets/a.png)`\n\n    ![x](old.assets/a.png)\n\n```md\n![x](old.assets/a.png)\n```\n",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "quote-angle-title",
+    "source": "> ![old.assets/a.png](<old.assets/a.png> \"old.assets/a.png\")\r\n",
+    "expected": "> ![old.assets/a.png](<new.assets/a.png> \"old.assets/a.png\")\r\n",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "definition-title",
+    "source": "[p]:\t<old.assets/a.png> \"old.assets/a.png\"\n\n![x][p]",
+    "expected": "[p]:\t<new.assets/a.png> \"old.assets/a.png\"\n\n![x][p]",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "unused-definition",
+    "source": "[p]: old.assets/a.png\n",
+    "expected": "[p]: new.assets/a.png\n",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "escaped-image",
+    "source": "\\![x](old.assets/a.png)",
+    "expected": "\\![x](new.assets/a.png)",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "escaped-link",
+    "source": "\\[x](old.assets/a.png)",
+    "expected": "\\[x](old.assets/a.png)",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "nested-image",
+    "source": "[![x](old.assets/a.png)](old.assets/a.png)",
+    "expected": "[![x](new.assets/a.png)](new.assets/a.png)",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "whitespace-destination",
+    "source": "![x](\n old.assets/a.png\n )",
+    "expected": "![x](\n new.assets/a.png\n )",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "prose-title",
+    "source": "old.assets/a.png ![old.assets/a.png](remote.png \"old.assets/a.png\")",
+    "expected": "old.assets/a.png ![old.assets/a.png](remote.png \"old.assets/a.png\")",
+    "mappings": [
+      [
+        "old.assets/a.png",
+        "new.assets/a.png"
+      ]
+    ]
+  },
+  {
+    "name": "unicode-percent",
+    "source": "![图](%E6%97%A7%20%E7%A8%BF.assets/a.png)",
+    "expected": "![图](%E6%96%B0%20%E7%A8%BF.assets/a.png)",
+    "mappings": [
+      [
+        "旧 稿.assets/a.png",
+        "新 稿.assets/a.png"
+      ]
+    ]
+  }
+]
