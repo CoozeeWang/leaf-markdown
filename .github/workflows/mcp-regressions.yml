@@ -1,0 +1,57 @@
+name: MCP native regressions
+on:
+  workflow_dispatch:
+  push:
+    branches: ['**']
+    paths: &mcp_paths
+      - 'src/*mcp*'
+      - 'src/ai-*.js'
+      - 'src/source-changes.js'
+      - 'src/editor.js'
+      - 'src/main.js'
+      - 'src/desktop.js'
+      - 'src/document-session.js'
+      - 'src-tauri/src/mcp*.rs'
+      - 'src-tauri/src/ai_credentials.rs'
+      - 'src-tauri/src/main.rs'
+      - 'src-tauri/src/bin/leaf-mcp-adapter.rs'
+      - 'scripts/test-mcp*.mjs'
+      - 'tests/ai-task-lifecycle.test.js'
+      - '.github/workflows/mcp-regressions.yml'
+  pull_request:
+    paths: *mcp_paths
+permissions:
+  contents: read
+concurrency:
+  group: mcp-native-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - run: npm run desktop:build -- --debug --no-bundle --features native-smoke --config src-tauri/tauri.mcp-test.conf.json
+      - name: Actual renderer, authorization and retry drivers
+        shell: bash
+        run: |
+          for mode in authorization-retirement renderer-ack-loss file-identity-conflict comments-task footnotes-tables properties-markdown; do
+            node scripts/test-mcp-native.mjs "$mode" --reuse-build
+          done
+      - name: Actual adapter protocol and origin boundaries
+        run: node scripts/test-mcp-adapter.mjs stdio-and-origin --reuse-build
+      - name: Actual heartbeat, EOF and stop lifecycle
+        env:
+          LEAF_AI_LIFECYCLE_NATIVE: '1'
+          LEAF_AI_LIFECYCLE_REUSE_BUILD: '1'
+        run: node --test tests/ai-task-lifecycle.test.js

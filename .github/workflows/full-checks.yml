@@ -18,7 +18,7 @@ on:
         options: [all, browser, native]
         default: all
       browser_suites:
-        description: 'Optional space-separated browser suite filenames; empty runs the core set'
+        description: 'Optional space-separated browser suite filenames; empty runs every browser suite'
         type: string
         default: ''
 permissions:
@@ -34,7 +34,7 @@ jobs:
       matrix:
         os: ${{ fromJSON(inputs.platform == 'both' && '["windows-latest","macos-latest"]' || inputs.platform == 'macos' && '["macos-latest"]' || '["windows-latest"]') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,7 +52,11 @@ jobs:
           LEAF_BROWSER_SUITES: ${{ inputs.browser_suites }}
         run: |
           set -f
-          npm run test:browser -- $LEAF_BROWSER_SUITES
+          if [[ -z "$LEAF_BROWSER_SUITES" ]]; then
+            npm run test:browser:all
+          else
+            npm run test:browser -- $LEAF_BROWSER_SUITES
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,5 +1,5 @@
 import {indexFootnotes,footnoteDefinitionText,appendDefinition,planFootnoteDeletion,planFootnoteRenumbering} from './footnotes.js';
-import {planSourceChanges} from './ai-structure-operations.js';
+import {planSourceChanges} from './source-changes.js';
 
 const apply=(source,changes)=>[...changes].reverse().reduce((text,c)=>text.slice(0,c.from)+c.insert+text.slice(c.to),source);
 const validLabel=id=>typeof id==='string'&&id.length>0&&!/[\[\]\r\n]/.test(id);

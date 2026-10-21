@@ -10,6 +10,9 @@ use tokio::sync::{Mutex as AsyncMutex,oneshot};
 pub mod ai_credentials;
 use ai_credentials::{AiClientProfileStore, AiClientProfile, SessionSecrets};
 use ai_credentials::SecretStore;
+#[path = "mcp_retention.rs"]
+mod retention;
+use retention::ResultCache;
 
 static IDS:AtomicU64=AtomicU64::new(1);
 fn id(prefix:&str)->String { format!("{prefix}-{}-{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),IDS.fetch_add(1,Ordering::Relaxed)) }
@@ -51,29 +54,48 @@ impl MutationLedger {
     pub fn initialize(&self,path:PathBuf)->Result<(),String> {
         std::fs::create_dir_all(path.parent().ok_or("ledger path")?).map_err(|_|"ledger directory")?;
         if path.exists(){let bytes=std::fs::read(&path).map_err(|_|"ledger read")?;*self.records.lock().unwrap()=serde_json::from_slice(&bytes).map_err(|_|"ledger invalid")?;}
-        *self.path.lock().unwrap()=Some(path);Ok(())
+        *self.path.lock().unwrap()=Some(path);
+        // Sessions never survive a process restart. Keep uncertain mutations as
+        // evidence, but old completed requests can never be replayed or queried.
+        self.prune(|record| matches!(record.state.as_str(), "FINALIZED" | "REJECTED"))
+
     }
+    fn persist_records(&self, records:&HashMap<String,MutationRecord>)->Result<(),String> {
+        let path=self.path.lock().unwrap().clone().ok_or("ledger unavailable")?;
+        let mut file=tempfile::NamedTempFile::new_in(path.parent().ok_or("ledger directory")?).map_err(|_|"ledger write")?;
+        serde_json::to_writer(&mut file,records).map_err(|_|"ledger encoding")?;
+        file.as_file().sync_all().map_err(|_|"ledger sync")?;
+        crate::atomic_file::persist(file,&path).map_err(|_|"ledger replace")?;
+        #[cfg(unix)]
+        std::fs::File::open(path.parent().unwrap()).and_then(|d|d.sync_all()).map_err(|_|"ledger directory sync")?;
+        Ok(())
+    }
+    fn prune(&self, removable:impl Fn(&MutationRecord)->bool)->Result<(),String> {
+        let mut records=self.records.lock().unwrap();
+        if !records.values().any(&removable) {return Ok(());}
+        let retained=records.iter().filter(|(_,r)|!removable(r)).map(|(k,r)|(k.clone(),r.clone())).collect();
+        self.persist_records(&retained)?;*records=retained;Ok(())
+    }
+    fn retire_session(&self,session:&str)->Result<(),String> {
+        self.prune(|r|r.session_id==session&&matches!(r.state.as_str(),"FINALIZED"|"REJECTED"))
+    }
+
     pub fn save(&self,record:MutationRecord,key:String)->Result<(),String> {
-        let mut records=self.records.lock().unwrap();let previous=records.insert(key.clone(),record);
-        let result=(||{
-            let path=self.path.lock().unwrap().clone().ok_or("ledger unavailable")?;
-            let mut file=tempfile::NamedTempFile::new_in(path.parent().unwrap()).map_err(|_|"ledger write")?;
-            file.write_all(&serde_json::to_vec(&*records).map_err(|_|"ledger encoding")?).map_err(|_|"ledger write")?;
-            file.as_file().sync_all().map_err(|_|"ledger sync")?;
-            crate::atomic_file::persist(file,&path).map_err(|_|"ledger replace")?;
-            #[cfg(unix)]
-            std::fs::File::open(path.parent().unwrap()).and_then(|d|d.sync_all()).map_err(|_|"ledger directory sync")?;
-            Ok(())
-        })();
+        let mut records=self.records.lock().unwrap();
+        if !records.contains_key(&key) && records.len() >= 4096 {
+            return Err("mutation_history_limit: close and reopen completed documents; unresolved outcomes are retained".into());
+        }
+        let previous=records.insert(key.clone(),record);
+        let result=self.persist_records(&records);
         if result.is_err(){match previous {Some(old)=>{records.insert(key,old);},None=>{records.remove(&key);}}}
         result
     }
 }
 #[derive(Clone)]
 pub struct LeafMcpBroker {pub inner:Arc<BrokerState>}
-pub struct BrokerState {instance_id:String,diagnostic_calls:Mutex<HashMap<String,Value>>,pub automatic_access:std::sync::atomic::AtomicBool,pub tunnel:Mutex<super::chatgpt_tunnel::TunnelManager>,pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,preference_path:Mutex<Option<PathBuf>>,connection_errors:Mutex<HashMap<String,String>>,pub credentials:Mutex<HashMap<String,String>>,pub profiles:Mutex<Option<AiClientProfileStore>>,pub results:Mutex<HashMap<String,(String,Value)>>,pub ledger:MutationLedger,leases:Mutex<AuthenticatedLeaseManager>,pending_finishes:Mutex<HashMap<String,Value>>,watchdog_started:std::sync::atomic::AtomicBool,reader_grants:Mutex<HashMap<String,ReaderGrant>>,reader_ports:Mutex<HashMap<String,u16>>}
+pub struct BrokerState {instance_id:String,diagnostic_calls:Mutex<HashMap<String,Value>>,pub automatic_access:std::sync::atomic::AtomicBool,pub tunnel:Mutex<super::chatgpt_tunnel::TunnelManager>,pub registry:Mutex<OpenedDocumentRegistry>,pub queue:AsyncMutex<()>,bridge:McpEditorBridge,pub enabled:Mutex<bool>,preference_path:Mutex<Option<PathBuf>>,connection_errors:Mutex<HashMap<String,String>>,pub credentials:Mutex<HashMap<String,String>>,pub profiles:Mutex<Option<AiClientProfileStore>>,pub results:Mutex<ResultCache>,pub ledger:MutationLedger,leases:Mutex<AuthenticatedLeaseManager>,pending_finishes:Mutex<HashMap<String,Value>>,watchdog_started:std::sync::atomic::AtomicBool,reader_grants:Mutex<HashMap<String,ReaderGrant>>,reader_ports:Mutex<HashMap<String,u16>>}
 impl Default for LeafMcpBroker {
-    fn default()->Self {Self{inner:Arc::new(BrokerState{instance_id:ai_credentials::random_token().expect("MCP instance entropy"),diagnostic_calls:Mutex::new(HashMap::new()),automatic_access:std::sync::atomic::AtomicBool::new(true),tunnel:Mutex::new(super::chatgpt_tunnel::TunnelManager::default()),registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),preference_path:Mutex::new(None),connection_errors:Mutex::new(HashMap::new()),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(HashMap::new()),ledger:MutationLedger::default(),leases:Mutex::new(AuthenticatedLeaseManager::default()),pending_finishes:Mutex::new(HashMap::new()),watchdog_started:std::sync::atomic::AtomicBool::new(false),reader_grants:Mutex::new(HashMap::new()),reader_ports:Mutex::new(HashMap::new())})}}
+    fn default()->Self {Self{inner:Arc::new(BrokerState{instance_id:ai_credentials::random_token().expect("MCP instance entropy"),diagnostic_calls:Mutex::new(HashMap::new()),automatic_access:std::sync::atomic::AtomicBool::new(true),tunnel:Mutex::new(super::chatgpt_tunnel::TunnelManager::default()),registry:Mutex::new(OpenedDocumentRegistry::default()),queue:AsyncMutex::new(()),bridge:McpEditorBridge{pending:Mutex::new(HashMap::new())},enabled:Mutex::new(false),preference_path:Mutex::new(None),connection_errors:Mutex::new(HashMap::new()),credentials:Mutex::new(HashMap::new()),profiles:Mutex::new(None),results:Mutex::new(ResultCache::default()),ledger:MutationLedger::default(),leases:Mutex::new(AuthenticatedLeaseManager::default()),pending_finishes:Mutex::new(HashMap::new()),watchdog_started:std::sync::atomic::AtomicBool::new(false),reader_grants:Mutex::new(HashMap::new()),reader_ports:Mutex::new(HashMap::new())})}}
 }
 impl LeafMcpBroker {
     pub fn register_window(&self,app:&tauri::AppHandle,label:&str)->OpenedDocument {
@@ -407,6 +429,12 @@ impl LeafMcpBroker {
     pub fn unregister(&self,label:&str) {
         let mut registry=self.inner.registry.lock().unwrap();
         for d in registry.documents.values().filter(|d|d.label==label){if let Some(task)=&d.task{self.inner.leases.lock().unwrap().finish(task["task_id"].as_str().unwrap_or(""));}}
+        let sessions: Vec<_> = registry.documents.values().filter(|d| d.label == label).map(|d| d.session_id.clone()).collect();
+        for session in sessions {
+            self.inner.results.lock().unwrap().retire_session(&session);
+            self.inner.reader_grants.lock().unwrap().retain(|_, grant| grant.binding["session_id"] != session);
+            if let Err(error) = self.inner.ledger.retire_session(&session) { eprintln!("MCP history cleanup: {error}"); }
+        }
         registry.documents.retain(|_,d|d.label!=label);self.inner.pending_finishes.lock().unwrap().remove(label);
     }
     pub async fn bridge(&self,app:&tauri::AppHandle,label:&str,operation:&str,args:Value)->Result<Value,String> {
@@ -441,6 +469,7 @@ impl LeafMcpBroker {
         let Some(mut d)=self.window_binding(label).filter(|d|d.session_id==session&&d.authorization_epoch==epoch) else{return Ok(());};
         self.finalize(app,&mut d).await?;
         d.authorization_epoch+=1;d.client=None;d.scope=None;
+        self.inner.results.lock().unwrap().retire_session(session);
         self.inner.reader_grants.lock().unwrap().retain(|_,grant|grant.binding["session_id"]!=session);
         self.inner.registry.lock().unwrap().documents.insert(session.into(),d);
         Ok(())
@@ -556,6 +585,7 @@ impl LeafMcpBroker {
                 let key=format!("{}:begin:{request}",d.session_id);let hash=digest(&args);
                 if let Some((old,result))=self.inner.results.lock().unwrap().get(&key){if old==&hash{return if d.task.as_ref().is_some_and(|task|task["task_id"]==result["task_id"]){Ok(result.clone())}else{Err("task_stopped".into())};}return Err("request_id_conflict".into());}
                 if d.task.is_some() {return Err("document_locked".into());}
+                self.inner.results.lock().unwrap().admit_task()?;
                 if self.inner.registry.lock().unwrap().documents.values().any(|other|other.label!=d.label&&other.logical_identity==d.logical_identity){return Err("document_buffer_conflict".into());}
                 if self.inner.pending_finishes.lock().unwrap().contains_key(&d.label){return Err("task_finalizing".into());}
                 let snapshot=self.bridge(app,&d.label,"snapshot",args.clone()).await?;
@@ -939,6 +969,32 @@ pub async fn mcp_document_boundary(app:tauri::AppHandle,window:tauri::WebviewWin
 #[cfg(test)]
 mod authenticated_lease_tests {
     use super::*;
+    fn retention_record(session:&str,state:&str)->MutationRecord {
+        MutationRecord{mutation_id:"m".into(),request_digest:"r".into(),changes_digest:"c".into(),source_digest:"s".into(),session_id:session.into(),task_id:"task".into(),request_id:"r".into(),authorization_epoch:1,source_revision:0,state:state.into(),transitions:vec![state.into()],result:None}
+    }
+    #[test] fn mutation_retention_preserves_uncertain_outcomes_and_live_sessions() {
+        let root=tempfile::tempdir().unwrap();let path=root.path().join("ledger.json");let ledger=MutationLedger::default();ledger.initialize(path.clone()).unwrap();
+        for (key,session,state) in [("done","closed","FINALIZED"),("rejected","closed","REJECTED"),("unknown","closed","UNKNOWN"),("prepared","closed","PREPARED"),("applied","closed","APPLIED"),("live","open","FINALIZED")] {
+            ledger.save(retention_record(session,state),key.into()).unwrap();
+        }
+        ledger.retire_session("closed").unwrap();
+        assert_eq!(ledger.records.lock().unwrap().len(),4);assert!(ledger.records.lock().unwrap().contains_key("live"));
+        let restarted=MutationLedger::default();restarted.initialize(path).unwrap();
+        let records=restarted.records.lock().unwrap();assert_eq!(records.len(),3);for key in ["unknown","prepared","applied"] {assert!(records.contains_key(key));}
+    }
+    #[test] fn mutation_retention_failed_cleanup_keeps_original_records() {
+        let root=tempfile::tempdir().unwrap();let ledger=MutationLedger::default();ledger.initialize(root.path().join("ledger.json")).unwrap();
+        ledger.save(retention_record("closed","FINALIZED"),"done".into()).unwrap();
+        *ledger.path.lock().unwrap()=Some(root.path().join("missing").join("ledger.json"));
+        assert!(ledger.retire_session("closed").is_err());assert!(ledger.records.lock().unwrap().contains_key("done"));
+    }
+    #[test] fn mutation_retention_limit_never_drops_replay_or_uncertain_evidence() {
+        let root=tempfile::tempdir().unwrap();let ledger=MutationLedger::default();ledger.initialize(root.path().join("ledger.json")).unwrap();
+        {let mut records=ledger.records.lock().unwrap();for n in 0..4096 {records.insert(n.to_string(),retention_record("open","UNKNOWN"));}}
+        assert!(ledger.save(retention_record("open","PREPARED"),"new".into()).is_err());
+        assert_eq!(ledger.records.lock().unwrap().len(),4096);
+        ledger.save(retention_record("open","FINALIZED"),"0".into()).unwrap();
+    }
     #[test]
     fn repeated_registration_preserves_live_session_and_task() {
         let broker=LeafMcpBroker::default();

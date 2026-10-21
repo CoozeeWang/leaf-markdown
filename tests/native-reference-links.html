@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Loading</title></head>
+<body><div id="editor"></div><div id="reading"></div><script type="module">
+import {createLeafEditor} from '/src/editor.js';
+import {renderPrintDocument} from '/src/print-document.js';
+import '/src/style.css';
+const check=(ok,message)=>{if(!ok)throw Error(message);};
+const frame=()=>new Promise(resolve=>requestAnimationFrame(resolve));
+window.startTest=async()=>{
+ try {
+  const source='正文\n\n[产品][sample] [缺失][unknown] 引文[^note]\n\n[sample]: https://example.invalid/one\n\n[^note]: 参见 [来源][sample]\n\n末尾';
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:source});
+  const view=editor.view;view.dispatch({selection:{anchor:0}});await frame();await frame();
+  check(view.dom.querySelector('[data-leaf-link]')?.textContent==='产品','editor label');
+  check(editor.getValue()===source,'source preserved');
+  const at=source.indexOf('/one');view.dispatch({changes:{from:at,to:at+4,insert:'/two'}});await frame();await frame();
+  check(view.dom.querySelector('[data-leaf-link]')?.dataset.leafLink==='https://example.invalid/two','destination refresh');
+  const root=document.querySelector('#reading');renderPrintDocument(root,editor.getValue(),{fallbackTitle:false});
+  check(root.querySelectorAll('a[data-leaf-link]').length===2,'reading and footnote links');
+  check(!root.textContent.includes('[sample]:'),'definitions hidden');
+  check(root.textContent.includes('[缺失][unknown]'),'unresolved source visible');
+  check(root.querySelector('.footnote-ref'),'footnote distinct');
+  editor.undo();check(editor.getValue()===source,'undo destination edit');
+  document.title='LeafTest PASS WKWebView reference labels, live destinations, reading, footnotes and source preservation';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};
+document.title='LeafSource';
+</script></body></html>

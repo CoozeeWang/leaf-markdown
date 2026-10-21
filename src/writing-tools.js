@@ -210,6 +210,15 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
       await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([root.innerHTML],{type:'text/html'}),'text/plain':new Blob([plain],{type:'text/plain'})})]);status(translatedMessage("writing_tools.copied_as_rich_text"),'saved');
     }catch(error){status(translatedMessage("writing_tools.could_not_copy", {"error": error.message||error}),'error');}
   }
+  // Mirror the existing open-link gesture, including a key pressed while the
+  // pointer is already over a link. Blur clears keys released in another app.
+  const linkModifier = event => document.documentElement.classList.toggle('leaf-link-modifier', event.metaKey || event.ctrlKey);
+  const clearLinkModifier = () => document.documentElement.classList.remove('leaf-link-modifier');
+  document.addEventListener('keydown', linkModifier, true);
+  document.addEventListener('keyup', linkModifier, true);
+  document.addEventListener('mousemove', linkModifier, true);
+  window.addEventListener('blur', clearLinkModifier);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) clearLinkModifier(); });
   document.addEventListener('mousedown',event=>{
     const link=event.target.closest?.('[data-leaf-link]');if(!link||!(event.metaKey||event.ctrlKey))return;
     // In the editor the modified image gesture belongs to image movement.

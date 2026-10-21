@@ -1,3 +1,4 @@
+import { referenceLinks } from './reference-links.js';
 import { resolveMessage, t, h, refreshTranslations, setText, setAttr, localizedElement, message as translatedMessage } from './i18n.js';
 import { calloutBadge } from './callout-icons.js';
 import { sourceMode } from './view-mode.js';
@@ -129,9 +130,9 @@ class PropertySource extends WidgetType {
 }
 
 class StructuredBlock extends WidgetType {
-  constructor(block, raw, layout, selected = false, folded = false) { super(); this.block = block; this.raw = raw; this.layout = layout; this.selected = selected; this.folded = folded; }
+  constructor(block, raw, layout, selected = false, folded = false, references = null) { super(); this.references = references; this.block = block; this.raw = raw; this.layout = layout; this.selected = selected; this.folded = folded; }
   get estimatedHeight() { return this.layout.height; }
-  eq(other) { return this.block.from === other.block.from && this.raw === other.raw && this.selected === other.selected && this.folded === other.folded; }
+  eq(other) { return this.block.from === other.block.from && this.raw === other.raw && this.selected === other.selected && this.folded === other.folded && this.references?.signature === other.references?.signature; }
   updateDOM(dom, view) {
     dom = dom.firstElementChild;
     // Keep the focused control alive across source transactions (including IME).
@@ -162,7 +163,7 @@ class StructuredBlock extends WidgetType {
         input.value = value;
         if (input === document.activeElement) input.setSelectionRange(Math.min(start, input.value.length), Math.min(end, input.value.length), direction);
       }
-      renderInline(input.previousElementSibling, cell.value);
+      renderInline(input.previousElementSibling, cell.value, { references: this.references });
     }
     if (this.block.kind === 'table') {
       // Keep the column geometry stable during a keystroke/IME composition.
@@ -294,7 +295,7 @@ class StructuredBlock extends WidgetType {
       // walks them: the preview has to be handed the document's own numbers, or a
       // hand-typed "[^1]" shows as the text it is written as and the number only
       // appears in the reading view.
-      const notes = footnoteReader(view.state);
+      const notes = { ...footnoteReader(view.state), references: root._widget.references };
       typeMenu.value = b.type;
       typeIcon.innerHTML = calloutBadge(b.type);
       for (const {field, preview, input} of controls) {
@@ -381,7 +382,7 @@ class StructuredBlock extends WidgetType {
       for (let c = 0; c < this.block.columns; c++) {
         const td = el(r === 0 ? 'th' : 'td');
         const preview = el('div', 'leaf-cell-preview');
-        renderInline(preview, row.cells[c]?.value ?? '');
+        renderInline(preview, row.cells[c]?.value ?? '', { references: this.references });
         preview.style.textAlign = this.block.align[c];
         const input = el('textarea');
         input.rows = 1; input.value = (row.cells[c]?.value ?? '').replace(/<br\s*\/?\s*>/gi, '\n');
@@ -485,7 +486,7 @@ function build(state, name, sources, remembered = [], previousLayouts = new Map(
     const selected = state.selection.ranges.some(r => !r.empty && r.from < block.to && r.to > block.from);
     if (sources.has(block.from) || selected && block.kind !== 'callout') {
       ranges.push(Decoration.widget({ widget: new SourceReturn(block.from), block: true, side: -1 }).range(block.from));
-    } else ranges.push(Decoration.replace({ widget: new StructuredBlock(block, source.slice(block.from, block.to), layout, selected, block.kind === 'yaml' && state.field(propertiesFolded, false)), block: true }).range(block.from, block.to));
+    } else ranges.push(Decoration.replace({ widget: new StructuredBlock(block, source.slice(block.from, block.to), layout, selected, block.kind === 'yaml' && state.field(propertiesFolded, false), referenceLinks(state.doc)), block: true }).range(block.from, block.to));
   }
   return { name, sources, model, layouts, yamlSource, decorations: Decoration.set(ranges, true) };
 }

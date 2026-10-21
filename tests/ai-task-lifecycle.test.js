@@ -30,7 +30,7 @@ if(process.env.LEAF_AI_LIFECYCLE_NATIVE==='1')test('actual helper heartbeat, EOF
   const root=resolve(import.meta.dirname,'..'),directory=await mkdtemp(join(tmpdir(),'leaf-lifecycle-'));
   const env={...process.env,PATH:`${homedir()}/.cargo/bin:${process.env.PATH}`,LEAF_MCP_TEST_DIR:directory,LEAF_MCP_TEST_MODE:'tracer',LEAF_MCP_ADAPTER_TEST:'1'};
   const children=[];const start=(command,args,options={})=>{const child=spawn(command,args,{cwd:root,env,stdio:['pipe','pipe','pipe'],...options});children.push(child);return child;};
-  const wait=async(name,json=false)=>{for(let i=0;i<650;i++){try{await access(join(directory,name));return json?JSON.parse(await readFile(join(directory,name),'utf8')):true;}catch{}await new Promise(r=>setTimeout(r,100));}throw new Error(`missing native lifecycle evidence: ${name}`);};
+  const wait=async(name,json=false)=>{for(let i=0;i<650;i++){try{await access(join(directory,name));return json?JSON.parse(await readFile(join(directory,name),'utf8')):true;}catch{}const failed=await readFile(join(directory,'adapter-result.json'),'utf8').then(JSON.parse).catch(()=>null);if(failed?.pass===false)throw new Error(`native lifecycle failed: ${failed.failure}`);await new Promise(r=>setTimeout(r,100));}throw new Error(`missing native lifecycle evidence: ${name}`);};
   const signal=name=>writeFile(join(directory,name),'synthetic signal');
   const helper=descriptor=>{
     const child=start(resolve(root,'src-tauri/target/debug/leaf-mcp-adapter'),['--descriptor',descriptor],{env:{...env,PATH:'/no-development-runtimes'}});const pending=new Map();let next=0,errors='';
@@ -39,8 +39,10 @@ if(process.env.LEAF_AI_LIFECYCLE_NATIVE==='1')test('actual helper heartbeat, EOF
     return {child,async initialize(){const id=++next;const reply=await new Promise((res,rej)=>{const timer=setTimeout(()=>rej(new Error(`helper initialization timed out: ${errors}`)),65000);pending.set(id,value=>{clearTimeout(timer);res(value);});child.stdin.write(JSON.stringify({jsonrpc:'2.0',id,method:'initialize',params:{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'Synthetic lifecycle probe',version:'1'}}})+'\n');});assert(reply.result?.capabilities.tools);child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');}};
   };
   try{
+    if(process.env.LEAF_AI_LIFECYCLE_REUSE_BUILD!=='1'){
     const build=start(process.execPath,['node_modules/@tauri-apps/cli/tauri.js','build','--debug','--no-bundle','--features','native-smoke','--config','src-tauri/tauri.mcp-test.conf.json']);
     let output='';build.stdout.on('data',chunk=>output+=chunk);build.stderr.on('data',chunk=>output+=chunk);await new Promise((res,rej)=>{build.on('error',rej);build.on('exit',code=>code===0?res():rej(new Error(output)));});
+    }
     start(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','41731','--strictPort']);
     for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:41731')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
     const app=start(resolve(root,'src-tauri/target/debug/leaf'),[]);let nativeErrors='';app.stderr.on('data',chunk=>nativeErrors+=chunk);

@@ -26,14 +26,16 @@ try {
   });
   await page.goto(process.env.LEAF_TEST_BASE_URL||'http://127.0.0.1:41732');
   await page.waitForFunction(()=>typeof window.commentBridge==='function'&&document.querySelector('#editor .cm-content'));
-  await page.waitForTimeout(150);
+  await page.waitForFunction(()=>document.querySelector('#editor .cm-content')?.getAttribute('contenteditable')==='true'&&document.querySelector('.shell')?.style.pointerEvents==='');
   const bind={document_id:'doc-comments',session_id:'session-comments',authorization_epoch:2};
   const call=(operation,args)=>page.evaluate(({operation,args})=>commentBridge(operation,args),{operation,args});
   const original=(await call('snapshot',{})).result;
+  assert.equal((await call('begin',{...bind,task_id:'unauthorized',revision:original.revision,scope:{from:0,to:original.content.length}})).error,'not_authorized');
+  await call('binding',{...bind,revision:original.revision,mutation_generation:0});
   const list=(await call('comment_query',{...bind,query:'list_comments',revision:original.revision,scope:{from:0,to:original.content.length}})).result;
   assert.equal(list.comments.length,4);
   const task={...bind,task_id:'task-comments',revision:original.revision,scope:{from:0,to:original.content.length}};
-  assert.ok((await call('begin',task)).result);
+  const begun=await call('begin',task);assert.ok(begun.result,JSON.stringify(begun));
   await page.click('#commentsButton');
   assert.equal(await page.locator('.comment-card').count(),4);
   assert.equal(await page.locator('#commentInsert').isDisabled(),true);

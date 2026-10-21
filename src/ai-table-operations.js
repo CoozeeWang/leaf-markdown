@@ -1,6 +1,6 @@
 import {analyzeMarkdown,rowCells} from './markdown-model.js';
 import {tableOperation} from './table-operations.js';
-import {planSourceChanges} from './ai-structure-operations.js';
+import {planSourceChanges} from './source-changes.js';
 
 // The live GFM parser uses LF coordinates. Pure disk-source callers keep CRLF;
 // every parser/cell coordinate is mapped back before an edit is returned.

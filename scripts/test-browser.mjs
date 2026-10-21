@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 process.chdir(fileURLToPath(new URL('..', import.meta.url)));
 const core = [
-  'welcome', 'reading', 'sidebars', 'platform-shortcuts', 'body-zoom', 'inline-format-shortcuts', 'table-edges', 'recovery', 'long-document', 'writing', 'attachments', 'writing-structure-regressions',
+  'welcome', 'reading', 'reference-links', 'sidebars', 'platform-shortcuts', 'body-zoom', 'inline-format-shortcuts', 'table-edges', 'recovery', 'long-document', 'writing', 'attachments', 'writing-structure-regressions',
   'highlight-band', 'inline-format', 'selection-compositing', 'selection-edges',
   'footnote-region', 'footnote-insert', 'footnote-history', 'footnote-live-preview', 'footnote-definition-format', 'footnote-panel', 'footnote-sidebar-modes', 'footnote-input-performance', 'footnote-auto-delete', 'footnote-completion',
   'footnote-callout', 'footnote-rename', 'footnote-regressions', 'footnotes-print',
@@ -13,6 +13,7 @@ const core = [
   'paragraph-blank-lines', 'paragraph-input',
   'body-fonts',
   'comments', 'annotation-tabs',
+  'ai-edit-lock', 'mcp-file-identity', 'mcp-comments', 'mcp-footnotes-tables', 'mcp-properties-markdown', 'mcp-panel',
   'list-images', 'clipboard-images',
   'recovery-notice', 'file-feedback', 'status-notices', 'pdf-export-native',
 ].map(name => `${name}-browser.mjs`);

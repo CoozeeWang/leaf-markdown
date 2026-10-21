@@ -334,57 +334,10 @@ pub fn rehome(source: &Path, target: &Path, content: &str) -> Result<(String, Ve
     }
     Ok((rewrite_paths(content,&mappings),mappings))
 }
+#[path = "resource_rewrite.rs"]
+mod resource_rewrite;
 pub fn rewrite_paths(content: &str, mappings: &[(String,String)]) -> String {
-    let mut result=String::new();
-    let mut fence: Option<(char,usize)>=None;
-    let mut ticks=0;
-    for line in content.split_inclusive('\n') {
-        let trimmed=line.trim_start();
-        let marker=trimmed.chars().next().unwrap_or(' ');
-        let count=trimmed.chars().take_while(|c|*c==marker).count();
-        if let Some((ch,n))=fence {
-            result.push_str(line);
-            if marker==ch && count>=n && trimmed[count..].trim().is_empty() { fence=None; }
-            continue;
-        }
-        if (marker=='`' || marker=='~') && count>=3 {
-            fence=Some((marker,count));result.push_str(line);continue;
-        }
-        if line.starts_with("    ") || line.starts_with('\t') { result.push_str(line);continue; }
-        let mut at=0;
-        while at<line.len() {
-            let next=line[at..].find('`').map(|n|at+n).unwrap_or(line.len());
-            let part=&line[at..next];
-            result.push_str(&if ticks==0 { rewrite_destinations(part,mappings) } else {part.to_owned()});
-            if next==line.len() {break;}
-            let run=line[next..].chars().take_while(|c|*c=='`').count();
-            if ticks==0 {ticks=run;} else if ticks==run {ticks=0;}
-            result.push_str(&line[next..next+run]);at=next+run;
-        }
-    }
-    result
-}
-fn rewrite_destinations(content: &str, mappings: &[(String,String)]) -> String {
-    let mut result=content.to_owned();
-    for (old,new) in mappings {
-        for (old,new) in [(old.clone(),new.clone()),(encoded_path(old),encoded_path(new)),(old.replace(' ',"%20").replace('(',"%28").replace(')',"%29"),new.replace(' ',"%20").replace('(',"%28").replace(')',"%29"))] {
-            // Destinations only: do not rewrite prose, alt text or image titles.
-            for prefix in ["](","](<"] {
-                for suffix in [")"," ",">","\""] {
-                    result=result.replace(&format!("{prefix}{old}{suffix}"),&format!("{prefix}{new}{suffix}"));
-                }
-            }
-            result=result.split_inclusive('\n').map(|line| {
-                if let Some((label,dest))=line.split_once("]: ") {
-                    if label.trim_start().starts_with('[') && (dest.trim_end()==old || dest.starts_with(&format!("{old} "))) {
-                        return format!("{label}]: {}{}",new,&dest[old.len()..]);
-                    }
-                }
-                line.to_owned()
-            }).collect();
-        }
-    }
-    result
+    resource_rewrite::rewrite(content,mappings)
 }
 fn encoded_path(path: &str) -> String { path.split('/').map(encoded).collect::<Vec<_>>().join("/") }
 
@@ -411,6 +364,18 @@ fn link_path(path: &str) -> String { path.replace(' ',"%20").replace('(',"%28").
   fs::write(other.path().join("乙 稿.assets/photo.png"),b"different").unwrap();
   assert!(rehome(&a,&b,source).is_err());
   assert_eq!(fs::read(other.path().join("乙 稿.assets/photo.png")).unwrap(),b"different");
+ }
+ #[test] fn rehome_shared_contract_preserves_original_and_copies_assets() {
+  let cases:serde_json::Value=serde_json::from_str(include_str!("../../tests/fixtures/resource-rewrite.json")).unwrap();
+  for case in cases.as_array().unwrap().iter().filter(|c|c["name"]!="unicode-percent") {
+   let root=tempfile::tempdir().unwrap();let source=root.path().join("old.md");let target=root.path().join("new.md");
+   let original=case["source"].as_str().unwrap();fs::write(&source,original).unwrap();import(&source,"a.png",b"synthetic image").unwrap();
+   let (rewritten,_)=rehome(&source,&target,original).unwrap();
+   assert_eq!(rewritten,case["expected"].as_str().unwrap(),"{}",case["name"]);
+   assert_eq!(fs::read_to_string(&source).unwrap(),original);
+   assert_eq!(bytes(&resolve(&source,"old.assets/a.png").unwrap()).unwrap(),b"synthetic image");
+   if rewritten.contains("new.assets/a.png") {assert_eq!(bytes(&resolve(&target,"new.assets/a.png").unwrap()).unwrap(),b"synthetic image");}
+  }
  }
  #[test] fn rewriting_preserves_code_examples() {
   let source="`![图](old.assets/a.png)`\n\n```md\n![图](old.assets/a.png)\n```\n\n![图](old.assets/a.png)";
