@@ -24,6 +24,30 @@ try {
       const {setResourceReader}=await import('/src/resources.js');
       setResourceReader(async () => Array.from(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="#607b68"/></svg>')));
     });
+    // The symbol must stay centered within its actual hover target, not inherit
+    // the generic menu/button start alignment.
+    for (const theme of ['light', 'dark']) {
+      await page.click('#appearanceButton'); await page.click('#settingsTab-appearance');
+      await page.selectOption('#themeSelect', theme); await page.keyboard.press('Escape');
+      for (const id of ['zoomOut', 'zoomIn']) {
+        for (const hovered of [false, true]) {
+          if (hovered) await page.locator(`#${id}`).hover();
+          else await page.locator('#stats').hover();
+          const geometry = await page.locator(`#${id}`).evaluate(button => {
+            const range = document.createRange(); range.selectNodeContents(button);
+            const symbol = range.getBoundingClientRect(), box = button.getBoundingClientRect();
+            return {dx: (symbol.left + symbol.right - box.left - box.right) / 2,
+              dy: (symbol.top + symbol.bottom - box.top - box.bottom) / 2,
+              width: box.width, height: box.height, hovered: button.matches(':hover')};
+          });
+          assert.equal(geometry.hovered, hovered);
+          assert.equal(geometry.width, 30); assert.equal(geometry.height, 30);
+          assert.ok(Math.abs(geometry.dx) <= 1, `${id} horizontal center: ${JSON.stringify(geometry)}`);
+          assert.ok(Math.abs(geometry.dy) <= 1.5, `${id} vertical center: ${JSON.stringify(geometry)}`);
+          await page.locator('.body-zoom').screenshot({path: artifactPath(`zoom-align-${engine.name()}-${platform}-${theme}-${id}-${hovered}.png`)});
+        }
+      }
+    }
     const mod = platform === 'MacIntel' ? 'Meta' : 'Control';
     const text = () => page.evaluate(() => v.state.doc.toString());
     const resetDocument = content => page.evaluate(content => {
