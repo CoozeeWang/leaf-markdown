@@ -1,3 +1,4 @@
+import { referenceLinks } from './reference-links.js';
 import { t, h, setText, setAttr } from './i18n.js';
 import { calloutBadge } from './callout-icons.js';
 import { parser } from '@lezer/markdown';
@@ -24,6 +25,7 @@ export function renderPrintDocument(target, source, {
 } = {}) {
   const root = !shared;
   const state = shared ?? createFootnoteState(source);
+  state.references ??= referenceLinks(source);
   target.replaceChildren();
   const model = analyzeMarkdown(source);
   const annotationIndex=indexComments(source).notes.map((n,i)=>({...n,id:annotationNotes[i]?.id??'reading-comment-'+n.from}));
@@ -130,6 +132,7 @@ export function renderPrintDocument(target, source, {
       const p = markSource(add('p', parent), node, doc); p.textContent = /^\[[xX]\]/.test(text) ? '☑ ' : '☐ ';
       renderInline(add('span', p), text.replace(/^\[[ xX]\]\s*/, ''), state, {resources}); return;
     }
+    if (node.name === 'LinkReference') return;
     if (['ListMark', 'QuoteMark', 'CodeMark', 'CodeInfo'].includes(node.name)) return;
     const tags = { BulletList: 'ul', OrderedList: 'ol', ListItem: 'li', Blockquote: 'blockquote' };
     const container = tags[node.name] ? markSource(add(tags[node.name], parent), node, doc) : parent;
@@ -139,12 +142,6 @@ export function renderPrintDocument(target, source, {
   }
   const renderBlocks = (container, text) => visit(markdown.parse(text).topNode, container, text);
   renderBlocks(target, body);
-  for (const label of target.querySelectorAll('.leaf-inline-link')) {
-    if (!label.dataset.leafLink) continue;
-    const link = document.createElement('a'); link.href = label.title;
-    link.className = label.className; link.dataset.leafLink = label.dataset.leafLink; link.replaceChildren(...label.childNodes);
-    label.replaceWith(link);
-  }
   if (root && state.list.length) {
     const section = add('section'); section.className = 'print-footnotes';
     const title = setText(add('h2', section), () => t("print_document.footnotes")); title.className = 'print-footnotes-title';
@@ -171,6 +168,13 @@ export function renderPrintDocument(target, source, {
       lastInlineHost(entry).append(back);
     }
   }
+  for (const label of target.querySelectorAll('.leaf-inline-link')) {
+    if (!label.dataset.leafLink) continue;
+    const link = document.createElement('a'); link.href = label.dataset.leafLink;
+    link.className = label.className; link.dataset.leafLink = label.dataset.leafLink; link.replaceChildren(...label.childNodes);
+    label.replaceWith(link);
+  }
+
 }
 
 // Walk to the innermost element that can still hold inline content at the end of

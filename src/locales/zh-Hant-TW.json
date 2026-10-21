@@ -310,7 +310,7 @@
   "document_session.restored_to_the_editor_autosave_paused_review": "已復原至編輯區 · 自動儲存已暫停，請檢查後手動儲存",
   "editor.complete_task": "完成任務",
   "editor.hold_to_drag_the_image": "按住 {{shortcut}} 拖曳圖片",
-  "editor.click_to_edit_link": "點按以編輯連結",
+  "editor.click_to_edit_link": "點按編輯連結；{{shortcut}}＋點按開啟",
   "editor.enter_footnote_content": "輸入註腳內容",
   "editor.footnote_content": "註腳內容",
   "editor.content": "內容",

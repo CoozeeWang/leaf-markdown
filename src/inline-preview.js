@@ -1,3 +1,4 @@
+import { referenceTarget } from './reference-links.js';
 import { parser } from '@lezer/markdown';
 import { leafMarkdownExtensions } from './markdown-extensions.js';
 import { inlineTagSpans, isVoidInlineTag } from './inline-html.js';
@@ -99,7 +100,8 @@ export function renderInline(target, text, footnotes, comments = {}) {
     if (node.name === 'Image') {
       if(comments.resources===false){parent.append(document.createTextNode(text.slice(node.from,node.to)));return;}
       const url = node.getChild('URL');
-      if (url) { const raw = text.slice(node.from, node.to); parent.append(imageNode(raw.slice(2, raw.indexOf(']')), text.slice(url.from, url.to))); return; }
+      const destination = url ? text.slice(url.from, url.to) : referenceTarget(node, text, footnotes?.references);
+      if (destination) { const raw = text.slice(node.from, node.to); parent.append(imageNode(raw.slice(2, raw.indexOf(']')), destination)); return; }
     }
     if (byLabel && node.name === 'Link' && !node.getChild('URL')) {
       const raw = text.slice(node.from, node.to);
@@ -116,7 +118,10 @@ export function renderInline(target, text, footnotes, comments = {}) {
         return;
       }
     }
-    if (/^(EmphasisMark|StrikethroughMark|CodeMark|LinkMark|LeafHighlightMark)$/.test(node.name) || (inLink && node.name === 'URL')) return;
+    if (node.name === 'Link' && !node.getChild('URL') && !referenceTarget(node, text, footnotes?.references)) {
+      parent.append(document.createTextNode(text.slice(node.from, node.to))); return;
+    }
+    if (/^(EmphasisMark|StrikethroughMark|CodeMark|LinkMark|LeafHighlightMark)$/.test(node.name) || (inLink && ['URL', 'LinkLabel', 'LinkTitle'].includes(node.name))) return;
     const tags = { StrongEmphasis: 'strong', Emphasis: 'em', Strikethrough: 's', InlineCode: 'code', Link: 'span', LeafHighlight: 'mark' };
     let container = parent;
     if(node.name==='CriticRange'){
@@ -129,7 +134,7 @@ export function renderInline(target, text, footnotes, comments = {}) {
       if (node.name === 'Link') {
         container.className = 'leaf-inline-link';
         const url = node.getChild('URL');
-        container.title = url ? text.slice(url.from, url.to) : '';
+        container.title = url ? text.slice(url.from, url.to) : referenceTarget(node, text, footnotes?.references) || '';
         const target = safeTarget(container.title); if (target) container.dataset.leafLink = target;
       }
     }

@@ -1,3 +1,4 @@
+import { referenceLinks } from './reference-links.js';
 import { t, h, onLanguageChange, setAttr } from './i18n.js';
 import { leafSelection } from './selection.js';
 import { sourceMode, setSourceMode } from './view-mode.js';
@@ -118,7 +119,10 @@ class InlinePreview extends WidgetType {
           span.dataset.tooltip = this.title;
           span.dataset.tooltipKind = 'image';
           span.dataset.tooltipPlacement = 'image-top-right';
-        } else span.title = this.title;
+        } else {
+          span.title = this.title;
+          for (const link of span.querySelectorAll('[data-leaf-link]')) link.title = `${link.dataset.leafLink}\n${this.title}`;
+        }
       }
     }
     span.addEventListener('mousedown', event => {
@@ -331,7 +335,8 @@ function livePreviewDecorations(view) {
   // anchor in the document is a place the webview would navigate to.
   const index = view.state.field(footnoteIndex);
   const noteNumbers = index.notes.length ? displayNotes(index).map : null;
-  const footnotes = noteNumbers ? { map: noteNumbers, link: false } : undefined;
+  const references = referenceLinks(doc);
+  const footnotes = { map: noteNumbers, link: false, references };
 
   // The grammar has no footnote syntax: it reads "[^1]: text" as a link reference
   // definition, so the note body is highlighted as if it were a URL. The marker is
@@ -373,7 +378,7 @@ function livePreviewDecorations(view) {
         if (['Link', 'Image'].includes(part.name) && part.ranges.length === 1) {
           const span = part.ranges[0], signature = citationSignature(part.text, noteNumbers);
           ranges.push(Decoration.replace({ widget: new InlinePreview(span.from, part.text, {
-            footnotes, signature: signature ?? '', note: citationLabel(part.text, noteNumbers),
+            footnotes, signature: (signature ?? '') + references.signature, note: citationLabel(part.text, noteNumbers),
           }) }).range(span.from, span.to));
           suppressed = part.to;
           continue;
@@ -424,7 +429,7 @@ function livePreviewDecorations(view) {
 
       const inline = inlineSpans.get(node.from);
       if (inline && !caretInRange(view.state, inline.openFrom, inline.closeTo)) {
-        ranges.push(Decoration.replace({ widget: new InlinePreview(inline.openFrom, doc.sliceString(inline.openFrom, inline.closeTo),commentFor(inline.openFrom,inline.closeTo)) }).range(inline.openFrom, inline.closeTo));
+        ranges.push(Decoration.replace({ widget: new InlinePreview(inline.openFrom, doc.sliceString(inline.openFrom, inline.closeTo),{footnotes, signature: references.signature, ...commentFor(inline.openFrom,inline.closeTo)}) }).range(inline.openFrom, inline.closeTo));
         suppressUntil = inline.closeTo;
         return false;
       }
@@ -462,9 +467,9 @@ function livePreviewDecorations(view) {
         const signature = citationSignature(raw, noteNumbers);
         // A citation is not a link you can open, so it must not keep offering
         // "click to edit link" -- that promises an action the marker has not got.
-        const title = node.name === 'Image' ? t("editor.hold_to_drag_the_image", {"shortcut": shortcutText('⌘').replace(/\+$/, '')}) : node.name === 'Link' && signature !== null ? '' : t("editor.click_to_edit_link");
+        const title = node.name === 'Image' ? t("editor.hold_to_drag_the_image", {"shortcut": shortcutText('⌘').replace(/\+$/, '')}) : node.name === 'Link' && signature !== null ? '' : t("editor.click_to_edit_link", {shortcut: shortcutText('⌘').replace(/\+$/, '')});
         const note = node.name === 'Link' ? citationLabel(raw, noteNumbers) : null;
-        ranges.push(Decoration.replace({ widget: new InlinePreview(node.from, raw, { rule: node.name === 'HorizontalRule', title, footnotes, signature: signature ?? '', note, ...commentFor(node.from,node.to) }) }).range(node.from, node.to));
+        ranges.push(Decoration.replace({ widget: new InlinePreview(node.from, raw, { rule: node.name === 'HorizontalRule', title, footnotes, signature: (signature ?? '') + references.signature, note, ...commentFor(node.from,node.to) }) }).range(node.from, node.to));
         return false;
       }
 

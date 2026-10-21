@@ -310,7 +310,7 @@
   "document_session.restored_to_the_editor_autosave_paused_review": "已恢复到编辑区 · 自动保存已暂停，请检查后手动保存",
   "editor.complete_task": "完成任务",
   "editor.hold_to_drag_the_image": "按住 {{shortcut}} 拖动图片",
-  "editor.click_to_edit_link": "点击编辑链接",
+  "editor.click_to_edit_link": "点击编辑链接；{{shortcut}}＋单击打开",
   "editor.enter_footnote_content": "输入脚注内容",
   "editor.footnote_content": "脚注内容",
   "editor.content": "内容",

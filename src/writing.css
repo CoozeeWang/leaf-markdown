@@ -67,3 +67,7 @@
 .mode-popover button { display:flex; gap:8px; align-items:center; width:100%; padding:9px 12px; border:0; background:transparent; color:var(--text); text-align:left; }
 .mode-popover button[aria-checked="true"] { background:var(--accent-soft); }
 .mode-popover svg { width:18px; height:18px; }
+
+/* Text links open with Cmd/Ctrl; image gestures retain their drag cursor. */
+.leaf-link-modifier .cm-editor .leaf-inline-link[data-leaf-link]:not(:has(.leaf-image)),
+.leaf-link-modifier .cm-editor .leaf-inline-link[data-leaf-link]:not(:has(.leaf-image)) * { cursor:pointer; }

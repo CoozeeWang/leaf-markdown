@@ -310,7 +310,7 @@
   "document_session.restored_to_the_editor_autosave_paused_review": "Restored to the editor · Autosave paused. Review and save manually.",
   "editor.complete_task": "Complete task",
   "editor.hold_to_drag_the_image": "Hold {{shortcut}} to drag the image",
-  "editor.click_to_edit_link": "Click to edit link",
+  "editor.click_to_edit_link": "Click to edit link; {{shortcut}}+click to open",
   "editor.enter_footnote_content": "Enter footnote content",
   "editor.footnote_content": "Footnote content",
   "editor.content": "Content",

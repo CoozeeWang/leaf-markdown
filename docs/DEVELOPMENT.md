@@ -221,3 +221,5 @@ mutation rather than evicting evidence; existing requests can still reconcile.
 Close and reopen completed documents to release their history. If unresolved
 outcomes fill the ledger, preserve it for diagnosis rather than deleting it.
 The renderer likewise refuses new receipts at its limit without losing retries.
+
+引用式链接由 `reference-links.test.js` 和 `reference-links-browser.mjs` 验证：完整／折叠／简写引用、正文／表格／提示块、定义更新、缺失定义、安全目标与编辑／阅读点击。原生呈现可用 `native-table-keys` 加载 `tests/native-reference-links.html`，检查 WKWebView 的显示、脚注区链接、原文保留及撤销；不代表已安装版本或 Windows 验收。
