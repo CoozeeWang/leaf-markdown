@@ -42,6 +42,8 @@ jobs:
           workspaces: src-tauri -> target
       - run: npm ci
       - run: npm run desktop:build -- --debug --no-bundle --features native-smoke --config src-tauri/tauri.mcp-test.conf.json
+      - name: Snapshot preservation assertion contract
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf --features native-smoke snapshot_contract -- --test-threads=1
       - name: Actual renderer, authorization and retry drivers
         shell: bash
         run: |

@@ -762,6 +762,59 @@ async fn wait_document(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBroker,p
     }Err("second renderer registration timeout".into())
 }
 
+// Focus is a live diagnostic, not part of the preserved document state.
+// Keep every other snapshot field strict, including IME pending/source state.
+fn ensure_snapshot_preserved(before:&Value,after:&Value)->Result<(),String>{
+    for snapshot in [before,after] {
+        for field in ["content","revision","selection","coordinate_encoding","line_ending","composition"] {
+            if snapshot.get(field).is_none() {return Err(format!("snapshot missing {field}"));}
+        }
+        if !snapshot["composition"]["document_focused"].is_boolean() {
+            return Err("snapshot focus diagnostic must be boolean".into());
+        }
+    }
+    let normalize=|value:&Value| {
+        let mut value=value.clone();
+        value["composition"].as_object_mut().unwrap().remove("document_focused");
+        value
+    };
+    let before=normalize(before);let after=normalize(after);
+    if before==after {return Ok(());}
+    let keys=before.as_object().unwrap().keys().chain(after.as_object().unwrap().keys()).collect::<std::collections::BTreeSet<_>>();
+    let changed=keys.into_iter().filter(|key|before.get(*key)!=after.get(*key)).cloned().collect::<Vec<_>>();
+    Err(format!("watcher changed snapshot fields: {}",changed.join(", ")))
+}
+
+#[cfg(test)]
+mod snapshot_contract {
+    use super::*;
+    fn snapshot()->Value {json!({"content":"Synthetic draft","revision":4,"selection":{"from":0,"to":0},"coordinate_encoding":"utf-16","line_ending":"\n","composition":{"document_focused":true,"pending":false,"sources":[]}})}
+    #[test]
+    fn focus_only_change_is_allowed(){
+        let before=snapshot();let mut after=before.clone();after["composition"]["document_focused"]=json!(false);
+        assert!(ensure_snapshot_preserved(&before,&after).is_ok());
+    }
+    #[test]
+    fn document_changes_are_still_rejected(){
+        let before=snapshot();
+        for (field,value) in [("content",json!("Changed draft")),("revision",json!(5)),("selection",json!({"from":1,"to":1})),("coordinate_encoding",json!("utf-8")),("line_ending",json!("\r\n"))] {
+            let mut after=before.clone();after[field]=value;
+            assert!(ensure_snapshot_preserved(&before,&after).unwrap_err().contains(field));
+        }
+        let mut after=before.clone();after["composition"]["pending"]=json!(true);
+        assert!(ensure_snapshot_preserved(&before,&after).is_err());
+        let mut after=before.clone();after["composition"]["sources"]=json!(["main-editor"]);
+        assert!(ensure_snapshot_preserved(&before,&after).is_err());
+    }
+    #[test]
+    fn missing_or_invalid_fields_are_not_silently_ignored(){
+        let before=snapshot();let mut after=before.clone();after.as_object_mut().unwrap().remove("revision");
+        assert!(ensure_snapshot_preserved(&before,&after).is_err());
+        let mut after=before.clone();after["composition"]["document_focused"]=Value::Null;
+        assert!(ensure_snapshot_preserved(&before,&after).is_err());
+    }
+}
+
 async fn file_identity_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>)->Result<(),String>{
     let root=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
     for (index,atomic) in [false,true].into_iter().enumerate() {
@@ -819,7 +872,7 @@ async fn file_identity_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBro
         ensure(state["paused"]==true,"actual watcher pauses autosave")?;
         ensure(state["aiEditResult"]["checkpoint"]["state"]=="protected","wait for completed recovery boundary after capability invalidation")?;
         ensure(broker.window_binding(&label).unwrap().logical_identity==before_identity,"external replacement must never impersonate an own-save anchor rebind")?;
-        ensure(broker.bridge(app,&label,"snapshot",json!({})).await?==before,"watcher preserves applied buffer and revision")?;
+        ensure_snapshot_preserved(&before,&broker.bridge(app,&label,"snapshot",json!({})).await?)?;
         ensure(std::fs::read_to_string(&path).map_err(|_|"external disk read")?==external,"external disk remains untouched")?;
         let mut restart=binding.clone();restart["request_id"]=json!(format!("conflict-restart-{index}"));restart["revision"]=before["revision"].clone();
         ensure(tool(client,"begin_edit",restart).await.is_err(),"unresolved conflict cannot acquire a new AI write capability")?;
