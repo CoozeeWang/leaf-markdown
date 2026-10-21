@@ -979,7 +979,7 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
 .popover.mode-popover button { font: 400 var(--ui-size)/1.5 var(--ui-font); min-height: 36px; padding: 8px; }
 .popover.callout-popover { width: 260px; }
 
-/* A menu has one candidate. Persistent values use a check, not a second fill. */
+/* A menu has one candidate. Persistent values use a separate marker, not a second fill. */
 :is(.action-popover, .heading-popover, .callout-popover, .recent-popover, .mode-popover, .leaf-table-menu) button {
   position: relative;
   outline: none;
@@ -997,10 +997,11 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
 }
 .mode-popover button::after { content: ''; width: 1em; margin-left: auto; }
 .mode-popover button[aria-checked="true"]::after { content: '✓'; }
-.heading-grid button { padding-bottom: 9px; }
+.heading-grid button { padding: 0 0 9px; text-align: center; }
 .heading-grid button[aria-pressed="true"]::after {
-  content: '✓'; position: absolute; bottom: 0; left: 0; right: 0;
-  font-size: 10px; line-height: 12px; color: var(--accent-strong);
+  content: ''; position: absolute; bottom: 4px; left: 50%;
+  width: 16px; height: 2px; transform: translateX(-50%);
+  border-radius: 1px; background: var(--accent-strong); pointer-events: none;
 }
 
 #paletteInput:focus { border-color: var(--accent); outline: none; box-shadow: none; }
