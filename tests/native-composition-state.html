@@ -1,0 +1,53 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Loading</title></head>
+<body><main class="shell"><div id="editor"></div></main><script type="module">
+import {createLeafEditor} from '/src/editor.js';
+const check=(value,message)=>{if(!value)throw Error(message);};
+window.runTest=async()=>{
+  const root=document.querySelector('.shell');
+  const editor=createLeafEditor({parent:document.querySelector('#editor'),doc:'Synthetic IME document'});
+  const task=id=>({task_id:id,session_id:'synthetic-session',authorization_epoch:1,revision:editor.mcpSnapshot().revision});
+  const emit=(node,type,properties={})=>node.dispatchEvent(type==='input'
+    ?new InputEvent(type,{bubbles:true,...properties}):new CompositionEvent(type,{bubbles:true,data:'拼'}));
+  const refused=()=>{try{editor.beginAiTask(task('pending'));return false;}catch(e){return e.message==='composition_pending';}};
+  const original=editor.mcpSnapshot();
+  try {
+    editor.view.focus();emit(editor.view.contentDOM,'compositionstart');
+    check(refused(),'active main composition must refuse');
+    check(editor.aiTask()===null,'refusal cannot acquire a task');
+    check(editor.mcpSnapshot().composition.sources.includes('main-editor'),'main IME is diagnosable');
+    editor.view.contentDOM.blur();
+    editor.view.contentDOM.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',isComposing:true,bubbles:true}));
+    check(refused(),'blur and Escape must not force-clear a pending candidate');
+    editor.view.focus();
+    // Model the library-internal Safari recovery (no DOM compositionend).
+    // This is a controlled regression trace, not a native IME simulation.
+    editor.view.inputState.composing=-1;
+    check(!editor.mcpSnapshot().composition.pending,'library recovery must not leave an event-only shadow lock');
+    for(const id of ['first','second']) {
+      editor.beginAiTask(task(id));editor.finishAiTask(task(id));
+      check(editor.aiTask()===null,'successive tasks release their lock');
+    }
+    const control=document.createElement('textarea');root.append(control);control.focus();
+    emit(control,'compositionstart');check(refused(),'plain native control must refuse');
+    control.blur();check(refused(),'plain-control blur is not proof of commit');
+    emit(control,'input',{isComposing:false,inputType:'insertCompositionText'});
+    check(refused(),'composition text is not a final commit even when isComposing is false');
+    // Chromium normalizes unsupported insertFromComposition to an empty type.
+    // insertText is the shared explicit-commit path; unit tests cover both.
+    emit(control,'input',{isComposing:false,inputType:'insertText'});
+    check(!editor.mcpSnapshot().composition.pending,'explicit plain commit reconciles missing end');
+    editor.beginAiTask(task('plain'));editor.finishAiTask(task('plain'));
+    emit(control,'compositionstart');emit(control,'compositionend');
+    check(!editor.mcpSnapshot().composition.pending,'ordinary cancellation/end clears the marker');
+    emit(control,'compositionstart');control.remove();
+    check(!editor.mcpSnapshot().composition.pending,'removed controls do not block the document');
+    check(editor.getValue()===original.content,'diagnosis/acquisition never changes document text');
+    check(editor.mcpSnapshot().revision===original.revision,'diagnosis/acquisition never changes revision');
+    return {pass:true,layer:'synthetic-composition-lifecycle',nativeIME:false};
+  } finally {editor.destroy();}
+};
+if(!new URLSearchParams(location.search).has('browser')) {
+  try {await window.runTest();document.title='LeafTest PASS composition state';}
+  catch(error){document.title='LeafTest FAIL '+error.message;}
+}
+</script></body></html>

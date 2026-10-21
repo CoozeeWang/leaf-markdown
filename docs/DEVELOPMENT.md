@@ -4,6 +4,10 @@
 
 Use Node.js 22, stable Rust, and native platform prerequisites. Install the Xcode Command Line Tools on macOS; install Visual Studio C++ Build Tools and WebView2 on Windows.
 
+`composition-state.test.js` 检查 AI 任务获取前的 IME 生命周期：CodeMirror 内部结束但 DOM 未发 `compositionend`、普通控件的明确提交、失焦／Esc 不强行清候选、嵌套编辑器和连续任务。`npm run test:browser -- composition-state-browser.mjs ai-edit-lock-browser.mjs` 另检查真实 CodeMirror/DOM 的合成事件路径（Chromium 与 WebKit），不代表原生中文输入法验收。macOS 可使用 `native-table-keys` 示例打开 `../tests/native-composition-state.html` 及对应 Vite 地址，仍须在隔离 Leaf Dev 中手工检查中文拼音候选、Esc、失焦重聚焦、切换应用及连续任务。
+
+`composition_pending` 是任务创建前的拒绝，不会创建可供结束的 task。读取不获取编辑锁；`read_document` 的新快照附带只读 `composition`（`pending`、`sources`、`document_focused`），不含输入文字或控件值。来源为 `main-editor`、`nested-editor`、`input-control` 或 `footnote-popup`。使用新 request_id 的读取获取新快照，避免复用已缓存的历史读取。真实候选尚在时，返回相应控件正常确认或取消输入，再重新读取；不要重复申请任务或用 blur/Esc/超时强制清状态。若仍被拒绝，记录这些来源及脱敏事件序列，用合成文档复现。旧安装版没有此诊断字段。
+
 ```sh
 npm ci
 npx playwright install chromium webkit
