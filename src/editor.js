@@ -1,5 +1,6 @@
 import { referenceLinks } from './reference-links.js';
 import { t, h, onLanguageChange, setAttr } from './i18n.js';
+import { createCompositionGuard, isCommittedCompositionInput } from './composition-state.js';
 import { leafSelection } from './selection.js';
 import { sourceMode, setSourceMode } from './view-mode.js';
 import { unfoldAll } from '@codemirror/language';
@@ -949,7 +950,11 @@ function openFootnotePopup(view, label, pos, anchor = null) {
   document.body.append(box);
   footnoteBox = box; footnoteBoxView = view; footnoteBoxAt = pos ?? 0; footnoteBoxAnchor = anchor; footnoteBoxLabel = label;
 
-  input.addEventListener('input', event => { applyFootnoteBody(view, footnoteBoxLabel, input.value, event.isComposing, 0, true); resizeFootnotePopup(); });
+  input.addEventListener('input', event => {
+    if (isCommittedCompositionInput(event)) input._leafComposing=false;
+    applyFootnoteBody(view, footnoteBoxLabel, input.value, event.isComposing, 0, true);
+    resizeFootnotePopup();
+  });
   input.addEventListener('keydown', event => {
     if (event.isComposing) return;
     const history = documentHistoryShortcut(event);
@@ -1410,10 +1415,8 @@ export function createLeafEditor(options) {
     if(footnoteBoxView===view)for(const input of footnoteBox.querySelectorAll('textarea')){if(!changedControls.has(input))changedControls.set(input,{readOnly:input.readOnly,disabled:input.disabled,description:input.getAttribute('aria-description')});input.readOnly=true;}
   };
   const observer=new MutationObserver(()=>syncLockedControls());observer.observe(controlScope,{childList:true,subtree:true});
-  const composing=new Set();
-  const compositionStart=event=>composing.add(event.target),compositionEnd=event=>composing.delete(event.target);
-  controlScope.addEventListener('compositionstart',compositionStart,true);
-  controlScope.addEventListener('compositionend',compositionEnd,true);
+  const composition=createCompositionGuard({scope:controlScope,view,
+    popup:()=>footnoteBoxView===view ? footnoteBox?.querySelector('textarea') : null});
   view.dom.addEventListener('leaf-comment-activate',event=>options.onCommentActivate?.(event.detail.id));
   view.dom.addEventListener("leaf-image-ready", () => view.requestMeasure());
   // Dragging a file over the property block must not offer a position there: the
@@ -1442,12 +1445,12 @@ export function createLeafEditor(options) {
     mutationAllowed: capability=>assertDocumentMutationAllowed(view,capability),
     aiTask:()=>aiTask,
     mcpSnapshot() {
-      return {content:view.state.doc.toString(),revision:bufferRevision,coordinate_encoding:'utf-16',line_ending:view.state.field(lineEnding),selection:{from:view.state.selection.main.from,to:view.state.selection.main.to}};
+      return {content:view.state.doc.toString(),revision:bufferRevision,coordinate_encoding:'utf-16',line_ending:view.state.field(lineEnding),selection:{from:view.state.selection.main.from,to:view.state.selection.main.to},composition:composition.status()};
     },
     beginAiTask(task) {
       if (!task?.task_id || aiTask && aiTask.id!==task.task_id) throw new Error('document_locked');
       if(!aiTask) {
-        if(view.compositionStarted || footnoteBoxView===view&&footnoteBox.querySelector('textarea')?._leafComposing || [...composing].some(node=>node.isConnected) || [...controlScope.querySelectorAll('.cm-editor')].some(node=>node._leafNoteEditor?.view.compositionStarted))throw new Error('composition_pending');
+        if(composition.status().pending)throw new Error('composition_pending');
         if([...controlScope.querySelectorAll('.leaf-property-body')].some(node=>node.hasPendingDraft?.()) || controlScope.querySelector('.outline-rename'))throw new Error('structural_draft_pending');
         if(task.revision!==undefined&&task.revision!==bufferRevision)throw new Error('stale_revision');
         taskFocus=document.activeElement;
@@ -1673,7 +1676,7 @@ export function createLeafEditor(options) {
     },
     destroy() {
       observer.disconnect();
-      controlScope.removeEventListener('compositionstart',compositionStart,true);controlScope.removeEventListener('compositionend',compositionEnd,true);
+      composition.destroy();
       view.destroy();
     },
   };
