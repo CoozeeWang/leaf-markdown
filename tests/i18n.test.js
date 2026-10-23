@@ -15,9 +15,16 @@ test('language matching honors explicit script before region and falls back to E
   assert.equal(normalizePreference('zh-Hant-TW'), 'zh-Hant-TW');
 });
 test('every approved copy ID has all languages and matching interpolation variables', () => {
-  assert.equal(Object.keys(copyKeys).length, 835);
+  const entries = Object.entries(copyKeys);
+  assert.ok(entries.length > 0, 'approved copy registry must not be empty');
+  assert.equal(new Set(entries.map(([, key]) => key)).size, entries.length, 'copy IDs must map to distinct resource keys');
+  for (const [id] of entries) assert.match(id, /^[A-Z]{2}[0-9]{4}$/, 'copy IDs retain their stable numbered format');
+  const expectedKeys = Object.keys(resources.en).sort();
+  for (const [language, locale] of Object.entries(resources)) {
+    assert.deepEqual(Object.keys(locale).sort(), expectedKeys, language + ' resource keys');
+  }
   const extract = value => [...value.matchAll(/\{\{([^}]+)\}\}/g)].map(match => match[1]).sort();
-  for (const [id, key] of Object.entries(copyKeys)) {
+  for (const [id, key] of entries) {
     const translations = Object.values(resources).map(locale => locale[key]);
     assert.ok(translations.every(value => typeof value === 'string' && value.length), id);
     // Native positional placeholders and NSIS macros are preserved as their

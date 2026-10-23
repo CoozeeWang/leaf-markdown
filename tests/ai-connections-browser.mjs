@@ -50,7 +50,7 @@ try {
     }
     await page.close();
   });
-  await test('master off disables and dims all three clients; blocked actions preserve saved profiles',async()=>{
+  await test('master off disables all three clients while keeping saved settings readable; blocked actions preserve saved profiles',async()=>{
     const page=await nativePage('windows');
     await page.locator('#mcpEnabled').check();
     for(const client of ['chatgpt','claude-desktop','workbuddy']){
@@ -62,7 +62,7 @@ try {
       assert.equal(await page.locator('#aiClear').isDisabled(),true);
       assert.equal(await page.locator('#aiLocalConfigure').isDisabled(),true);
       assert.equal(await page.locator('#aiConnectionControls').evaluate(node=>node.inert),false,'saved settings remain readable to assistive technology');
-      assert.equal(await page.locator('#aiConnectionControls').evaluate(node=>getComputedStyle(node).opacity),'0.5');
+      assert.equal(await page.locator('#aiConnectionControls').evaluate(node=>getComputedStyle(node).opacity),'1');
       assert.ok(await page.locator('#aiConnectionControls input, #aiConnectionControls button, #aiConnectionControls select').evaluateAll(nodes=>nodes.every(node=>node.matches(':disabled'))));
       const before=await page.evaluate(()=>aiMock.calls.length);
       await page.evaluate(()=>{document.querySelector('#aiLocalConfigure').onclick();document.querySelector('#aiClear').onclick();});
@@ -82,8 +82,9 @@ try {
     assert.equal(await group.evaluate(node=>node.disabled),true);
     assert.ok(await group.locator('input,select,button').evaluateAll(nodes=>nodes.every(n=>n.matches(':disabled'))));
     assert.ok(await group.locator('a,summary').evaluateAll(nodes=>nodes.every(n=>n.getAttribute('aria-disabled')==='true' && n.tabIndex===-1 && !n.hasAttribute('href'))));
-    await page.locator('#aiSetupHelp').evaluate(node=>node.querySelector('summary').click());
-    assert.equal(await page.locator('#aiSetupHelp').getAttribute('open'),null);
+    await page.locator('#aiHelpToggle').evaluate(node=>node.click());
+    assert.equal(await page.locator('#aiHelpToggle').getAttribute('aria-expanded'),'false');
+    assert.equal(await page.locator('#aiHelpContent').isVisible(),false);
     await page.locator('#aiCopyPrompt').evaluate(node=>node.click());
     assert.equal(await page.evaluate(()=>aiMock.calls.some(c=>['mcp_configure_tunnel','mcp_configure_client','mcp_authorize'].includes(c.command))),false);
     await page.locator('#mcpEnabled').check();
@@ -98,6 +99,36 @@ try {
     assert.ok(await page.locator('#aiTunnelId').isDisabled());
     assert.equal(await page.locator('#aiTunnelId').inputValue(),'tunnel_synthetic_retained');
     assert.ok(await group.locator('a').evaluateAll(nodes=>nodes.every(n=>!n.hasAttribute('href'))));
+    await page.close();
+  });
+  await test('ChatGPT help is above the card and proxy-local save preserves the saved configuration',async()=>{
+    const page=await nativePage('macos');
+    await page.locator('#mcpEnabled').check();
+    assert.equal(await page.locator('#aiSetupHelp').evaluate(help=>{
+      const card=document.querySelector('#aiChatGPTSetup');
+      return !card.contains(help)&&!!(help.compareDocumentPosition(card)&Node.DOCUMENT_POSITION_FOLLOWING);
+    }),true);
+    await page.locator('#aiHelpToggle').click();assert.equal(await page.locator('#aiHelpContent').isVisible(),true);
+    await page.locator('#aiHelpToggle').click();assert.equal(await page.locator('#aiHelpContent').isVisible(),false);
+    await page.locator('#aiTunnelId').fill('tunnel_synthetic_ui_audit');
+    await page.locator('#aiPickProgram').click();await page.locator('#aiRuntimeKey').fill('synthetic-ui-key');
+    await page.locator('#aiSaveSetup').click();await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
+    await page.locator('#aiAdvanced summary').click();
+    assert.equal(await page.locator('#aiDiagnosticsTitle').count(),1);
+    assert.equal(await page.locator('#aiDiagnosticsText').isVisible(),false);
+    await page.locator('#aiDiagnosticsToggle').click();assert.equal(await page.locator('#aiDiagnosticsText').isVisible(),true);
+    assert.equal(await page.locator('#aiDiagnosticsText').evaluate(n=>parseFloat(getComputedStyle(n).maxHeight)<=180),true);
+    await page.locator('#aiEditProxy').click();await page.locator('#aiTunnelProxy').fill('http://proxy.example:8091');
+    assert.equal(await page.locator('#aiTunnelProxy').evaluate(n=>getComputedStyle(n).outlineStyle),'none');
+    await page.locator('#aiSaveProxy').click();await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
+    assert.equal(await page.evaluate(()=>aiMock.clients[0].tunnel.proxy_url),'http://proxy.example:8091');
+    assert.equal(await page.evaluate(()=>aiMock.clients[0].tunnel.tunnel_id),'tunnel_synthetic_ui_audit');
+    assert.equal(await page.evaluate(()=>aiMock.clients[0].has_runtime_key),true);
+    assert.equal(await page.locator('#aiRuntimeKey').inputValue(),'');
+    await page.locator('#mcpEnabled').uncheck();await page.waitForFunction(()=>!document.querySelector('#mcpEnabled').disabled);
+    assert.equal(await page.locator('#aiSaveProxy').isDisabled(),true);
+    assert.equal(await page.locator('#aiConnectionControls').evaluate(n=>getComputedStyle(n).opacity),'1');
+    assert.equal(await page.locator('#aiTunnelProxy').inputValue(),'http://proxy.example:8091');
     await page.close();
   });
   await test('MCP enabling uses open-document access without a second grant or copied configuration', async () => {
@@ -263,7 +294,7 @@ try {
     assert.ok(await page.locator('#aiConnectionError').textContent());
     await page.close();
   });
-  await test('persistent AI notice has one localized sentence, a lock, reachable stop and an independent save error', async () => {
+  await test('persistent AI notice has one localized message, a lock, reachable stop and an independent save error', async () => {
     const page = await nativePage();
     await page.keyboard.press('Escape');
     await page.evaluate(async()=>{
@@ -276,7 +307,7 @@ try {
     const notice=page.locator('#aiTaskNotice');
     await notice.waitFor();
     assert.equal(await notice.locator('.ai-task-lock').count(), 1, 'persistent task must expose the approved linear lock icon');
-    const copies={'zh-Hans':'ChatGPT 正在辅助编辑，此文档暂时只读，可浏览、查找。','zh-Hant-TW':'ChatGPT 正在輔助編輯，此文件暫時唯讀，可瀏覽、尋找。','en':'ChatGPT is editing. This document is temporarily read-only; you can browse and find.'};
+    const copies={'zh-Hans':'ChatGPT 正在辅助编辑，此文档暂时只读，可浏览、查找。','zh-Hant-TW':'ChatGPT 正在輔助編輯，此文件暫時唯讀，可瀏覽、尋找。','en':'ChatGPT is helping edit this document. It is temporarily read-only, but you can still read it and search within it.'};
     await page.evaluate(()=>document.dispatchEvent(new CustomEvent('leaf-image-reveal-failed',{detail:'Synthetic save failure · 路径Δ'.repeat(120)})));
     for(const [language,copy]of Object.entries(copies)) {
       await page.evaluate(async value=>{const {setLanguagePreference}=await import('/src/i18n.js');await setLanguagePreference(value);},language);
@@ -303,12 +334,16 @@ try {
     await page.locator('#dismissStatus').click();assert.ok(await notice.isVisible());
     await page.evaluate(async()=>{await emitNative('leaf-mcp-editor',{call_id:'notice-finish',operation:'finish',args:{task_id:'retired-task',session_id:'session-ui',document_id:'doc-ui',authorization_epoch:1,mutation_generation:0}});});
     assert.ok(await notice.isVisible(),'retired task event cannot clear the current notice');
+    // Hold the old error announcement until the task has actually finished.
+    const pause=Date.now()+1000;await page.clock.install({time:pause-1000});await page.clock.pauseAt(pause);
     await page.evaluate(()=>document.dispatchEvent(new CustomEvent('leaf-image-reveal-failed',{detail:'Synthetic save failure retained after finish'})));
     await page.evaluate(async()=>{const {desktopAiApplied}=await import('/src/desktop.js');desktopAiApplied({session_id:'session-ui',mutation_id:'synthetic-pending-save',applied_revision:2,changed:true});});
     await page.evaluate(async()=>{await emitNative('leaf-mcp-editor',{call_id:'notice-end',operation:'finish',args:{task_id:'task-ui',session_id:'session-ui',document_id:'doc-ui',authorization_epoch:4,mutation_generation:1}});});
     assert.ok(await notice.isHidden());
     assert.ok(await page.locator('#statusNotice').isVisible(),'finalization clears only the task slot');
-    assert.match(await page.locator('#statusAnnouncement').textContent(), /not saved yet/);
+    await page.clock.runFor(100);
+    assert.equal(await page.locator('#statusAnnouncement').textContent(), 'Changes have been applied to the document but have not been saved yet. Check the save notice.');
+    assert.match(await page.locator('#saveStatus').innerText(),/Synthetic save failure retained after finish/,'the independent error remains visible after the new task announcement');
     await page.close();
   });
 } finally { await browser.close(); }

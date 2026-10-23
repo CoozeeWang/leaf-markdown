@@ -34,9 +34,9 @@ function harness() {
   const finishStart = source.indexOf('    finishAiTask(task) {');
   const finishEnd = source.indexOf('    queryRendererMutation', finishStart);
   assert.ok(setupStart >= 0 && setupEnd > setupStart && beginEnd > beginStart && finishEnd > finishStart);
-  vm.runInContext(`let aiTask=null, taskFocus=null, bufferRevision=0;
+  vm.runInContext(`let aiTask=null, taskFocus=null, updateLock=null, updateFocus=null, bufferRevision=0;
     const editability={reconfigure:x=>x}, changedControls=new Map();
-    const syncLockedControls=()=>{};const options={};
+    const syncLockedControls=()=>{}, restoreControls=()=>{};const options={};
     ${source.slice(setupStart, setupEnd)}
     globalThis.editor={${source.slice(snapshotStart, beginStart)}
       ${source.slice(beginStart, beginEnd)}${source.slice(finishStart, finishEnd)}};

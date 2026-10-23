@@ -252,14 +252,35 @@ impl GuiRuntimeSecretStore {
         keyring::Entry::new(&r.service,&r.account).map_err(|_|"runtime_key_unavailable".into())
     }
 }
+#[cfg(all(target_os="macos",feature="native-smoke"))]
+type PreservationVaultHook=fn(&str,&str,Option<&str>)->Result<String,String>;
+#[cfg(all(target_os="macos",feature="native-smoke"))]
+static PRESERVATION_VAULT:std::sync::OnceLock<PreservationVaultHook>=std::sync::OnceLock::new();
+#[cfg(all(target_os="macos",feature="native-smoke"))]
+pub(crate) fn install_preservation_vault(hook:PreservationVaultHook)->Result<(),String>{
+    PRESERVATION_VAULT.set(hook).map_err(|_|"synthetic_runtime_vault_already_set".into())
+}
+#[cfg(all(target_os="macos",feature="native-smoke"))]
+fn preservation_vault(reference:&RuntimeCredentialRef,action:&str,key:Option<&str>)->Option<Result<String,String>>{
+    let hook=PRESERVATION_VAULT.get()?;
+    Some(reference.validate().and_then(|_|hook(&format!("{}:{}",reference.service,reference.account),action,key)))
+}
 impl RuntimeVault for GuiRuntimeSecretStore {
     fn set(&self,r:&RuntimeCredentialRef,key:&str)->Result<(),String>{
+        #[cfg(all(target_os="macos",feature="native-smoke"))]
+        if let Some(result)=preservation_vault(r,"set",Some(key)){return result.map(|_|());}
         let entry=Self::entry(r)?;
         #[cfg(target_os="macos")] create_mac_gui_only_entry(r,key)?;
         entry.set_password(key).map_err(|_|"runtime_key_unavailable".to_string())?;runtime_cache().lock().unwrap().insert(format!("{}:{}",r.service,r.account),key.into());Ok(())
     }
-    fn get(&self,r:&RuntimeCredentialRef)->Result<String,String>{r.validate()?;let id=format!("{}:{}",r.service,r.account);if let Some(key)=runtime_cache().lock().unwrap().get(&id).cloned(){return Ok(key);}let key=Self::entry(r)?.get_password().map_err(|_|"runtime_key_unavailable".to_string())?;runtime_cache().lock().unwrap().insert(id,key.clone());Ok(key)}
-    fn delete(&self,r:&RuntimeCredentialRef)->Result<(),String>{runtime_cache().lock().unwrap().remove(&format!("{}:{}",r.service,r.account));match Self::entry(r)?.delete_credential(){Ok(())|Err(keyring::Error::NoEntry)=>Ok(()),Err(_)=>Err("runtime_key_unavailable".into())}}
+    fn get(&self,r:&RuntimeCredentialRef)->Result<String,String>{
+        #[cfg(all(target_os="macos",feature="native-smoke"))]
+        if let Some(result)=preservation_vault(r,"get",None){return result;}
+        r.validate()?;let id=format!("{}:{}",r.service,r.account);if let Some(key)=runtime_cache().lock().unwrap().get(&id).cloned(){return Ok(key);}let key=Self::entry(r)?.get_password().map_err(|_|"runtime_key_unavailable".to_string())?;runtime_cache().lock().unwrap().insert(id,key.clone());Ok(key)}
+    fn delete(&self,r:&RuntimeCredentialRef)->Result<(),String>{
+        #[cfg(all(target_os="macos",feature="native-smoke"))]
+        if let Some(result)=preservation_vault(r,"delete",None){return result.map(|_|());}
+        runtime_cache().lock().unwrap().remove(&format!("{}:{}",r.service,r.account));match Self::entry(r)?.delete_credential(){Ok(())|Err(keyring::Error::NoEntry)=>Ok(()),Err(_)=>Err("runtime_key_unavailable".into())}}
 }
 impl AiClientProfile {
     pub fn masked(&self)->serde_json::Value {let mut value=serde_json::to_value(self).unwrap();value.as_object_mut().unwrap().remove("runtime_ref");value.as_object_mut().unwrap().remove("runtime_pending");value}

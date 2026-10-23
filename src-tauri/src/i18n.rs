@@ -91,7 +91,10 @@ impl Language {
 #[tauri::command]
 pub fn language_get(app: tauri::AppHandle) -> Result<Snapshot, String> { app.state::<Language>().refresh(None, &app) }
 #[tauri::command]
-pub fn language_set(app: tauri::AppHandle, preference: String) -> Result<Snapshot, String> { app.state::<Language>().refresh(Some(preference), &app) }
+pub fn language_set(app: tauri::AppHandle, preference: String) -> Result<Snapshot, String> {
+    let _lease=crate::native_admission(&app,None)?;
+    app.state::<Language>().refresh(Some(preference), &app)
+}
 
 #[cfg(test)]
 mod tests {

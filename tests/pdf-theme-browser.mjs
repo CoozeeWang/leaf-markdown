@@ -37,7 +37,7 @@ for (const engine of ['chrome','webkit']) {
     await page.waitForFunction(theme=>document.documentElement.dataset.exportTheme===theme,theme);
     assert.deepEqual(await colors(page,'.print-document'),paper,'Paper never follows dark chrome');
     assert.equal(await page.locator('.print-document').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(255, 255, 255)');
-    assert.equal(await page.locator('.export-toolbar').evaluate(e=>getComputedStyle(e).backgroundColor),theme==='dark'?'rgb(36, 40, 36)':'rgb(250, 250, 247)');
+    assert.equal(await page.locator('.export-toolbar').evaluate(e=>getComputedStyle(e).backgroundColor),theme==='dark'?'rgb(41, 46, 41)':'rgb(250, 250, 247)');
     await page.setViewportSize({width:720,height:480});
     assert.ok(await page.locator('#print').isVisible());
     assert.equal(await page.locator('#print').evaluate(el=>getComputedStyle(el).fontSize),'14px');

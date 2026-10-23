@@ -1124,7 +1124,7 @@ export function assertDocumentMutationAllowed(documentView, capability) {
 export function createLeafEditor(options) {
   const historyCompartment = new Compartment();
   const aiTaskAnnotation = Annotation.define();
-  let aiTask = null;
+  let aiTask = null, updateLock = null, updateFocus = null;
   const editability = new Compartment();
   let taskFocus = null;
   let bufferRevision = 0, mutationDocumentGeneration = 0;
@@ -1394,25 +1394,30 @@ export function createLeafEditor(options) {
       // filter:false (restore, async attachments, undo) still crosses here.
       if (transactions.some(tr=>tr.docChanged && !assertDocumentMutationAllowed(target,tr.annotation(aiTaskAnnotation)))) return;
       // Retire offsets before history/reload/recovery exposes the new buffer.
-      if (transactions.some(tr=>tr.docChanged && (!aiTask || tr.annotation(aiTaskAnnotation)!==aiTask))) options.onHumanMutation?.();
+      if (transactions.some(tr=>tr.docChanged && (!aiTask || tr.annotation(aiTaskAnnotation)!==aiTask) && (!updateLock || tr.annotation(aiTaskAnnotation)!==updateLock.capability))) options.onHumanMutation?.();
       target.update(transactions);
       bufferRevision += transactions.filter(tr=>tr.docChanged).length;
-      if(aiTask) syncLockedControls();
+      if(aiTask||updateLock) syncLockedControls();
     },
   });
-  view.assertDocumentMutationAllowed=capability=>!aiTask||capability===aiTask;
+  view.assertDocumentMutationAllowed=capability=>updateLock?capability===updateLock.capability:!aiTask||capability===aiTask;
   view.dom.assertDocumentMutationAllowed=view.assertDocumentMutationAllowed;
   const controlScope=options.mutationRoot ?? options.parent.closest('.shell') ?? options.parent;
   const changedControls=new Map();
   const syncLockedControls=()=>{
-    if(!aiTask)return;
+    if(!aiTask&&!updateLock)return;
     for(const node of controlScope.querySelectorAll('.format-toolbar button:not(#displayButton), .leaf-property-body input, .leaf-property-body select, .leaf-property-body button, textarea.leaf-property-source, .leaf-table textarea, .leaf-table button, .leaf-callout-widget textarea, .leaf-callout-widget button, #notesList .note-delete, #commentsList textarea, #commentsList .comment-delete, #commentInsert, .outline-rename')) {
       if(!changedControls.has(node))changedControls.set(node,{disabled:node.disabled,readOnly:node.readOnly,description:node.getAttribute('aria-description')});
       if(node.matches('textarea,input:not([type=checkbox])'))node.readOnly=true;else node.disabled=true;
-      node.setAttribute('aria-description',options.lockDescription?.() ?? 'AI editing');
+      node.setAttribute('aria-description',updateLock?t('updates.preparing'):options.lockDescription?.() ?? 'AI editing');
     }
     for(const node of controlScope.querySelectorAll('.cm-editor'))node._leafNoteEditor?.setDocumentLocked(true);
     if(footnoteBoxView===view)for(const input of footnoteBox.querySelectorAll('textarea')){if(!changedControls.has(input))changedControls.set(input,{readOnly:input.readOnly,disabled:input.disabled,description:input.getAttribute('aria-description')});input.readOnly=true;}
+  };
+  const restoreControls=()=>{
+    for(const [node,saved]of changedControls){node.disabled=saved.disabled;node.readOnly=saved.readOnly;if(saved.description===null)node.removeAttribute('aria-description');else node.setAttribute('aria-description',saved.description);}
+    changedControls.clear();
+    for(const node of controlScope.querySelectorAll('.cm-editor'))node._leafNoteEditor?.setDocumentLocked(false);
   };
   const observer=new MutationObserver(()=>syncLockedControls());observer.observe(controlScope,{childList:true,subtree:true});
   const composition=createCompositionGuard({scope:controlScope,view,
@@ -1447,7 +1452,54 @@ export function createLeafEditor(options) {
     mcpSnapshot() {
       return {content:view.state.doc.toString(),revision:bufferRevision,coordinate_encoding:'utf-16',line_ending:view.state.field(lineEnding),selection:{from:view.state.selection.main.from,to:view.state.selection.main.to},composition:composition.status()};
     },
+    updateSettlement() {
+      const status=composition.status(),sources=[...status.sources];
+      if(aiTask)sources.push('ai-task');
+      if([...controlScope.querySelectorAll('.leaf-property-body')].some(node=>node.hasPendingDraft?.()))sources.push('property-draft');
+      // Comment and footnote input normally writes synchronously into this
+      // document. Detect any displayed value that has not reached that source,
+      // and leave it intact instead of forcing a blur or committing a draft.
+      const comments=view.state.field(commentIndex).notes;
+      if([...controlScope.querySelectorAll('#commentsList textarea')].some(input=>{
+        const note=comments.find(note=>note.id===input.closest('.comment-card')?.dataset.commentId);
+        return !note||input.value!==note.text;
+      }))sources.push('comment-draft');
+      if([...controlScope.querySelectorAll('#notesList .note-card')].some(card=>card._noteEditor&&card._noteEditor.value()!==card._noteRow.body))sources.push('note-draft');
+      if(footnoteBoxView===view){
+        const input=footnoteBox?.querySelector('textarea'),note=indexFootnotes(view.state.doc.toString()).notes.find(note=>note.id===footnoteBoxLabel);
+        if(input&&input.value!==(note?.def?.body??''))sources.push('footnote-draft');
+      }
+      if(controlScope.querySelector('.outline-rename')||document.querySelector('.inline-rename'))sources.push('structural-draft');
+      return {...status,pending:sources.length>0,sources};
+    },
+    freezeUpdate(id) {
+      if(!id||updateLock&&updateLock.id!==id)throw Error('update_prepare_stale');
+      if(updateLock)return;
+      if(this.updateSettlement().pending)throw Error('composition_pending');
+      updateFocus=document.activeElement;updateLock={id,capability:{}};
+      view.dispatch({effects:editability.reconfigure([EditorState.readOnly.of(true),EditorView.contentAttributes.of({'aria-readonly':'true'})])});
+      syncLockedControls();
+    },
+    releaseUpdate(id) {
+      if(updateLock?.id!==id)return;
+      updateLock=null;
+      view.dispatch({effects:editability.reconfigure([EditorState.readOnly.of(!!aiTask),EditorView.contentAttributes.of({'aria-readonly':String(!!aiTask)})])});
+      if(!aiTask)restoreControls();else syncLockedControls();
+      if(document.hasFocus()&&updateFocus?.isConnected&&!updateFocus.disabled)updateFocus.focus();
+      updateFocus=null;
+    },
+    restorePreparedValue(value,id) {
+      if(updateLock?.id!==id)throw Error('update_prepare_stale');
+      if(this.updateSettlement().pending)throw Error('composition_pending');
+      const before=view.state.doc.toString();let from=0,suffix=0;
+      while(from<before.length&&from<value.length&&before[from]===value[from])from++;
+      while(suffix<before.length-from&&suffix<value.length-from&&before[before.length-1-suffix]===value[value.length-1-suffix])suffix++;
+      if(from===before.length&&from===value.length)return;
+      view.dispatch({changes:{from,to:before.length-suffix,insert:value.slice(from,value.length-suffix)},filter:false,
+        annotations:[aiTaskAnnotation.of(updateLock.capability),isolateHistory.of('full')],userEvent:'input.resource'});
+    },
     beginAiTask(task) {
+      if(updateLock)throw Error('document_locked');
       if (!task?.task_id || aiTask && aiTask.id!==task.task_id) throw new Error('document_locked');
       if(!aiTask) {
         if(composition.status().pending)throw new Error('composition_pending');
@@ -1492,10 +1544,8 @@ export function createLeafEditor(options) {
       if(aiTask && task.task_id!==aiTask.id) throw new Error('stale_task');
       if(aiTask?.batches) view.dispatch({annotations:isolateHistory.of('full')});
       aiTask=null;
-      view.dispatch({effects:editability.reconfigure([EditorState.readOnly.of(false),EditorView.contentAttributes.of({'aria-readonly':'false'})])});
-      for(const [node,saved]of changedControls){node.disabled=saved.disabled;node.readOnly=saved.readOnly;if(saved.description===null)node.removeAttribute('aria-description');else node.setAttribute('aria-description',saved.description);}
-      changedControls.clear();
-      for(const node of controlScope.querySelectorAll('.cm-editor'))node._leafNoteEditor?.setDocumentLocked(false);
+      view.dispatch({effects:editability.reconfigure([EditorState.readOnly.of(!!updateLock),EditorView.contentAttributes.of({'aria-readonly':String(!!updateLock)})])});
+      if(!updateLock)restoreControls();else syncLockedControls();
       options.onAiTaskChange?.(null);
       if(taskFocus?.isConnected&&!taskFocus.disabled)taskFocus.focus();else view.focus();taskFocus=null;
       return this.mcpSnapshot();
@@ -1553,7 +1603,7 @@ export function createLeafEditor(options) {
       if (view.state.field(structuredPreview).name !== name) view.dispatch({ effects: documentName.of(name) });
     },
     setValue(value) {
-      if(aiTask) throw new Error('document_locked');
+      if(aiTask||updateLock) throw new Error('document_locked');
       mutationDocumentGeneration++;
       suppressChanges = true;
       // A newly opened/reloaded document must never undo into the previous file.

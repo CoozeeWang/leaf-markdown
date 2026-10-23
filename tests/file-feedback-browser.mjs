@@ -4,9 +4,11 @@ const browser=await chromium.launch(launchOptions);
 try{
  const page=await browser.newPage({viewport:{width:720,height:480}});
  await page.addInitScript(()=>{
-  window.isTauri=true;window.callbacks={};window.handlers={};window.calls=[];let id=0;
+  window.isTauri=true;window.callbacks={};window.handlers={};window.calls=[];let id=0,closeActionId=0;
   window.saveMode='fail';
   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},transformCallback:fn=>{callbacks[++id]=fn;return id;},invoke:async(command,args)=>{
+      if(command==='update_close_disposition')return {allowed:true,action_id:++closeActionId,window_nonce:1};
+      if(command==='update_participant_status')return {window_nonce:1,prepare_id:null,phase:null,identity:null,frozen:false,manual_driver:false};
       if (command === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
    calls.push({command,args});
    if(command==='plugin:event|listen'){handlers[args.event]=callbacks[args.handler];return 1;}
@@ -51,12 +53,18 @@ try{
  await page.screenshot({path:artifactPath('close-document-dark.png')});
  await page.getByRole('button',{name:'保存并关闭',exact:true}).click();
  await page.waitForFunction(()=>calls.some(c=>c.command==='plugin:window|destroy'));
+ // Every close continuation uses the action owned by that one prompt.
+ const closeProof=await page.evaluate(()=>({boundaries:calls.filter(c=>c.command==='mcp_document_boundary'),completed:calls.filter(c=>c.command==='update_close_complete')}));
+ assert.deepEqual(closeProof.boundaries.map(c=>c.args.closeActionId),[1,2,3]);
+ assert.deepEqual(closeProof.completed.map(c=>[c.args.actionId,c.args.windowNonce]),[[1,1],[2,1]],'cancel and failed save complete their exact action; successful destroy owns the last action');
  // An untitled document invokes the save chooser, whose cancellation must retain it.
  const blank=await browser.newPage({viewport:{width:720,height:480}});
  await blank.addInitScript(()=>{
   Object.defineProperty(navigator,'platform',{get:()=> 'Win32'});Object.defineProperty(navigator,'userAgentData',{get:()=>undefined});
-  window.isTauri=true;window.callbacks={};window.handlers={};window.calls=[];let id=0;
+  window.isTauri=true;window.callbacks={};window.handlers={};window.calls=[];let id=0,closeActionId=0;
   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},transformCallback:fn=>{callbacks[++id]=fn;return id;},invoke:async(command,args)=>{
+      if(command==='update_close_disposition')return {allowed:true,action_id:++closeActionId,window_nonce:1};
+      if(command==='update_participant_status')return {window_nonce:1,prepare_id:null,phase:null,identity:null,frozen:false,manual_driver:false};
       if (command === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
    calls.push({command,args});
    if(command==='plugin:event|listen'){handlers[args.event]=callbacks[args.handler];return 1;}

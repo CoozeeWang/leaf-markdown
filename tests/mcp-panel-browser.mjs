@@ -13,7 +13,9 @@ try{
   await page.waitForFunction(()=>typeof setupReaderHost==='function');await page.waitForLoadState('networkidle');
   await page.evaluate(html=>setupReaderHost(html),html);
   const panel=page.frameLocator('#panel');await panel.locator('#status').filter({hasText:'Current draft'}).waitFor();
-  assert.match(await panel.locator('#identity').innerText(),/revision 1.*CRLF.*UTF-16/);
+  assert.match(await panel.locator('#identity').innerText(),/Revision 1/);
+  assert.doesNotMatch(await panel.locator('#identity').innerText(),/CRLF|UTF-16/);
+  assert.equal(await panel.locator('#sourceMetadata').textContent(),'CRLF · UTF-16');
   assert.match(await panel.locator('.print-properties').innerText(),/Reader/);
   assert.equal(await panel.locator('#reader table').count(),1);
   assert.match(await panel.locator('#reader').innerText(),/Footnote/);
@@ -22,19 +24,36 @@ try{
   assert.equal(await panel.locator('[contenteditable],textarea,input').count(),0);
   assert.equal(await panel.locator('#reader script').count(),0);assert.equal(await panel.locator('#reader img').count(),0);
   await page.evaluate(()=>{readerCurrent=readerValue(2);});await panel.locator('#refresh').click();
-  await panel.locator('#identity').filter({hasText:'revision 2'}).waitFor();assert.match(await panel.locator('#diff').innerText(),/updated/);
+  await panel.locator('#identity').filter({hasText:'Revision 2'}).waitFor();assert.match(await panel.locator('#diff').innerText(),/updated/);
   // Duplicate and late replies retain both the latest text and the single diff.
   const diff=await panel.locator('#diff').innerText();await panel.locator('#refresh').click();assert.equal(await panel.locator('#diff').innerText(),diff);
-  await page.evaluate(()=>{readerCurrent=readerValue(1);});await panel.locator('#refresh').click();assert.match(await panel.locator('#identity').innerText(),/revision 2/);
+  await page.evaluate(()=>{readerCurrent=readerValue(1);});await panel.locator('#refresh').click();assert.match(await panel.locator('#identity').innerText(),/Revision 2/);
   for(const locale of ['zh-Hans','zh-Hant-TW','en'])for(const theme of ['light','dark']){
    await page.evaluate(({locale,theme})=>readerHost.setHostContext({locale,theme}),{locale,theme});
    await page.setViewportSize({width:320,height:900});
    await panel.locator(`html[lang="${locale}"][data-theme="${theme}"]`).waitFor();
    assert.equal(await panel.locator('body').evaluate(e=>e.scrollWidth<=e.ownerDocument.documentElement.clientWidth),true,`${locale} ${theme} narrow`);
    assert.equal(await panel.locator('#refresh').isVisible(),true);
+   const expected={
+    'zh-Hans':{revision:'修订号 2',reader:'文档',source:'Markdown 源码'},
+    'zh-Hant-TW':{revision:'修訂編號 2',reader:'文件',source:'Markdown 原始碼'},
+    en:{revision:'Revision 2',reader:'Document',source:'Markdown source'},
+   }[locale];
+   assert.match(await panel.locator('#identity').innerText(),new RegExp(expected.revision));
+   assert.equal(await panel.locator('#reader').getAttribute('aria-label'),expected.reader);
+   assert.equal(await panel.locator('#sourceTitle').innerText(),expected.source);
+
    await mkdir(new URL('../test-results/mcp-panel/',import.meta.url),{recursive:true});await page.screenshot({path:`test-results/mcp-panel/${locale}-${theme}.png`});
   }
-  await page.evaluate(()=>{readerCurrent=readerValue(2);});await panel.locator('#stop').click();await panel.locator('#stop:disabled').waitFor();
+  await page.evaluate(()=>{readerCurrent=readerValue(3);readerCurrent.snapshot.content='# One\n\n## Two\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\n**Bold** and *italic*\n\n> [!note]\n> A note.';});
+  await panel.locator('#refresh').click();await panel.locator('#identity').filter({hasText:'Revision 3'}).waitFor();
+  const typography=await panel.locator('#reader').evaluate(root=>({
+    headings:[...root.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(n=>({size:parseFloat(getComputedStyle(n).fontSize),weight:getComputedStyle(n).fontWeight,color:getComputedStyle(n).color})),
+    body:parseFloat(getComputedStyle(root).fontSize),callout:!!root.querySelector('.leaf-callout'),
+  }));
+  assert.equal(typography.headings.length,6);assert.ok(typography.headings.slice(3).every(h=>h.size>typography.body&&h.weight==='600'));
+  assert.equal(new Set(typography.headings.map(h=>h.color)).size,6);assert.equal(typography.callout,true);
+  await page.evaluate(()=>{readerCurrent=readerValue(4);});await panel.locator('#stop').click();await panel.locator('#stop:disabled').waitFor();
   assert.ok(await page.evaluate(()=>readerCalls.some(c=>c.name==='stop_edit'&&c.args.task_id==='synthetic-task')));
   await page.evaluate(()=>{readerDenied=true;});await panel.locator('#refresh').click();await panel.locator('#refresh:disabled').waitFor();
   assert.equal(await panel.locator('#reader').innerText(),'');assert.equal(await panel.locator('#source').innerText(),'');assert.equal(await panel.locator('.comment-card').count(),0);

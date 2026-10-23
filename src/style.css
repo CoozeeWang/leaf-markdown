@@ -719,7 +719,7 @@ button.leaf-list-marker { cursor:pointer; }
 .callout-types button { display: flex; align-items: center; gap: 8px; text-align: left; padding: 7px 10px; border-radius: 5px; font-size: 13px; color: var(--text); }
 .callout-types button:hover { background: var(--accent-soft); }
 /* Menu selection and keyboard focus use a filled row, including auto-focus on open. */
-:is(.action-popover, .heading-popover, .callout-popover, .recent-popover, .mode-popover) button:is(:focus, :focus-visible, [aria-selected="true"], [aria-checked="true"], [aria-pressed="true"]) {
+:is(.action-popover, .heading-popover, .callout-popover, .recent-popover, .mode-popover, .leaf-table-menu) button:is(:focus, :focus-visible, [aria-selected="true"], [aria-checked="true"], [aria-pressed="true"]) {
   outline: none;
   box-shadow: none;
   background: var(--accent-soft);
@@ -1130,7 +1130,8 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .settings-tabs button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 
 .ai-connection-controls { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
-.ai-connection-controls:disabled { opacity: .5; }
+.ai-connection-controls:disabled { opacity: 1; }
+.ai-connection-controls:disabled :is(button, select, input) { color: var(--muted); cursor: default; }
 .ai-connection-controls:disabled :is(input, select, button) { opacity: 1; }
 .ai-connection-controls:disabled :is(a, summary) { cursor: default; }
 .mcp-heading { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
@@ -1161,13 +1162,27 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .ai-guided-steps > li:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
 .ai-guided-steps label, #aiAdvanced label, .ai-step-title { display: block; font-weight: 500; margin: 0 0 6px; }
 #settingsPanel-ai .ai-guided-steps input, #settingsPanel-ai #aiAdvanced input { width: 100%; padding: 7px 9px; min-height: 36px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); background: var(--canvas); font: inherit; }
-#settingsPanel-ai .ai-guided-steps input:focus-visible, #settingsPanel-ai #aiAdvanced input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+#settingsPanel-ai .ai-guided-steps input:focus-visible, #settingsPanel-ai #aiAdvanced input:focus-visible { outline: none; border-color: var(--accent); box-shadow: none; }
 .ai-guided-card a { color: var(--accent-strong); overflow-wrap: anywhere; }
-.ai-guided-card details, .ai-setup-help { margin: 10px 0; }
+.ai-guided-card details { margin: 10px 0; }
 .ai-guided-card summary, .ai-setup-help summary { cursor: pointer; line-height: 1.6; }
 #settingsPanel-ai .ai-error, .ai-clear-dialog .ai-error { color: var(--danger); overflow-wrap: anywhere; }
 .ai-error:empty, #aiActionStatus:empty, #aiSavedStatus:empty, #aiDownloadStatus:empty, #aiDocumentGrantStatus:empty { display: none; }
 .ai-setup-prompt { white-space: pre-wrap; user-select: text; }
+.ai-setup-help { margin: 12px 0; }
+.ai-setup-help > .ai-text-button { font-size: var(--ui-size); text-align: left; }
+.ai-setup-help > div { padding-top: 8px; }
+.ai-advanced > summary { font-size: var(--ui-size); font-weight: 500; }
+.ai-advanced-section { margin-top: 16px; }
+.ai-advanced-section + .ai-advanced-section { margin-top: 24px; }
+#aiAdvanced label { font-size: var(--ui-size); font-weight: 500; margin-bottom: 8px; line-height: 1.6; }
+#aiAdvanced .setting-hint { margin: 8px 0 12px; font-size: var(--ui-caption); font-weight: 400; line-height: 1.6; }
+.ai-proxy-actions { margin: 12px 0 0; justify-content: flex-end; }
+.ai-diagnostics-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
+.ai-diagnostics-heading h5 { font: 600 var(--ui-section)/1.6 var(--ui-font); margin: 0; }
+.ai-diagnostics-heading button { flex: none; }
+#aiDiagnosticsText { box-sizing: border-box; max-height: 180px; overflow: auto; margin: 8px 0 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 12px/1.6 var(--ui-mono); color: var(--text); background: var(--canvas); border: 1px solid var(--line); border-radius: var(--ui-radius); }
+#aiDiagnosticsText:focus-visible { outline: none; border-color: var(--accent); }
 #settingsPanel-ai :is(p, pre, button, label, h4) { overflow-wrap: anywhere; }
 .ai-clear-dialog { margin: auto; }
 .ai-clear-dialog::backdrop { background: rgba(20,24,20,.3); }

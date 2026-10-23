@@ -29,6 +29,8 @@ try {
     assert.equal(await page.locator('#mcpEnabled').isChecked(),true);
     assert.match(await page.locator('#aiClient').inputValue(),/chatgpt/);
     assert.equal(await page.locator('#aiTroubleshoot').isVisible(),true);
+    assert.equal(await page.locator('#aiDiagnosticsText').isVisible(),false);
+    await page.locator('#aiDiagnosticsToggle').click();
     let diagnostics=await page.locator('#aiDiagnosticsText').innerText();
     assert.equal(JSON.parse(diagnostics).instance_id,'0123456789abcdef');
     assert.equal(JSON.parse(diagnostics).tunnel.consecutive_failures,3);

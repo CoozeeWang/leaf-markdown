@@ -47,6 +47,8 @@ Windows 的 Claude 扩展入口使用原生保存窗口导出 `Leaf.mcpb`，随�
 
 ChatGPT 隧道仅继承必需的系统变量和经过选择的代理配置。优先级为 Leaf 显式 HTTP(S) 代理、连接程序代理环境变量、标准 HTTPS_PROXY（及 ALL_PROXY 的 HTTP(S) 回退）、Windows 当前用户代理（含 WinHTTP 解析的 PAC/WPAD）；标准环境代理保留 NO_PROXY，系统静态代理按 HTTPS 映射和绕过列表选择，自动代理只为固定 OpenAI 地址解析并限制等待时间。显式持久化地址拒绝账号密码、路径参数和非 HTTP(S) 协议；环境变量中的代理认证只传入子进程，不保存或进入诊断。PAC/WPAD 解析超时或配置的 PAC 失败时提示显式地址，不静默直连，不修改系统设置。保持 TLS 验证。
 
+UI／Stylebook 增量修正回归沿用 `ai-connections-browser.mjs`、`ai-tunnel-status-browser.mjs`、`mcp-panel-browser.mjs`、`desktop-updates-browser.mjs`：检查框外上方的 ChatGPT 帮助、真实禁用、代理旁保存与密钥保留、按需诊断、单层输入焦点、阅读面板 H1—H6／提示块、源码内编码详情，以及三语更新失败结果和恢复位置的完整保留。浏览器合成回归不代表真实宿主、读屏或安装版验收。
+
 `ai-tunnel-status-browser.mjs` 仅检查代理保存、状态及脱敏诊断，另覆盖挂起 IPC 时持续更新失败状态、30 秒恢复控件、过期响应不能继续启动、同窗口清空代理和默认折叠高级设置。健康探测使用整次读取上限，CLI 全部兼容检查共用 15 秒预算；代理单独修改复用校验过的 profile，提交前检查 25 秒期限，过期保存保留原密钥与配置。`scripts/test-mcp-proxy-ui.mjs` 需要 `LEAF_TEST_TUNNEL_CLIENT` 指向已核验的官方连接程序，以实际原生设置 IPC 保存错误地址再清空，核对错误显示、操作恢复、相同进程恢复自动代理路由、profile 与密钥保留。父进程测试代理返回 502，不使用真实密钥，不代表真实云端成功；Windows 代理专项工作流会运行此项。`chatgpt_tunnel` 和 `tunnel_proxy` 原生测试检查轮询失败、鉴权、传送失败、恢复、代理优先级及保留配置。设置 `LEAF_TEST_TUNNEL_CLIENT` 后，`official_tunnel_client_routes_through_explicit_and_environment_proxy` 使用动态端口上的本地测试代理，验证官方 0.0.16 实际 CONNECT 路由和网络错误观测，不使用真实密钥。GitHub Packages 的 `verification_scope=chatgpt-proxy` 运行这些检查及隔离重启，然后构建安装包，跳过 PDF、全量语言界面和文件集成验收；不发布 Release。设置诊断与 `list_documents` / `read_document` 的 `_meta.leaf.instance_id` 应相同；标识在每次 GUI 重启时更新。读取成功不等同于证明目标电脑：实际 ChatGPT 验收还要比对实例、平台、隧道标签及非空合成测试内容；同一隧道使用一台电脑或分配独立隧道。
 
 Windows 安装／卸载钩子只结束可执行文件路径与当前安装目录完全相符的 `leaf-mcp-adapter.exe`，不按进程名批量结束其他安装或客户端。文件仍被占用时，在替换安装内容前停止，提示退出宿主后重试。`windows-adapter-upgrade.ps1` 仅在一次性 Windows CI 中运行，使用合成常驻进程复现可执行文件占用，核对覆盖升级、同路径多实例、其他路径不受影响、外部文件锁失败后重试、卸载和已保存设置保留；不代替真实用户电脑上的客户端重连验收。
@@ -227,3 +229,24 @@ outcomes fill the ledger, preserve it for diagnosis rather than deleting it.
 The renderer likewise refuses new receipts at its limit without losing retries.
 
 引用式链接由 `reference-links.test.js` 和 `reference-links-browser.mjs` 验证：完整／折叠／简写引用、正文／表格／提示块、定义更新、缺失定义、安全目标与编辑／阅读点击。原生呈现可用 `native-table-keys` 加载 `tests/native-reference-links.html`，检查 WKWebView 的显示、脚注区链接、原文保留及撤销；不代表已安装版本或 Windows 验收。
+
+## Desktop update native checks
+
+应用更新的状态、操作编号与修订号由原生端持有。独立更新窗口不初始化编辑器或 MCP 文档；普通窗口名称还须与原生注册表及实际窗口一致，不能靠 `document-*` 名称获取文档权限。更新窗口没有文件对话框或窗口销毁权限。普通退出的取消回执绑定退出编号和实际文档窗口；这份普通退出意图不能用于更新安装。
+
+完整环境中的 macOS 原生检查先构建内嵌前端与测试 helper，再运行独立探针：
+
+```sh
+npm run desktop:build -- --debug --no-bundle --features native-smoke,tauri/custom-protocol
+src-tauri/target/debug/leaf --update-official-probe
+src-tauri/target/debug/leaf --update-tracer
+src-tauri/target/debug/leaf --update-tracer-role-matrix
+```
+
+`native-smoke` 编译门内的确定性服务只使用回环地址。实际 Tauri 探针覆盖菜单共用入口、原生可见的单例窗口、真实 IPC 重试、不同结果、错误调用窗口、最小能力、普通退出取消，以及最后文档与更新窗口的独立生命周期。它等待原生事件和渲染回执，不以固定延时代替就绪。结果写入忽略提交的 `test-results/desktop-updates-native/`。
+
+官方探针另外通过原生 HTTPS 客户端读取固定官方仓库，保留证书校验。CI 遇到公共出口限流时可仅在该步骤注入 `LEAF_UPDATE_OFFICIAL_PROBE_TOKEN`；测试令牌只发送到固定 GitHub API 请求，不跟随 API 重定向，不写盘、不输出，也不传入界面或普通产品查询。原生夹具通过不代表 Windows 安装包、安装版人工验收或线上升级已经通过。
+
+## Desktop update verification
+
+See [Desktop updates](DESKTOP_UPDATES.md) for the one-confirmation flow, multi-document preparation, trust and data-preservation boundaries, Mac helper fault matrix, and separate source, UI, native, installed, human and online evidence requirements. Full checks and packaging use the established complete environment or CI.

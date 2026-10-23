@@ -39,7 +39,11 @@ try {
  await page.reload();await page.click('#welcomeNewButton');
  await page.click('#outlineButton');await page.click('#notesButton');
  assert.equal(await width('outline'),350);assert.equal(await width('notes'),400);
- await page.setViewportSize({width:1050,height:900});await page.waitForTimeout(100);
+ await page.setViewportSize({width:1050,height:900});
+ await page.waitForFunction(()=>document.querySelector('#editor').getBoundingClientRect().width>=360).catch(async error=>{
+  const geometry=await page.evaluate(()=>Object.fromEntries(['#editor','#outlineDrawer','#notesDrawer'].map(selector=>[selector,document.querySelector(selector).getBoundingClientRect().width])));
+  error.message+='; settled sidebar geometry: '+JSON.stringify(geometry);throw error;
+ });
  assert.ok((await page.locator('#editor').boundingBox()).width>=360);
  await page.setViewportSize({width:700,height:900});
  await page.waitForFunction(()=>matchMedia('(max-width: 1000px)').matches && document.querySelectorAll('.outline-drawer.visible, .notes-drawer.visible').length===1);

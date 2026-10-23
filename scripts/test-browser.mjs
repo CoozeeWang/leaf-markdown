@@ -12,7 +12,7 @@ const core = [
   'version-display', 'properties-insert-guard', 'image-drop', 'image-insertion', 'image-reveal', 'image-tooltips', 'image-drag',
   'paragraph-blank-lines', 'paragraph-input',
   'body-fonts',
-  'comments', 'annotation-tabs', 'composition-state',
+  'comments', 'annotation-tabs', 'composition-state', 'desktop-updates',
   'ai-edit-lock', 'mcp-file-identity', 'mcp-comments', 'mcp-footnotes-tables', 'mcp-properties-markdown', 'mcp-panel',
   'list-images', 'clipboard-images',
   'recovery-notice', 'file-feedback', 'status-notices', 'pdf-export-native',

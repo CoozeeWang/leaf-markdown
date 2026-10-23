@@ -33,7 +33,7 @@ pub fn install(app: tauri::AppHandle) {
                 let size:NSSize=msg_send![title,sizeWithAttributes:std::ptr::null::<AnyObject>()];
                 let half=(size.width/2.0+12.0).min((frame.size.width-180.0).max(0.0)/2.0);
                 if point.y>=layout.origin.y+layout.size.height && point.y<frame.size.height && (point.x-frame.size.width/2.0).abs()<=half {
-                    if let Some(window)=crate::menu_window(&app).filter(|w|w.label().starts_with("document-")) {
+                    if let Some(window)=crate::menu_window(&app).filter(|w|crate::verified_window_role(&app,w.label())==crate::window_role::WindowRole::Document) {
                         if window.ns_window().ok()==Some(native.cast()){crate::native_title::begin(&window);return std::ptr::null_mut();}
                     }
                 }
@@ -43,9 +43,9 @@ pub fn install(app: tauri::AppHandle) {
             let key: u16 = msg_send![event, keyCode];
             let modifiers: usize = msg_send![event, modifierFlags];
             if let Some(action) = command(key, modifiers) {
-                if let Some(window) = crate::menu_window(&app).filter(|w| w.label().starts_with("document-")) {
+                if let Some(window) = crate::menu_window(&app).filter(|w| crate::verified_window_role(&app,w.label())==crate::window_role::WindowRole::Document) {
                     let repeat: bool = msg_send![event, isARepeat];
-                    if repeat || window.emit_to(window.label(),"leaf-menu", action).is_ok() {
+                    if repeat || crate::dispatch_document_menu(&app,window.label(),action).unwrap_or(false) {
                         return std::ptr::null_mut();
                     }
                 }

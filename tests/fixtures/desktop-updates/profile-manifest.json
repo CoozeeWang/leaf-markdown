@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "app_identifier": "studio.leaf.editor",
+  "normal_history_increment": 4,
+  "required_categories": [
+    "application",
+    "language",
+    "theme",
+    "bodyFonts",
+    "layout",
+    "savePreferences",
+    "recentFiles",
+    "namedDrafts",
+    "untitledDrafts",
+    "recoveryRecords",
+    "webviewStorage",
+    "connectionConfig"
+  ],
+  "profile": {
+    "version": "1.0.0",
+    "application": {
+      "identifier": "studio.leaf.editor",
+      "data_path": "/Synthetic/LeafProfile",
+      "webview_path": "/Synthetic/WebView"
+    },
+    "language": {
+      "preference": "zh-Hant-TW"
+    },
+    "theme": "dark",
+    "bodyFonts": {
+      "zh": "sans",
+      "en": "serif"
+    },
+    "layout": {
+      "leaf-reading-v2-size": 19,
+      "leaf-reading-v2-width": 780,
+      "leaf-line-numbers": true
+    },
+    "savePreferences": {
+      "recovery_retention_days": 30
+    },
+    "recentFiles": [
+      {
+        "path": "/Synthetic/Notes/One.md",
+        "name": "One.md"
+      }
+    ],
+    "namedDrafts": [
+      {
+        "source": "/Synthetic/Notes/One.md",
+        "content": "# Named synthetic draft"
+      }
+    ],
+    "untitledDrafts": [
+      {
+        "source": null,
+        "content": "# Untitled synthetic draft"
+      }
+    ],
+    "recoveryRecords": [
+      {
+        "id": "synthetic-recovery-1",
+        "kind": "checkpoint",
+        "content": "# Recoverable synthetic content"
+      }
+    ],
+    "webviewStorage": {
+      "leaf-theme": "dark",
+      "leaf-body-fonts-v1": "synthetic-font-choice",
+      "leaf-blank-markers": "true"
+    },
+    "connectionConfig": {
+      "client": "synthetic-client",
+      "enabled": true,
+      "credential_ref": "synthetic-opaque-item"
+    },
+    "history": [
+      {
+        "id": "synthetic-history-1",
+        "kind": "save",
+        "content": "# Previous synthetic content"
+      }
+    ]
+  }
+}

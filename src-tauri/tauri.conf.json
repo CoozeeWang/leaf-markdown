@@ -15,10 +15,11 @@
   },
   "bundle": {
     "active": true,
-    "externalBin": ["binaries/leaf-mcp-adapter"],
+    "externalBin": ["binaries/leaf-mcp-adapter", "binaries/leaf-update-helper"],
     "icon": ["icons/icon.png", "icons/icon.icns"],
     "targets": ["app"],
     "fileAssociations": [{ "ext": ["md", "markdown", "mdown"], "name": "Markdown document", "role": "Editor", "mimeType": "text/markdown" }],
     "macOS": { "minimumSystemVersion": "11.0", "signingIdentity": "-", "infoPlist": "Info.plist" }
-  }
+  },
+  "plugins": {"leafUpdater": {"schema": 1, "status": "pending_external_identity", "owner": "Leaf release custodian", "pubkey": null, "provenance": null}}
 }

@@ -5,6 +5,8 @@
 mod ai_credentials;
 #[path = "../atomic_file.rs"]
 mod atomic_file;
+#[path = "../update_binary_identity.rs"]
+mod update_binary_identity;
 use std::{sync::Arc, path::PathBuf};
 use rmcp::{ServiceExt,ServerHandler,ErrorData,model::*,service::{RoleClient,RoleServer,Peer,RequestContext},transport::{stdio,StreamableHttpClientTransport,streamable_http_client::StreamableHttpClientTransportConfig}};
 
@@ -80,6 +82,7 @@ fn trace(stage:&str) {
     let _=stage;
 }
 fn main() {
+    crate::leaf_update_binary_identity!("leaf-mcp-adapter");
     // First, while still single-threaded and before runtime/logging startup.
     std::env::remove_var("CONTROL_PLANE_API_KEY");
     if std::env::args().nth(1).as_deref()==Some("--leaf-build-identity") {println!("{}",ai_credentials::native_build_identity());return;}

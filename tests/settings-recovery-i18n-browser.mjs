@@ -19,6 +19,7 @@ for (const engine of (process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGI
           metadata: { currentWindow: { label: 'document-test' }, currentWebview: { label: 'document-test' } },
           transformCallback: fn => { callbacks[++id] = fn; return id; },
           invoke: async (command, args) => {
+            if(command==='update_participant_status')return {window_nonce:1,prepare_id:null,phase:null,identity:null,frozen:false,manual_driver:false};
             if (command === 'language_get') return language;
             if (command === 'language_set') return (language = { preference: args.preference, language: args.preference, revision: language.revision + 1 });
             if (command === 'plugin:event|listen') { handlers[args.event] = callbacks[args.handler]; return ++id; }

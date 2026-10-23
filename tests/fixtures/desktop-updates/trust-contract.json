@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "fixtureMode": "TEST-ONLY-THROWAWAY",
+  "productionMode": "production",
+  "fixtureFormat": "tauri-base64-minisign-ED",
+  "fingerprint": "sha256(raw-ed25519-public-key-32-bytes)",
+  "fixtureKeyId": "TESTONLY",
+  "fixtureRoot": "empty owner-private leaf-update-test-* directory beneath OS temporary directory",
+  "freshness": "regular single-link payload inside run root, created and modified after fixture-init; one immutable binding per run",
+  "binding": ["mode", "runId", "fingerprint", "version", "platform", "arch", "sha256", "size", "file"],
+  "productionProvenance": {
+    "schema": 1,
+    "product": "Leaf",
+    "purpose": "updater-signing",
+    "mode": "production",
+    "owner": "Leaf release custodian",
+    "source": "secure-local-custodian",
+    "independent": true,
+    "fingerprint": "sha256 hex of supplied raw public key"
+  },
+  "blockedPublicFingerprints": [
+    "63f8a5f81fa7f5bce2e1ba0f18f6de3b27361e3f877ff1e1c796a1c3369407f7"
+  ],
+  "blockedFingerprintSource": "Ripple c4a4cf3 desktop/src-tauri/update-public.key.pub; public identity only",
+  "absentProductionIdentity": "pending_external_identity",
+  "productionOwner": "Leaf release custodian",
+  "officialVerifierCrosscheck": "Plan 17-03 must validate each fresh fixture with the locked official Tauri/minisign verifier before native consumption",
+  "references": [
+    "https://jedisct1.github.io/minisign/#signature-format",
+    "https://github.com/tauri-apps/plugins-workspace/blob/v2/plugins/updater/src/updater.rs"
+  ]
+}

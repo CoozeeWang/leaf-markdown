@@ -15,12 +15,13 @@ export async function nativePage(browser,os='macos',startupError=null) {
     window.aiMock = {diagnostics,connectionErrors:startupError?{chatgpt:startupError}:{},enabled:false, clients, runtime, calls:[], fail:null, hold:false, pending:[], keySeen:false};
     if(startupError)aiMock.enabled=true;
     const copy = value => JSON.parse(JSON.stringify(value));
-    window.emitNative = (event,payload) => handlers[event]?.({event,payload});
+    window.emitNative = (event,payload) => handlers[event]?.({event,payload:event==='leaf-mcp-editor'?{window_label:'document-test',...payload}:payload});
     window.aiEditorReady = () => !!handlers['leaf-mcp-editor'];
     window.__TAURI_INTERNALS__ = {
       metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},
       transformCallback:fn=>{callbacks[++id]=fn; return id;},
       invoke:async(command,args={}) => {
+        if(command==='update_participant_status')return {window_nonce:1,prepare_id:null,phase:null,identity:null,frozen:false,manual_driver:false};
         if (command === 'language_get') return language;
         if (command === 'language_set') return language = {preference:args.preference,language:args.preference,revision:language.revision+1};
         if (command === 'plugin:event|listen') {handlers[args.event]=callbacks[args.handler]; return ++id;}

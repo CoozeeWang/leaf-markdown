@@ -1,7 +1,8 @@
 import { initializeLanguage, t } from './i18n.js';
 async function start() {
   await initializeLanguage();
-  if (new URLSearchParams(location.search).has('export')) await import('./pdf-export.js');
+  if (new URLSearchParams(location.search).has('updateWindow')) await import('./update-window.js');
+  else if (new URLSearchParams(location.search).has('export')) await import('./pdf-export.js');
   else await import('./main.js');
 }
 void start().catch(error => {
