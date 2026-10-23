@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createDocumentSession } from '../src/document-session.js';
 
 test('native registration preserves active session and close retires it', () => {
-  const cargo=join(process.env.CARGO_HOME||join(homedir(),'.cargo'),'bin',process.platform==='win32'?'cargo.exe':'cargo');
+  const name=process.platform==='win32'?'cargo.exe':'cargo';
+  const local=join(process.env.CARGO_HOME||join(homedir(),'.cargo'),'bin',name);
+  const cargo=existsSync(local)?local:name;
   const run=spawnSync(cargo,['test','--locked','--bin','leaf','repeated_registration_preserves_live_session_and_task'],{cwd:new URL('../src-tauri/',import.meta.url),encoding:'utf8',maxBuffer:8*1024*1024});
   assert.equal(run.status,0,`native registration test failed: ${run.error?.message??run.signal??'exit '+run.status}\n${run.stdout??''}${run.stderr??''}`);
 });
