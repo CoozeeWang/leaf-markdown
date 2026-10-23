@@ -33,7 +33,7 @@ Async browser and native regressions wait for actual font, layout, editability a
 
 macOS 原生格式检查使用开发服务器，在 `src-tauri` 运行 `cargo run --locked --example native-table-keys -- ../tests/native-inline-format.html http://127.0.0.1:41732/tests/native-inline-format.html`。夹具检查实际 WKWebView 中的共享格式入口、字形、CRLF、脚注、行内代码和撤销；不代替安装版操作、原生快捷键或 Windows 实测。
 
-选区合成回归同时运行 Chromium 与 WebKit；两者都需要安装。它覆盖重复色块、编辑器原生选区透明范围和结构化输入框的选区，不代替 macOS WKWebView 真机验收。
+选区合成回归同时运行 Chromium 与 WebKit；两者都需要安装。它覆盖重复色块、编辑器原生选区透明范围和结构化输入框的选区。`quote-selection-browser.mjs` 另检查引用内部的实际像素、底色与边线、中英文鼠标／键盘正反向选择、换行及跨块边界、滚动和 75%、100%、150%、200% 正文缩放，以及复制／剪切／替换范围。这些浏览器检查不代替 macOS WKWebView 真机验收。
 
 Rust 测试在 `src-tauri` 中运行：
 
