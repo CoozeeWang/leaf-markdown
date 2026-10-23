@@ -724,4 +724,29 @@ mod tests {
         assert!(pax(b"14 size=123456\n",&mut path,&mut link).is_err());
         assert!(pax(b"999 path=Leaf.app/file\n",&mut path,&mut link).is_err());
     }
+
+    #[test]
+    #[ignore = "release custodian supplies a signed production artifact for explicit verification"]
+    fn custodian_production_artifact_verifies() {
+        let path=PathBuf::from(std::env::var("LEAF_RELEASE_VERIFY_PACKAGE").expect("production artifact required"));
+        let signature=fs::read_to_string(std::env::var("LEAF_RELEASE_VERIFY_SIGNATURE").expect("signature required")).unwrap();
+        let platform=std::env::var("LEAF_RELEASE_VERIFY_PLATFORM").expect("platform required");
+        let arch=platform.rsplit_once('-').unwrap().1.to_owned();
+        let config:tauri::utils::config::Config=serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let trust=Trust::from_config(config.plugins.0.get("leafUpdater").unwrap().clone()).unwrap();
+        assert!(matches!(trust,Trust::Production{..}));
+        let version=env!("CARGO_PKG_VERSION").to_owned();
+        let name=path.file_name().unwrap().to_str().unwrap().to_owned();
+        let candidate=CandidateIdentity{release_id:1,tag:format!("v{version}"),version:version.clone(),platform,arch,
+            manifest_asset_id:1,asset_id:2,asset_name:name.clone(),
+            url:format!("https://github.com/CoozeeWang/leaf-markdown/releases/download/v{version}/{name}"),signature};
+        let hash=authenticate_file(&path,&candidate,&trust,&||true).unwrap();
+        let root=tempfile::tempdir().unwrap();let stage=root.path().join("stage");fs::create_dir(&stage).unwrap();
+        let metadata=extract(&path,&stage,&candidate,&hash,&||true).unwrap();
+        validate_staged(&stage,&metadata,&candidate,&||true).unwrap();
+        let mut wrong=candidate.clone();wrong.version="999.0.0".into();
+        assert!(authenticate_file(&path,&wrong,&trust,&||true).is_err(),"signed version binding");
+        let corrupt=root.path().join("corrupt.tar.gz");let mut bytes=fs::read(&path).unwrap();bytes[0]^=1;fs::write(&corrupt,bytes).unwrap();
+        assert!(authenticate_file(&corrupt,&candidate,&trust,&||true).is_err(),"tampered payload");
+    }
 }
