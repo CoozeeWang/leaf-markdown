@@ -89,7 +89,8 @@ export function fixtureInit(options) {
   writeOnce(privateKeyFile, pair.privateKey.export({format: 'pem', type: 'pkcs8'}), 0o600);
   // Compare payload time with a file created in this run on the same
   // filesystem. Date.now() can be slightly ahead of a just-written file.
-  const manifest = {schema: 1, mode: MODE, runId: randomUUID(), fingerprint, createdMs: ownerPrivate(privateKeyFile).birthtimeMs, ...id};
+  // The native verifier reads this signed field as an integer millisecond.
+  const manifest = {schema: 1, mode: MODE, runId: randomUUID(), fingerprint, createdMs: Math.floor(ownerPrivate(privateKeyFile).birthtimeMs), ...id};
   const publicText = `untrusted comment: ${MODE} Leaf updater fixture\n${Buffer.concat([Buffer.from('EdTESTONLY'), raw]).toString('base64')}\n`;
   writeOnce(join(root, 'signer-public.key'), Buffer.from(publicText).toString('base64'));
   writeOnce(join(root, 'run-manifest.json'), JSON.stringify(manifest));

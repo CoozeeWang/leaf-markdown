@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { createDocumentSession } from '../src/document-session.js';
 
 test('native registration preserves active session and close retires it', () => {
-  const run=spawnSync(join(homedir(),'.cargo/bin/cargo'),['test','--locked','--bin','leaf','repeated_registration_preserves_live_session_and_task'],{cwd:new URL('../src-tauri/',import.meta.url),encoding:'utf8'});
-  assert.equal(run.status,0,run.stdout + run.stderr);
+  const run=spawnSync(join(homedir(),'.cargo/bin/cargo'),['test','--locked','--bin','leaf','repeated_registration_preserves_live_session_and_task'],{cwd:new URL('../src-tauri/',import.meta.url),encoding:'utf8',maxBuffer:8*1024*1024});
+  assert.equal(run.status,0,`native registration test failed: ${run.error?.message??run.signal??'exit '+run.status}\n${run.stdout??''}${run.stderr??''}`);
 });
 
 test('AI save distinguishes applied buffer pending disk and recoverable failure', async () => {

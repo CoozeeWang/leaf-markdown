@@ -46,7 +46,7 @@ test('fresh fixture creation remains ordered on the CI filesystem', async (t) =>
   for (let i = 0; i < 100; i++) {
     const f = await fixture(t);
     const createdMs = JSON.parse(readFileSync(join(f.root, 'run-manifest.json'))).createdMs;
-    assert.equal(createdMs, statSync(join(f.root, 'signer-private.pem')).birthtimeMs);
+    assert.equal(createdMs, Math.floor(statSync(join(f.root, 'signer-private.pem')).birthtimeMs));
     const payload = statSync(f.payloadFile);
     minimumBirthDelta = Math.min(minimumBirthDelta, payload.birthtimeMs - createdMs);
     minimumModificationDelta = Math.min(minimumModificationDelta, payload.mtimeMs - createdMs);

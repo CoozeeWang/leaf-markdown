@@ -57,7 +57,10 @@ try{
   assert.equal(new Set(typography.headings.map(h=>h.color)).size,6);assert.equal(typography.callout,true);
   await page.evaluate(()=>{readerCurrent=readerValue(4);});await panel.locator('#stop').click();await panel.locator('#stop:disabled').waitFor();
   assert.ok(await page.evaluate(()=>readerCalls.some(c=>c.name==='stop_edit'&&c.args.task_id==='synthetic-task')));
-  await page.evaluate(()=>{readerDenied=true;});await panel.locator('#refresh').click();await panel.locator('#refresh:disabled').waitFor();
+  await page.evaluate(()=>{readerDenied=true;});
+  // The automatic refresh can observe revocation before this explicit click.
+  await panel.locator('#refresh').evaluate(button=>button.click());
+  await panel.locator('#refresh:disabled').waitFor({timeout:5000});
   assert.equal(await panel.locator('#reader').innerText(),'');assert.equal(await panel.locator('#source').innerText(),'');assert.equal(await panel.locator('.comment-card').count(),0);
   await page.evaluate(()=>{readerDenied=false;readerHost.sendToolResult({content:[],structuredContent:readerValue(2)});});
   await page.waitForTimeout(30);assert.equal(await panel.locator('#reader').innerText(),'');
