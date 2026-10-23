@@ -1679,10 +1679,13 @@ export function createLeafEditor(options) {
     // Drives the toolbar buttons' disabled state.
     historyDepth: () => ({ undo: undoDepth(view.state), redo: redoDepth(view.state) }),
     headingLevel: () => selectionHeadingLevel(view.state),
-    goToLine(number) {
+    goToLine(number, { headingContent = false } = {}) {
       const line = view.state.doc.line(Math.max(1, Math.min(number, view.state.doc.lines)));
+      // Outline navigation enters the heading's content. Other line-based
+      // navigation retains its exact source-line start.
+      const prefix = headingContent ? line.text.match(/^#{1,6}[ \t]+/)?.[0].length || 0 : 0;
       view.dispatch({
-        selection: EditorSelection.cursor(line.from),
+        selection: EditorSelection.cursor(line.from + prefix),
         effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
       });
       view.focus();

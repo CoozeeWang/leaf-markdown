@@ -646,7 +646,7 @@ function renderOutline(markdown = state.content) {
     setAttr(button, 'title', () => t("main.click_to_jump_double_click_to_rename_ui0152"));
     button.addEventListener('click', () => {
       if(state.reading) reader.querySelector(`[data-source-line="${item.line}"]`)?.scrollIntoView({block:'start'});
-      else editor.goToLine(item.line);
+      else editor.goToLine(item.line, { headingContent: true });
     });
     button.addEventListener('dblclick', () => {
       if(state.reading||!editor.mutationAllowed())return;
