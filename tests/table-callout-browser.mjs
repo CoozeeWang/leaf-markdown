@@ -26,7 +26,7 @@ try {
   assert.equal(await page.locator('.leaf-callout[data-type="warning"]').count(),1);
   assert.equal(await page.locator('.leaf-callout[data-type="warning"] li').count(),2);
   assert.equal(await page.locator('details.leaf-callout').getAttribute('open'),null);
-  await page.locator('summary').click();
+  await page.locator('details.leaf-callout > summary').first().click();
   assert.notEqual(await page.locator('details.leaf-callout').getAttribute('open'),null);
   assert.equal(await page.locator('.leaf-callout[data-type="info"]').count(),1);
   const before=await page.evaluate(()=>fixture.getValue());

@@ -57,7 +57,9 @@ for (const engine of (process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGI
           await page.setViewportSize({ width, height: width === 900 ? 480 : 800 });
           await page.waitForTimeout(100);
           // Resizing intentionally dismisses popovers; reopen the settings for measurement.
-          if (await page.locator('#appearancePopover').isHidden()) await page.click('#appearanceButton');
+          await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+          if (await page.locator('#appearancePopover').isVisible()) await page.click('#appearanceButton');
+          await page.click('#appearanceButton');
           await page.click('#settingsTab-recovery');
           await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
           const geometry = await page.locator('#settingsRecovery').evaluate(el => {

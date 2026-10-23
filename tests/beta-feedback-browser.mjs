@@ -30,6 +30,7 @@ try {
  await page.getByRole('button',{name:'添加文档属性',exact:true}).click();
  assert.ok(await page.evaluate(()=>{const form=document.querySelector('.leaf-property-add'),button=document.querySelector('.leaf-property-add-button');return form.getBoundingClientRect().bottom<=button.getBoundingClientRect().top;}));
  await page.getByLabel('新属性名',{exact:true}).fill('author');await page.getByLabel('新属性值',{exact:true}).fill('Leaf');await page.getByLabel('新属性名',{exact:true}).press('Enter');
+ await page.click('#readingToggle');await page.locator('[data-mode="source"]').click();
  await page.evaluate(async()=>{
   const {frontmatter}=await import('/src/markdown-model.js');const yaml=frontmatter(v.state.doc.toString());
   v.dispatch({selection:{anchor:0,head:yaml.to}});v.focus();
@@ -37,6 +38,7 @@ try {
  await page.keyboard.press('Backspace');
  assert.equal(await page.evaluate(()=>v.state.doc.toString()),'正文','whole property deletion removes separator blanks');
  await page.keyboard.press('Meta+z');assert.match(await page.evaluate(()=>v.state.doc.toString()),/^---\n/);
+ await page.click('#readingToggle');await page.locator('[data-mode="edit"]').click();
  await page.evaluate(()=>v.dispatch({selection:{anchor:v.state.doc.length}}));
  await page.getByRole('button',{name:'编辑此块 Markdown 源码',exact:true}).click();
  await page.getByLabel('文档属性源码',{exact:true}).fill('');

@@ -19,8 +19,8 @@ try {
  await add('主题','list');await page.getByRole('textbox',{name:'主题',exact:true}).fill('设计');await page.getByRole('textbox',{name:'主题',exact:true}).press('Enter');
  assert.ok((await source()).includes('["设计"]'));
  await page.getByRole('textbox',{name:'主题',exact:true}).fill('开发');await page.getByRole('textbox',{name:'主题',exact:true}).press('Enter');
- await page.getByRole('button',{name:'删除 设计',exact:true}).click();assert.ok((await source()).includes('["开发"]'));
- await add('状态','enum','草稿');await page.getByRole('button',{name:'设置枚举选项',exact:true}).click();
+ await page.getByRole('button',{name:'移除 设计',exact:true}).click();assert.ok((await source()).includes('["开发"]'));
+ await add('状态','enum','草稿');await page.getByRole('button',{name:'设置可选项',exact:true}).click();
  await page.getByLabel('状态 候选项',{exact:true}).fill('草稿；审阅；完成');await page.getByRole('button',{name:'保存选项',exact:true}).click();
  await page.getByLabel('状态',{exact:true}).selectOption('审阅');assert.ok((await source()).includes('"状态": "审阅"'));
  await page.getByLabel('状态 类型',{exact:true}).selectOption('number');assert.ok((await source()).includes('"状态": "审阅"'));assert.ok(await page.getByRole('status').filter({hasText:'不是数字'}).count());

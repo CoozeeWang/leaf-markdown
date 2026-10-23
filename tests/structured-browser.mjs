@@ -32,6 +32,7 @@ try {
   assert.equal(await page.locator('#editor [data-heading-number]').count(), 0);
   assert.equal(await page.locator('.leaf-default-title h1').textContent(), '验收文档');
   await page.getByRole('textbox', { name: 'version', exact: true }).fill('v0.2');
+  await page.getByRole('textbox', { name: 'version', exact: true }).press('Enter');
   assert.ok((await page.evaluate(() => testEditor.getValue())).includes('version: "v0.2" # 保留注释'));
   await page.getByRole('button', { name: '添加文档属性', exact: true }).click();
   await page.getByRole('textbox', { name: '新属性名', exact: true }).fill('status');

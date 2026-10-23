@@ -9,7 +9,7 @@ try {
     if(command==='update_participant_status')return {window_nonce:1,prepare_id:null,phase:null,identity:null,frozen:false,manual_driver:false};
       if (command === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
    nativeCalls.push({command,args});
-   if(command==='initial_path')return '/tmp/test.md';if(command==='read_document')return '# 原文\n\n正文';if(command==='recovery_list')return [];
+   if(command==='initial_path')return '/tmp/test.md';if(command==='observe_document')return {path:'/tmp/test.md',content:'# 原文\n\n正文'};if(command==='read_document')return '# 原文\n\n正文';if(command==='recovery_list'||command==='recent_list')return [];
    if(command==='plugin:event|listen')return 1;
    if(command==='recovery_retention'){if(args?.days){if(window.failSetting)throw '不能写入设置';localStorage.setItem('mock-retention',args.days);}return Number(localStorage.getItem('mock-retention')||30);}
    if(command==='recovery_expire')return 0;return null;

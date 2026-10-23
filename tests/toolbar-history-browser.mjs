@@ -28,7 +28,7 @@ try {
   // glyphs so it does not depend on the font covering ⌘.
   await page.hover('#undoButton');await page.waitForTimeout(400);
   assert.equal(await page.locator('#tooltip').isVisible(),true);
-  assert.equal(await page.locator('#tooltip').textContent(),'撤销  Z');
+  assert.equal(await page.locator('#tooltip').textContent(),'撤销  (Z)');
   assert.equal(await page.locator('#tooltip svg[data-modifier="Command"]').count(),1);
   assert.equal(await page.locator('#tooltip .shortcut-keys').getAttribute('aria-label'),'Command+Z');
   await page.locator('.format-toolbar').screenshot({path:artifactPath('leaf-toolbar-history.png')});

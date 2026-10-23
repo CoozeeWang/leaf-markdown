@@ -80,7 +80,7 @@ try {
  assert.equal(await page.evaluate(()=>document.activeElement.id),'paletteInput');
  await page.keyboard.press('Escape');
  await page.locator('.cm-content').focus();await page.keyboard.press('ControlOrMeta+f');
- assert.deepEqual(await page.locator('.leaf-search-main').evaluate(e=>[...e.children].filter(n=>n.name==='toggleReplace'||n.name==='options').map(n=>n.name)),['toggleReplace','options']);
+ assert.deepEqual(await page.locator('.leaf-search-main').evaluate(e=>[...e.querySelectorAll('button[name]')].filter(n=>n.name==='toggleReplace'||n.name==='options').map(n=>n.name)),['toggleReplace','options']);
  await page.evaluate(async()=>{
   const {setupStatusNotices}=await import('/src/status-notices.js');
   const {message}=await import('/src/i18n.js');

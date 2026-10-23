@@ -1123,6 +1123,7 @@ export function assertDocumentMutationAllowed(documentView, capability) {
 
 export function createLeafEditor(options) {
   const historyCompartment = new Compartment();
+  const sourceClass = new Compartment();
   const aiTaskAnnotation = Annotation.define();
   let aiTask = null, updateLock = null, updateFocus = null;
   const editability = new Compartment();
@@ -1276,6 +1277,7 @@ export function createLeafEditor(options) {
       editability.of([EditorState.readOnly.of(false),EditorView.contentAttributes.of({'aria-readonly':'false'})]),
       lineNumberCompartment.of(options.showLineNumbers ? leafLineNumbers() : []),
       historyCompartment.of(history({joinToEvent:(tr,adjacent)=>tr.annotation(aiTaskAnnotation)!==undefined || adjacent})),
+      sourceClass.of([]),
       EditorState.transactionExtender.of(tr=>aiTask && !tr.docChanged ? {annotations:Transaction.addToHistory.of(false)} : null),
       lineEnding,
       invertedEffects.of(tr => tr.effects.some(effect => effect.is(setLineEnding)) ? [setLineEnding.of(tr.startState.field(lineEnding))] : []),
@@ -1592,8 +1594,8 @@ export function createLeafEditor(options) {
     },
     setSource(value) {
       closeFootnotePopup(); unfoldAll(view);
-      view.dispatch({ effects: setSourceMode.of(value) });
-      view.dom.classList.toggle('cm-source-mode', value); view.focus();
+      view.dispatch({ effects: [setSourceMode.of(value), sourceClass.reconfigure(value ? EditorView.editorAttributes.of({class:'cm-source-mode'}) : [])] });
+      view.focus();
     },
     getValue: () => sourceOf(view.state),
     mutationDocumentGeneration: () => mutationDocumentGeneration,

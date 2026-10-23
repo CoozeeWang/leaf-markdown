@@ -9,7 +9,7 @@ try {
  await page.evaluate(async source=>{const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');window.v=EditorView.findFromDOM(document.querySelector('.cm-content'));v.dispatch({changes:{from:0,to:v.state.doc.length,insert:source},selection:{anchor:0}});},source);
  await page.click('#outlineButton');
  const names=()=>page.locator('.outline-item:visible').allTextContents();
- const toggle=(name,expanded)=>page.getByRole('button',{name:`${expanded?'收起':'展开'}大纲子项：${name}`,exact:true}).first();
+ const toggle=(name,expanded)=>page.getByRole('button',{name:expanded?`收起 ${name} 下的子标题`:`展开大纲子项：${name}`,exact:true}).first();
  assert.equal((await names()).length,7);
  assert.equal(await page.locator('.outline-disclosure').count(),4);
  assert.equal(await page.locator('.outline-children').first().evaluate(e=>getComputedStyle(e).borderLeftWidth),'1px');

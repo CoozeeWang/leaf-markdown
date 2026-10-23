@@ -20,9 +20,11 @@ async function documentPage(path) {
       if (command === 'language_get') return {preference:'system',language:'zh-Hans',revision:0};
         calls.push({ command, args });
         if (command === 'initial_path') return initialPath;
+        if (command === 'observe_document') return { path: initialPath, content: '# 原文\n\n测试正文' };
         if (command === 'read_document') return '# 原文\n\n测试正文';
         if (command === 'recovery_initial') return null;
         if (command === 'recovery_list') return [];
+        if (command === 'recent_list') return [];
         if (command === 'recovery_retention') return 30;
         if (command === 'reveal_document' && revealError) throw '文档已不在原位置';
         if (command === 'rename_document') return initialPath.replace(/[^/]+$/, args.name);
