@@ -40,6 +40,7 @@
   --quote-bg: #f1f3ed;
   --muted: #697164;
   --faint: #a8ada4;
+  --footnote-hint: #858980;
   --line: #dedfd7;
   --accent: #607b68;
   --accent-strong: #405a49;
@@ -72,6 +73,7 @@
   --quote-bg: #282f29;
   --muted: #b1b8ad;
   --faint: #747b72;
+  --footnote-hint: #969b94;
   --line: #485048;
   --accent: #9bbca0;
   --accent-strong: #b3d0b7;
@@ -381,7 +383,9 @@ button.leaf-list-marker { cursor:pointer; }
 .leaf-property-body { padding: 0 16px 12px; }
 .leaf-yaml { background: color-mix(in srgb, var(--accent-soft) 35%, var(--canvas)); border: 0; border-radius: 8px; font-size: 13px; }
 .leaf-yaml .leaf-block-top { border: 0; padding: 8px 16px; }
-.leaf-yaml .leaf-block-top > button:first-child { flex: 0 0 28px; width: 28px; padding: 4px 0; }
+.leaf-yaml .leaf-property-fold { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 28px; width: 28px; height: 26px; padding: 0; }
+.leaf-property-fold svg { display: block; flex: none; width: 12px; height: 12px; }
+.leaf-property-fold[aria-expanded="false"] svg { transform: rotate(-90deg); }
 .leaf-property-row .leaf-property-name-control { border: 0; }
 .leaf-property-add-button { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .leaf-property-add-glyph { flex: 0 0 28px; width: 28px; text-align: center; }
@@ -1278,14 +1282,14 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .cm-editor .leaf-footnote-region { border-top:1px solid var(--line); margin:24px var(--leaf-selection-inset) 0; padding-top:12px; font-size:calc(var(--editor-font-size) * .85); line-height:1.7; }
 .leaf-footnote-region-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; color:var(--muted); font-family:var(--ui-font); }
 .leaf-endnote { display:grid; grid-template-columns:minmax(3ch,max-content) minmax(0,1fr); gap:.5em; margin:0 0 12px; }
-.leaf-endnote-number { align-self:start; font-size:inherit; }
+.leaf-endnote-number { align-self:start; justify-self:start; box-sizing:border-box; min-width:1.7em; height:1.7em; padding:0 .2em; font-size:.75em; }
 .cm-editor .leaf-footnote-region .cm-editor { font-size:inherit; height:auto; }
 .cm-editor .leaf-footnote-region .cm-line { font-size:inherit; line-height:1.7; }
 .cm-editor .leaf-footnote-region .cm-leaf-heading { font-size:inherit; }
 .cm-editor .leaf-footnote-region .cm-content { min-height:1.7em; font-size:inherit; width:100%; padding:0 !important; margin:0 !important; }
 .cm-editor .leaf-footnote-region .cm-scroller { overflow:visible; }
 
-.leaf-footnote-region-hint { flex:1; font-size:.85em; }
+.leaf-footnote-region-hint { flex:1; font-size:.8em; color:var(--footnote-hint); }
 .leaf-endnote:not(.is-editing) .cm-cursorLayer { display:none; }
 .leaf-endnote:not(.is-editing) .cm-content { cursor:default; }
 .leaf-endnote.is-editing .leaf-footnote-body { background:color-mix(in srgb, var(--accent-soft) 65%, transparent); box-shadow:inset 0 -1px var(--accent); }

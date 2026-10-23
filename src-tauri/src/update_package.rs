@@ -705,7 +705,7 @@ mod tests {
     #[test] fn startup_configuration_deserializes_and_requires_all_trust_fields() {
         let config:tauri::utils::config::Config=serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let value=config.plugins.0.get("leafUpdater").unwrap().clone();
-        assert!(matches!(Trust::from_config(value.clone()).unwrap(),Trust::Pending));
+        assert!(matches!(Trust::from_config(value.clone()).unwrap(),Trust::Production{fingerprint,..} if fingerprint == value["provenance"]["fingerprint"].as_str().unwrap()));
         for field in ["schema","status","owner","pubkey","provenance"] {
             let mut incomplete=value.clone();incomplete.as_object_mut().unwrap().remove(field);
             assert!(Trust::from_config(incomplete).is_err(),"mandatory field {field}");
