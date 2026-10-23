@@ -20,6 +20,8 @@ try {
   },source);
   const fold=page.locator('.leaf-property-fold');
   await fold.waitFor();
+  await page.evaluate(async()=>{const {refreshTranslations}=await import('/src/i18n.js');refreshTranslations();refreshTranslations();});
+  assert.equal(await fold.locator('svg').count(),1,'language refresh retains the icon');
   for (const theme of ['light','dark']) for (const font of [17,20,28]) for (const zoom of [50,100,200]) {
    await page.evaluate(({theme,font,zoom})=>{
     document.documentElement.dataset.theme=theme;

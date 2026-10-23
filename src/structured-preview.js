@@ -36,7 +36,8 @@ const el = (tag, className, text) => {
   return node;
 };
 function button(label, text, action) {
-  const b = el('button', 'leaf-block-button');setText(b,()=>resolveMessage(text));
+  const b = el('button', 'leaf-block-button');
+  if (text !== null) setText(b,()=>resolveMessage(text));
   b.type = 'button';setAttr(b,'title',()=>shortcutText(resolveMessage(label)));setAttr(b,'aria-label',()=>shortcutText(resolveMessage(label)));
   b.addEventListener('click', action);
   return b;
@@ -314,7 +315,7 @@ class StructuredBlock extends WidgetType {
     // A freshly built widget takes the fold from state, so a region folded
     // before it scrolled away comes back folded.
     body.hidden = view.state.field(propertiesFolded);
-    const fold = button(translatedMessage("structured_preview.collapse_or_expand_document_properties"), '', () => {
+    const fold = button(translatedMessage("structured_preview.collapse_or_expand_document_properties"), null, () => {
       const restoreFocus = document.activeElement === fold;
       const folded = !view.state.field(propertiesFolded);
       // The fold lives in state so it outlives this widget. Rebuilding the
