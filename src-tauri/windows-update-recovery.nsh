@@ -47,6 +47,9 @@ Var LeafInstallTransaction
     ${If} $LeafInstallTransaction != ""
       ReadEnvStr $R9 "LEAF_UPDATE_FIXTURE_FAULT"
       ${If} $R9 == "${POINT}"
+        FileOpen $R0 "$LeafInstallTransaction\fault-hit" w
+        FileWrite $R0 "${POINT}"
+        FileClose $R0
         SetErrorLevel 44
         Quit
       ${EndIf}

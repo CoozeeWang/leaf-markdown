@@ -41,6 +41,9 @@ $settingsHash = (Get-FileHash $settings).Hash
 $target = Join-Path $root 'installed'
 $payload = Join-Path $root 'payload'
 $preparedInstall = Join-Path $root 'package capture'
+$fixtureBuild = Join-Path $env:RUNNER_TEMP 'leaf-update-nsis-build'
+if (Test-Path $fixtureBuild) { throw 'NSIS fixture build root already exists' }
+New-Item $fixtureBuild -ItemType Directory | Out-Null
 $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
 $driver = (Resolve-Path src-tauri/target/debug/leaf-update-helper.exe).Path
 $processes = @()
@@ -60,13 +63,16 @@ function Invoke-Fixture([string]$Scenario) {
   if ($p.ExitCode) { throw "Supervisor failed: $errorText" }
   $result = $output | ConvertFrom-Json
   if ((Get-FileHash $settings).Hash -ne $settingsHash) { throw 'Updater changed user settings' }
+  if (!$result.shared_values_preserved) { throw 'Updater changed the previous/default editor association' }
   if ($Scenario -eq 'normal' -or $Scenario -eq 'exact_adapter') {
     if ($result.result.state -ne 'installed' -or !$result.new_matches -or !$result.backup_matches -or $result.result.restart_count -ne 1) { throw "Incomplete successful installation: $output" }
   } elseif ($Scenario -eq 'restore_failure') {
+    if ($result.fault_hit -ne 'registry_write') { throw 'The restoration-failure fixture did not reach its mutation point' }
     if ($result.result.state -ne 'rollback_failed' -or !$result.backup_matches -or $result.result.restart_count -ne 0) { throw "False recovery claim: $output" }
   } elseif ($Scenario.StartsWith('lock_')) {
     if ($result.result.state -ne 'install_failed' -or !$result.old_matches -or !$result.registry_restored -or $result.backup_matches -or $result.result.restart_count -ne 0) { throw "File occupancy mutated installation: $output" }
   } else {
+    if ($result.fault_hit -ne $Scenario) { throw "Fault fixture did not reach $Scenario" }
     if ($result.result.state -ne 'rolled_back' -or !$result.old_matches -or !$result.registry_restored -or !$result.backup_matches -or $result.result.restart_count -ne 1) { throw "Incomplete recovery: $output" }
   }
   $script:results += @{ scenario=$Scenario; evidence=$result }
@@ -75,12 +81,18 @@ function Invoke-Fixture([string]$Scenario) {
 try {
   Install-To $Installer $preparedInstall
   Copy-Item $preparedInstall $payload -Recurse
+  foreach ($name in @('leaf.exe','leaf-update-helper.exe','leaf-mcp-adapter.exe','uninstall.exe','document-icon.ico')) {
+    if (!(Test-Path (Join-Path $payload $name))) { throw "Installed payload capture is missing $name" }
+  }
   Copy-Item $Installer (Join-Path $payload '.leaf-update-installer.exe')
   # A tiny NSIS fault fixture uses the production transaction hooks and real
   # signed-package payload bytes. Fault selection cannot enter release builds.
   $nsis = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'tauri') -Filter makensis.exe -Recurse | Select-Object -First 1
   if (!$nsis) { throw 'Trusted Tauri NSIS compiler not found' }
-  $faultExe = Join-Path $root 'fault-installer.exe'
+  # makensis itself uses an ANSI command-line entry point. Compile from an
+  # ASCII path, while the installed target and supervisor keep Unicode paths.
+  $faultExe = Join-Path $fixtureBuild 'fault-installer.exe'
+  Copy-Item (Join-Path $payload 'leaf.exe'),(Join-Path $payload 'leaf-update-helper.exe') $fixtureBuild
   $hook = (Resolve-Path src-tauri/windows-update-recovery.nsh).Path
   $script = @"
 Unicode true
@@ -98,9 +110,9 @@ Section
   SetOutPath `$INSTDIR
   Delete "`$INSTDIR\leaf.exe"
   !insertmacro LeafUpdateFault "after_delete"
-  File /oname=leaf.exe "$payload\leaf.exe"
+  File /oname=leaf.exe "$fixtureBuild\leaf.exe"
   !insertmacro LeafUpdateFault "first_replace"
-  File /oname=leaf-update-helper.exe "$payload\leaf-update-helper.exe"
+  File /oname=leaf-update-helper.exe "$fixtureBuild\leaf-update-helper.exe"
   !insertmacro LeafUpdateFault "helper_replace"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Leaf"
   !insertmacro LeafUpdateFault "registry_delete"
@@ -110,11 +122,16 @@ Section
   !insertmacro LeafUpdateComplete
 SectionEnd
 "@
-  $nsi = Join-Path $root 'fault.nsi'; [IO.File]::WriteAllText($nsi,$script)
+  $nsi = Join-Path $fixtureBuild 'fault.nsi'; [IO.File]::WriteAllText($nsi,$script,[Text.UTF8Encoding]::new($true))
   & $nsis.FullName /V2 $nsi
   if ($LASTEXITCODE) { throw 'NSIS recovery fixture did not compile' }
   Install-To $OldInstaller $target
+  # The updater must preserve another editor's chosen default and arbitrary
+  # unrelated values in the shared extension key, even when NSIS re-registers.
+  New-ItemProperty 'HKCU:\Software\Classes\.md' -Name '(default)' -Value 'Synthetic.OtherEditor' -Force | Out-Null
+  New-ItemProperty 'HKCU:\Software\Classes\.md' -Name 'SyntheticUnrelatedValue' -Value 'preserve me' -Force | Out-Null
   Invoke-Fixture 'normal'
+  if ((Get-ItemPropertyValue 'HKCU:\Software\Classes\.md' -Name 'SyntheticUnrelatedValue') -ne 'preserve me') { throw 'Updater changed unrelated registration' }
   foreach ($fault in @('after_delete','first_replace','helper_replace','registry_delete','registry_write','before_completion','restore_failure')) {
     Install-To $OldInstaller $target
     Copy-Item $faultExe (Join-Path $payload '.leaf-update-installer.exe') -Force
@@ -158,5 +175,6 @@ SectionEnd
   # This directory and synthetic profile were created here after refusing any
   # existing profile. Keep audit JSON; delete only these disposable fixtures.
   Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item $fixtureBuild -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item $data -Recurse -Force -ErrorAction SilentlyContinue
 }

@@ -86,6 +86,16 @@ pub fn registry()->Result<Registry,String>{
     Ok(result)
 }
 fn create(path:&str)->Result<Key,String>{let mut key=std::ptr::null_mut();if unsafe{RegCreateKeyExW(HKEY_CURRENT_USER,wide(path).as_ptr(),0,std::ptr::null(),0,KEY_WRITE|KEY_WOW64_64KEY,std::ptr::null(),&mut key,std::ptr::null_mut())}!=ERROR_SUCCESS{return Err("update_install_registry_restore".into());}Ok(Key(key))}
+fn restore_extensions(snapshot:&Registry)->Result<(),String>{
+    // Updating Leaf must not make it the user's default editor or overwrite
+    // NSIS's saved previous association. Only these exact two values are ours.
+    for path in EXTENSIONS{let entries=snapshot.get(*path).and_then(Option::as_ref).ok_or("update_install_registry_scope")?;let key=create(path)?;
+        for name in ["","Markdown document_backup"]{let code=unsafe{RegDeleteValueW(key.0,wide(name).as_ptr())};if code!=ERROR_SUCCESS&&code!=ERROR_FILE_NOT_FOUND{return Err("update_install_registry_restore".into());}}
+        for(name,value)in entries{if !name.is_empty()&&name!="Markdown document_backup"{return Err("update_install_registry_scope".into());}
+            if unsafe{RegSetValueExW(key.0,wide(name).as_ptr(),0,value.kind,value.data.as_ptr(),value.data.len() as u32)}!=ERROR_SUCCESS{return Err("update_install_registry_restore".into());}}
+        if unsafe{RegFlushKey(key.0)}!=ERROR_SUCCESS{return Err("update_install_registry_restore".into());}
+    }Ok(())
+}
 fn restore(registry:&Registry)->Result<(),String>{
     // Scope is fixed by code, never accepted from the persisted plan.
     for path in TREES{let code=unsafe{RegDeleteTreeW(HKEY_CURRENT_USER,wide(path).as_ptr())};if code!=ERROR_SUCCESS&&code!=ERROR_FILE_NOT_FOUND{return Err("update_install_registry_restore".into());}}
@@ -170,9 +180,10 @@ impl Platform for NativePlatform{
             std::thread::sleep(Duration::from_millis(25));
         };
         if !status.success(){return Err("update_install_process_failed".into());}
-        if fs::read(plan.journal.with_file_name("installer-complete")).map_err(|_|"update_install_incomplete")?!=plan.transaction.as_bytes(){return Err("update_install_incomplete".into());}Ok(())
+        if fs::read(plan.journal.with_file_name("installer-complete")).map_err(|_|"update_install_incomplete")?!=plan.transaction.as_bytes(){return Err("update_install_incomplete".into());}
+        restore_extensions(&plan.registry)
     }
-    fn verify_installed(&self,plan:&WindowsInstallPlan)->Result<(),String>{if installed_version(&plan.target,&registry()?)?!=plan.new_version{return Err("update_install_version".into());}for role in ["leaf","leaf-mcp-adapter","leaf-update-helper"]{verify_binary(&plan.target.join(format!("{role}.exe")),&plan.new_version,role)?;}Ok(())}
+    fn verify_installed(&self,plan:&WindowsInstallPlan)->Result<(),String>{let current=registry()?;if installed_version(&plan.target,&current)?!=plan.new_version{return Err("update_install_version".into());}if EXTENSIONS.iter().any(|path|current.get(*path)!=plan.registry.get(*path)){return Err("update_install_association_changed".into());}for role in ["leaf","leaf-mcp-adapter","leaf-update-helper"]{verify_binary(&plan.target.join(format!("{role}.exe")),&plan.new_version,role)?;}Ok(())}
     fn restart(&mut self,plan:&WindowsInstallPlan)->Result<(),String>{Command::new(plan.target.join("leaf.exe")).arg("--leaf-update-reconcile").arg(&self.plan_path).arg(&self.digest).arg(&plan.transaction).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|_|"update_restart_failed")?;Ok(())}
 }
 #[derive(Serialize,Deserialize)]#[serde(deny_unknown_fields)]
@@ -235,7 +246,8 @@ pub fn fixture_main()->Result<(),String>{
     let mut platform=Fixture{native:NativePlatform{plan_path:path,digest},scenario:args[3].clone(),restarts:0};
     let output=install(&plan,&mut platform);
     if output.restart_count!=platform.restarts{return Err("fixture_restart_count".into());}
-    let evidence=serde_json::json!({"result":output,"old_matches":inventory(&plan.target).ok().as_ref()==Some(&plan.old),"new_matches":inventory(&plan.target).ok().as_ref()==Some(&plan.new),"registry_restored":self::registry().ok().as_ref()==Some(&plan.registry),"backup_matches":inventory(&plan.backup).ok().as_ref()==Some(&plan.old),"root":root_path});
+    let current=self::registry()?;
+    let evidence=serde_json::json!({"result":output,"fault_hit":fs::read_to_string(root_path.join("fault-hit")).ok(),"old_matches":inventory(&plan.target).ok().as_ref()==Some(&plan.old),"new_matches":inventory(&plan.target).ok().as_ref()==Some(&plan.new),"registry_restored":current==plan.registry,"shared_values_preserved":EXTENSIONS.iter().all(|path|current.get(*path)==plan.registry.get(*path)),"backup_matches":inventory(&plan.backup).ok().as_ref()==Some(&plan.old),"root":root_path});
     // Keep only on fixture failure/recovery failure; PowerShell owns this entire
     // disposable parent and removes it after checking retained recovery hashes.
     let _=root.keep();println!("{}",evidence);Ok(())
