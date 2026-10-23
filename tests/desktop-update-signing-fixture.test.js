@@ -40,6 +40,19 @@ test('version metadata is authenticated with exact signed bytes', async (t) => {
   f.api.signFixture(f.options);
   assert.throws(() => f.api.verifyFixture({...f.options, version: '9.8.8'}));
 });
+test('fresh fixture creation remains ordered on the CI filesystem', async (t) => {
+  let minimumBirthDelta = Infinity;
+  let minimumModificationDelta = Infinity;
+  for (let i = 0; i < 100; i++) {
+    const f = await fixture(t);
+    const createdMs = JSON.parse(readFileSync(join(f.root, 'run-manifest.json'))).createdMs;
+    const payload = statSync(f.payloadFile);
+    minimumBirthDelta = Math.min(minimumBirthDelta, payload.birthtimeMs - createdMs);
+    minimumModificationDelta = Math.min(minimumModificationDelta, payload.mtimeMs - createdMs);
+    f.api.signFixture(f.options);
+  }
+  t.diagnostic(`minimum fresh payload deltas: birth ${minimumBirthDelta.toFixed(3)} ms, modification ${minimumModificationDelta.toFixed(3)} ms`);
+});
 test('fresh TEST-ONLY signer signs once and authenticates bytes, platform, arch and run', async (t) => {
   const f = await fixture(t);
   assert.equal(f.init.mode, 'TEST-ONLY-THROWAWAY');
