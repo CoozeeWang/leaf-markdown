@@ -131,8 +131,15 @@ fn command_executable(command:&str)->Result<PathBuf,String>{
 pub fn installed_version(target:&Path,snapshot:&Registry)->Result<String,String>{
     let registered=string_value(snapshot,TREES[0],"").ok_or("update_install_scope")?;
     if fs::canonicalize(registered).ok().as_deref()!=Some(target){return Err("update_install_scope".into());}
-    let command=string_value(snapshot,"Software\\Classes\\Markdown document\\shell\\open\\command","").ok_or("update_install_registry_owner")?;
-    if command_executable(&command).ok().as_deref()!=Some(&target.join("leaf.exe")){return Err("update_install_registry_owner".into());}
+    let command=string_value(snapshot,"Software\\Classes\\Markdown document\\shell\\open\\command","").ok_or_else(||{
+        #[cfg(feature="native-smoke")] eprintln!("windows_update_registry_owner_stage=missing_command");
+        "update_install_registry_owner".to_owned()
+    })?;
+    let expected=fs::canonicalize(target.join("leaf.exe")).map_err(|_|"update_install_registry_owner")?;
+    if command_executable(&command).ok().as_ref()!=Some(&expected){
+        #[cfg(feature="native-smoke")] eprintln!("windows_update_registry_owner_stage=executable_identity");
+        return Err("update_install_registry_owner".into());
+    }
     string_value(snapshot,TREES[1],"DisplayVersion").ok_or("update_install_version".into())
 }
 pub fn verify_binary(path:&Path,version:&str,role:&str)->Result<(),String>{
