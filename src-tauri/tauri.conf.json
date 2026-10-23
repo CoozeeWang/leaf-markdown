@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Leaf",
-  "version": "0.4.0-beta.4",
+  "version": "1.0.0",
   "identifier": "studio.leaf.editor",
   "build": {
     "beforeDevCommand": "node scripts/build-mcp-adapter.mjs --stage-only --debug && npm run dev -- --host 127.0.0.1 --port 41731 --strictPort",
@@ -21,5 +21,5 @@
     "fileAssociations": [{ "ext": ["md", "markdown", "mdown"], "name": "Markdown document", "role": "Editor", "mimeType": "text/markdown" }],
     "macOS": { "minimumSystemVersion": "11.0", "signingIdentity": "-", "infoPlist": "Info.plist" }
   },
-  "plugins": {"leafUpdater": {"schema": 1, "status": "pending_external_identity", "owner": "Leaf release custodian", "pubkey": null, "provenance": null}}
+  "plugins": {"leafUpdater": {"schema": 1, "status": "ready", "owner": "Leaf release custodian", "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk3MkQ1Nzg5Nzc3NkIzRDYKUldUV3MzWjNpVmN0bDJVb1VLWlhpdEgyRitjbHoyZ1IzajdrenUzb1NMZkNZbnlmdnM4VGY0SGUK", "provenance": {"schema": 1, "product": "Leaf", "purpose": "updater-signing", "mode": "production", "owner": "Leaf release custodian", "source": "secure-local-custodian", "independent": true, "fingerprint": "db9172113e0cfecc16c0142f08d4f077af0ffb85ccaa5338069a7f48e2c9f911"}}}
 }

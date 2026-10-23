@@ -314,13 +314,19 @@ class StructuredBlock extends WidgetType {
     // A freshly built widget takes the fold from state, so a region folded
     // before it scrolled away comes back folded.
     body.hidden = view.state.field(propertiesFolded);
-    root.firstChild.prepend(button(translatedMessage("structured_preview.collapse_or_expand_document_properties"), '⌄', () => {
+    const fold = button(translatedMessage("structured_preview.collapse_or_expand_document_properties"), '', () => {
+      const restoreFocus = document.activeElement === fold;
       const folded = !view.state.field(propertiesFolded);
       // The fold lives in state so it outlives this widget. Rebuilding the
       // widget lets CodeMirror measure its new height and align selections.
       view.dispatch({effects: toggleProperties.of(folded)});
       view.requestMeasure();
-    }));
+      if (restoreFocus) view.dom.querySelector('.leaf-property-fold')?.focus();
+    });
+    fold.classList.add('leaf-property-fold');
+    fold.setAttribute('aria-expanded', String(!body.hidden));
+    fold.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+    root.firstChild.prepend(fold);
     root.append(body);
     renderProperties(body, () => root._widget.block, (field, insert) => {
       if (field) {
