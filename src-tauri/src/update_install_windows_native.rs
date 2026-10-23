@@ -136,7 +136,11 @@ pub fn installed_version(target:&Path,snapshot:&Registry)->Result<String,String>
         "update_install_registry_owner".to_owned()
     })?;
     let expected=fs::canonicalize(target.join("leaf.exe")).map_err(|_|"update_install_registry_owner")?;
-    if command_executable(&command).ok().as_ref()!=Some(&expected){
+    // Older Tauri NSIS packages wrote an unquoted executable path. Do not split
+    // that path at its first space: accept only the exact known Leaf path and
+    // fixed document placeholder, never a name/prefix or a shell command.
+    let legacy=format!("{} \"%1\"",command_path(&expected));
+    if !command.eq_ignore_ascii_case(&legacy)&&command_executable(&command).ok().as_ref()!=Some(&expected){
         #[cfg(feature="native-smoke")] eprintln!("windows_update_registry_owner_stage=executable_identity");
         return Err("update_install_registry_owner".into());
     }
@@ -279,6 +283,8 @@ mod tests{
             ("Software\\Classes\\Markdown document\\Shell\\Open\\Command".into(),Some(BTreeMap::from([("".into(),string(&format!("\"{}\" \"%1\"",command_path(&target.join("leaf.exe")))))]))),
         ]);
         assert_eq!(installed_version(&target,&registry).unwrap(),"1.0.0");
+        registry.get_mut("Software\\Classes\\Markdown document\\Shell\\Open\\Command").unwrap().as_mut().unwrap().insert("".into(),string(&format!("{} \"%1\"",command_path(&target.join("leaf.exe")))));
+        assert_eq!(installed_version(&target,&registry).unwrap(),"1.0.0","legacy NSIS unquoted executable path");
         registry.get_mut("Software\\Classes\\Markdown document\\Shell\\Open\\Command").unwrap().as_mut().unwrap().insert("".into(),string(&format!("\"{}\" \"%1\"",command_path(&target.join("other.exe")))));
         assert!(installed_version(&target,&registry).is_err());
     }

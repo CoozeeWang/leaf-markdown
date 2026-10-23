@@ -98,7 +98,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: ./tests/windows-mcp-config.ps1 -ProxyOnly -VendorOnly
       - name: Verify Windows MCP configuration and native restart
-        if: inputs.platform == 'windows' && inputs.verification_scope != 'windows-updater'
+        if: inputs.platform == 'windows' && (inputs.verification_scope == 'standard' || inputs.verification_scope == 'chatgpt-proxy')
         shell: pwsh
         run: |
           npm run desktop:build -- --debug --no-bundle --features native-smoke --config src-tauri/tauri.mcp-test.conf.json

@@ -9,6 +9,9 @@
 
 ; Per-user folder context actions. Do not modify Windows' UserChoice keys.
 !macro NSIS_HOOK_POSTINSTALL
+  ; Preserve an unambiguous executable path even when the install directory or
+  ; user name contains spaces. Older Tauri NSIS associations omitted quotes.
+  WriteRegStr HKCU "Software\Classes\Markdown document\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
   ; Tauri has already registered Leaf's Markdown class. Replace only its icon.
   WriteRegStr HKCU "Software\Classes\Markdown document\DefaultIcon" "" '"$INSTDIR\document-icon.ico",0'
   WriteRegStr HKCU "Software\Classes\Directory\shell\Leaf.NewMarkdown" "" "$(LeafNewMarkdown)"
