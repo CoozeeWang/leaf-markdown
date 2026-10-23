@@ -93,6 +93,7 @@ jobs:
           LEAF_VERIFICATION_SCOPE: ${{ inputs.verification_scope }}
           GH_TOKEN: ${{ github.token }}
       - name: Build installer
+        id: installer
         shell: bash
         run: npm run desktop:build -- --target "$LEAF_BUILD_TARGET" --config "$LEAF_BUILD_CONFIG"
       - name: Verify Windows supervised installation and recovery
@@ -104,9 +105,18 @@ jobs:
           ./tests/windows-desktop-updates.ps1 -Mode SourceFixture
           cargo build --locked --manifest-path src-tauri/Cargo.toml --bin leaf-update-helper --features native-smoke
           if ($LASTEXITCODE) { throw 'Windows fixture supervisor build failed' }
-          $installer = Get-ChildItem "src-tauri/target/$env:LEAF_BUILD_TARGET/release/bundle/nsis/*.exe" | Select-Object -First 1
-          ./tests/windows-desktop-updates.ps1 -Mode InstalledFixture -Installer $installer.FullName
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $installers = @(Get-ChildItem "src-tauri/target/$env:LEAF_BUILD_TARGET/release/bundle/nsis/Leaf_$($version)_*.exe")
+          if ($installers.Count -ne 1) { throw 'Expected exactly one installer for the current product version' }
+          ./tests/windows-desktop-updates.ps1 -Mode InstalledFixture -Installer $installers[0].FullName
           ./tests/windows-desktop-updates.ps1 -Mode RecoveryAudit
+      - uses: actions/upload-artifact@v4
+        if: failure() && inputs.platform == 'windows' && steps.installer.outcome == 'success'
+        with:
+          name: Unvalidated-NSIS-${{ steps.source.outputs.sha }}
+          path: src-tauri/target/${{ env.LEAF_BUILD_TARGET }}/release/bundle/nsis/*.exe
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: inputs.platform == 'windows' && inputs.verification_scope == 'windows-updater'
         with:
