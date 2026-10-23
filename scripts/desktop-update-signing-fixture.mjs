@@ -85,9 +85,12 @@ export function fixtureInit(options) {
   const pair = generateKeyPairSync('ed25519');
   const raw = pair.publicKey.export({format: 'der', type: 'spki'}).subarray(-32);
   const fingerprint = hash(raw);
-  const manifest = {schema: 1, mode: MODE, runId: randomUUID(), fingerprint, createdMs: Date.now(), ...id};
+  const privateKeyFile = join(root, 'signer-private.pem');
+  writeOnce(privateKeyFile, pair.privateKey.export({format: 'pem', type: 'pkcs8'}), 0o600);
+  // Compare payload time with a file created in this run on the same
+  // filesystem. Date.now() can be slightly ahead of a just-written file.
+  const manifest = {schema: 1, mode: MODE, runId: randomUUID(), fingerprint, createdMs: ownerPrivate(privateKeyFile).birthtimeMs, ...id};
   const publicText = `untrusted comment: ${MODE} Leaf updater fixture\n${Buffer.concat([Buffer.from('EdTESTONLY'), raw]).toString('base64')}\n`;
-  writeOnce(join(root, 'signer-private.pem'), pair.privateKey.export({format: 'pem', type: 'pkcs8'}), 0o600);
   writeOnce(join(root, 'signer-public.key'), Buffer.from(publicText).toString('base64'));
   writeOnce(join(root, 'run-manifest.json'), JSON.stringify(manifest));
   writeOnce(join(root, 'run-manifest.sig'), sign(null, Buffer.from(JSON.stringify(manifest)), pair.privateKey).toString('base64'));
@@ -103,7 +106,7 @@ function payloadFor(options, root, manifest, fresh = false) {
   check(!['signer-private.pem', 'signer-public.key', 'run-manifest.json', 'run-manifest.sig', 'payload-binding.json'].includes(relative(root, file)), 'fixture metadata cannot be a payload');
   check(s.size > 0 && s.size <= MAX_PAYLOAD, 'payload size out of bounds');
   check(/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(basename(file)), 'simple synthetic payload filename required');
-  if (fresh) check(s.birthtimeMs >= manifest.createdMs && s.mtimeMs >= manifest.createdMs, `payload predates initialized run (birth delta ${Math.round(s.birthtimeMs - manifest.createdMs)} ms, modification delta ${Math.round(s.mtimeMs - manifest.createdMs)} ms)`);
+  if (fresh) check(s.birthtimeMs >= manifest.createdMs && s.mtimeMs >= manifest.createdMs, `payload predates initialized run (birth delta ${(s.birthtimeMs - manifest.createdMs).toFixed(3)} ms, modification delta ${(s.mtimeMs - manifest.createdMs).toFixed(3)} ms)`);
   const bytes = readFileSync(file);
   return {bytes, binding: {mode: MODE, runId: manifest.runId, fingerprint: manifest.fingerprint, version: manifest.version, platform: manifest.platform, arch: manifest.arch, sha256: hash(bytes), size: bytes.length, file: relative(root, file)}};
 }
