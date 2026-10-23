@@ -12,12 +12,22 @@ with tempfile.TemporaryDirectory() as temp:
  for role in ['leaf','leaf-mcp-adapter','leaf-update-helper']:
   binary=source/(role+'.exe')
   binary.write_bytes(b'LEAF_UPDATE_BINARY_IDENTITY_V1\0Leaf\0studio.leaf.editor\0'+b'1.0.1\0'+role.encode()+b'\0')
-  binary.chmod(0o700)
+  binary.chmod(0o600) # reproduce executable mode loss in Windows artifact ZIPs
  output=root/'update.tar.gz';api.build(source,output,'1.0.1','windows','x86_64')
  with tarfile.open(output) as archive:
   metadata=json.load(archive.extractfile('leaf-update.json'))
   assert {item['path'] for item in metadata['inventory']}==set(archive.getnames())-{'leaf-update.json'}
   assert metadata['version']=='1.0.1'
+  assert all(item['executable'] for item in metadata['inventory'] if item['path'].endswith('.exe'))
+  assert all(archive.getmember(item['path']).mode & 0o111 for item in metadata['inventory'] if item['path'].endswith('.exe'))
+ # An optimized verifier's plaintext search delimiter plus NUL padding must
+ # not be accepted just because the real role marker is also present.
+ binary=source/'leaf.exe';original=binary.read_bytes()
+ for extra in [b'LEAF_UPDATE_BINARY_IDENTITY_V1\0\0\0\0\0',b'LEAF_UPDATE_BINARY_IDENTITY_V1\0Leaf\0studio.leaf.editor\0'+b'1.0.0\0leaf\0']:
+  binary.write_bytes(original+extra)
+  try:api.build(source,root/'conflict.tar.gz','1.0.1','windows','x86_64');raise AssertionError('conflicting binary identity accepted')
+  except ValueError:pass
+ binary.write_bytes(original)
  for target,version in [(output,'1.0.1'),(root/'wrong-version.tar.gz','1.0.2')]:
   try:api.build(source,target,version,'windows','x86_64');raise AssertionError('invalid production accepted')
   except ValueError:pass

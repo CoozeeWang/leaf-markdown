@@ -37,15 +37,25 @@ def build(source, output, version, platform, arch):
             item = dict(path=name, kind='directory', size=0, executable=False)
         elif stat.S_ISREG(info.st_mode):
             item = dict(path=name, kind='file', size=info.st_size,
-                        sha256=hashlib.sha256(path.read_bytes()).hexdigest(), executable=bool(info.st_mode & 0o111))
+                        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                        # Windows artifact transport does not retain POSIX
+                        # execute bits; EXE payloads remain executable by type.
+                        executable=bool(info.st_mode & 0o111) or (platform == 'windows' and path.suffix.lower() == '.exe'))
         else:
             raise ValueError('unsupported payload type')
         records.append(item)
     for role in ['leaf', 'leaf-mcp-adapter', 'leaf-update-helper']:
         binary = source / ('Contents/MacOS/' + role if platform == 'darwin' else role + '.exe')
-        marker = ('LEAF_UPDATE_BINARY_IDENTITY_V1\0Leaf\0studio.leaf.editor\0' + version + '\0' + role + '\0').encode()
-        if marker not in binary.read_bytes():
+        prefix = b'LEAF_UPDATE_BINARY_IDENTITY_V1\0'
+        marker = prefix + b'\0'.join(field.encode() for field in ['Leaf', 'studio.leaf.editor', version, role]) + b'\0'
+        contents = binary.read_bytes()
+        offset = contents.find(prefix)
+        if offset < 0:
             raise ValueError('compiled payload version or role mismatch')
+        while offset >= 0:
+            if not contents.startswith(marker, offset):
+                raise ValueError('conflicting or incomplete compiled payload identity')
+            offset = contents.find(prefix, offset + len(prefix))
     metadata = dict(schema=1, product='Leaf', identifier='studio.leaf.editor', version=version,
                     platform=platform, arch=arch, root=root, inventory=records)
     data = json.dumps(metadata, ensure_ascii=False, separators=(',', ':')).encode()

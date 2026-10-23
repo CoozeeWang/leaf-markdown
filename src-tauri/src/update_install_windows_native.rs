@@ -151,10 +151,12 @@ pub fn verify_binary(path:&Path,version:&str,role:&str)->Result<(),String>{
     if bytes.len()<256||bytes.len()>512*1024*1024||&bytes[..2]!=b"MZ"{return Err("update_install_binary_identity".into());}
     let offset=u32::from_le_bytes(bytes[60..64].try_into().unwrap()) as usize;
     if offset+24>bytes.len()||&bytes[offset..offset+4]!=b"PE\0\0"||u16::from_le_bytes(bytes[offset+4..offset+6].try_into().unwrap())!=0x8664{return Err("update_install_architecture".into());}
-    // Build identity is deliberately assembled at runtime.
-    let prefix=String::from_utf8([76,69,65,70,95,85,80,68,65,84,69,95,66,73,78,65,82,89,95,73,68,69,78,84,73,84,89,95,86,49].to_vec()).unwrap();
-    let marker=format!("{prefix}\0Leaf\0studio.leaf.editor\0{version}\0{role}\0");
-    if !bytes.windows(marker.len()).any(|part|part==marker.as_bytes()){return Err("update_install_binary_identity".into());}Ok(())
+    // Keep the search delimiter opaque to constant folding. A plaintext byte
+    // array can be emitted with NUL padding and look like a second, incomplete
+    // identity to the strict package verifier embedded in existing releases.
+    let mut marker:Vec<u8>=std::hint::black_box([233,224,228,227,250,240,245,225,228,241,224,250,231,236,235,228,247,252,250,236,225,224,235,241,236,241,252,250,243,148,165]).into_iter().map(|byte|byte^165).collect();
+    for field in ["Leaf","studio.leaf.editor",version,role]{marker.extend_from_slice(field.as_bytes());marker.push(0);}
+    if !bytes.windows(marker.len()).any(|part|part==marker.as_slice()){return Err("update_install_binary_identity".into());}Ok(())
 }
 fn process_path(handle:*mut std::ffi::c_void)->Option<PathBuf>{let mut bytes=vec![0u16;32768];let mut size=bytes.len() as u32;if unsafe{QueryFullProcessImageNameW(handle,0,bytes.as_mut_ptr(),&mut size)}==0{return None;}fs::canonicalize(String::from_utf16(&bytes[..size as usize]).ok()?).ok()}
 fn occupancy(plan:&WindowsInstallPlan,allow_gui:bool)->Result<(),String>{
