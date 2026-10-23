@@ -88,7 +88,7 @@ pub fn registry()->Result<Registry,String>{
             if code==ERROR_NO_MORE_ITEMS{break;}if code!=ERROR_SUCCESS{return Err("update_install_registry_read".into());}pending.push(format!("{path}\\{}",String::from_utf16(&name[..size as usize]).map_err(|_|"update_install_registry_read")?));
         }
     }}
-    for path in EXTENSIONS{let mut selected=BTreeMap::new();if let Some(key)=open(path)?{for(name,value)in values(key.0)?{if name.is_empty()||name=="Markdown document_backup"{selected.insert(name,value);}}}result.insert(path.to_string(),Some(selected));}
+    for path in EXTENSIONS{let mut selected=BTreeMap::new();if let Some(key)=open(path)?{for(name,value)in values(key.0)?{if name.is_empty()||name.eq_ignore_ascii_case("Markdown document_backup"){selected.insert(name,value);}}}result.insert(path.to_string(),Some(selected));}
     Ok(result)
 }
 fn create(path:&str)->Result<Key,String>{let mut key=std::ptr::null_mut();if unsafe{RegCreateKeyExW(HKEY_CURRENT_USER,wide(path).as_ptr(),0,std::ptr::null(),0,KEY_WRITE|KEY_WOW64_64KEY,std::ptr::null(),&mut key,std::ptr::null_mut())}!=ERROR_SUCCESS{return Err("update_install_registry_restore".into());}Ok(Key(key))}
@@ -97,7 +97,7 @@ fn restore_extensions(snapshot:&Registry)->Result<(),String>{
     // NSIS's saved previous association. Only these exact two values are ours.
     for path in EXTENSIONS{let entries=snapshot.get(*path).and_then(Option::as_ref).ok_or("update_install_registry_scope")?;let key=create(path)?;
         for name in ["","Markdown document_backup"]{let code=unsafe{RegDeleteValueW(key.0,wide(name).as_ptr())};if code!=ERROR_SUCCESS&&code!=ERROR_FILE_NOT_FOUND{return Err("update_install_registry_restore".into());}}
-        for(name,value)in entries{if !name.is_empty()&&name!="Markdown document_backup"{return Err("update_install_registry_scope".into());}
+        for(name,value)in entries{if !name.is_empty()&&!name.eq_ignore_ascii_case("Markdown document_backup"){return Err("update_install_registry_scope".into());}
             if unsafe{RegSetValueExW(key.0,wide(name).as_ptr(),0,value.kind,value.data.as_ptr(),value.data.len() as u32)}!=ERROR_SUCCESS{return Err("update_install_registry_restore".into());}}
         if unsafe{RegFlushKey(key.0)}!=ERROR_SUCCESS{return Err("update_install_registry_restore".into());}
     }Ok(())
@@ -116,12 +116,23 @@ fn restore(registry:&Registry)->Result<(),String>{
         }
     }Ok(())
 }
-fn string_value(snapshot:&Registry,path:&str,name:&str)->Option<String>{let value=snapshot.get(path)?.as_ref()?.get(name)?;if value.kind!=REG_SZ||value.data.len()%2!=0{return None;}let words=value.data.chunks_exact(2).map(|p|u16::from_le_bytes([p[0],p[1]])).take_while(|v|*v!=0).collect::<Vec<_>>();String::from_utf16(&words).ok()}
+fn string_value(snapshot:&Registry,path:&str,name:&str)->Option<String>{let value=snapshot.iter().find(|(key,_)|key.eq_ignore_ascii_case(path))?.1.as_ref()?.iter().find(|(key,_)|key.eq_ignore_ascii_case(name))?.1;if value.kind!=REG_SZ||value.data.len()%2!=0{return None;}let words=value.data.chunks_exact(2).map(|p|u16::from_le_bytes([p[0],p[1]])).take_while(|v|*v!=0).collect::<Vec<_>>();String::from_utf16(&words).ok()}
+fn command_executable(command:&str)->Result<PathBuf,String>{
+    #[link(name="shell32")]unsafe extern "system"{fn CommandLineToArgvW(command:*const u16,count:*mut i32)->*mut *mut u16;}
+    if command.len()>32768{return Err("update_install_registry_owner".into());}
+    let mut count=0;let arguments=unsafe{CommandLineToArgvW(wide(command).as_ptr(),&mut count)};
+    if arguments.is_null(){return Err("update_install_registry_owner".into());}
+    let result=(||{if count<1||count>128{return Err("update_install_registry_owner".into());}
+        let first=unsafe{*arguments};let mut length=0;while length<32768&&unsafe{*first.add(length)}!=0{length+=1;}
+        let path=String::from_utf16(unsafe{std::slice::from_raw_parts(first,length)}).map_err(|_|"update_install_registry_owner")?;
+        fs::canonicalize(path).map_err(|_|"update_install_registry_owner".into())
+    })();unsafe{windows_sys::Win32::Foundation::LocalFree(arguments.cast());}result
+}
 pub fn installed_version(target:&Path,snapshot:&Registry)->Result<String,String>{
     let registered=string_value(snapshot,TREES[0],"").ok_or("update_install_scope")?;
     if fs::canonicalize(registered).ok().as_deref()!=Some(target){return Err("update_install_scope".into());}
     let command=string_value(snapshot,"Software\\Classes\\Markdown document\\shell\\open\\command","").ok_or("update_install_registry_owner")?;
-    if !command.eq_ignore_ascii_case(&format!("\"{}\" \"%1\"",command_path(&target.join("leaf.exe")))){return Err("update_install_registry_owner".into());}
+    if command_executable(&command).ok().as_deref()!=Some(&target.join("leaf.exe")){return Err("update_install_registry_owner".into());}
     string_value(snapshot,TREES[1],"DisplayVersion").ok_or("update_install_version".into())
 }
 pub fn verify_binary(path:&Path,version:&str,role:&str)->Result<(),String>{
@@ -246,6 +257,24 @@ fn show_failure(plan:&WindowsInstallPlan,result:&InstallResult){
     if inventory(&plan.backup).ok().as_ref()==Some(&plan.old){text.push_str("\n\n");text.push_str(&copy["updates.recovery_location"].as_str().unwrap_or("{{path}}").replace("{{path}}",&command_path(&plan.backup)));}
     #[link(name="user32")]unsafe extern "system"{fn MessageBoxW(window:*mut std::ffi::c_void,text:*const u16,title:*const u16,kind:u32)->i32;}
     unsafe{MessageBoxW(std::ptr::null_mut(),wide(text).as_ptr(),wide("Leaf").as_ptr(),0x10|0x10000);}
+}
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    fn string(text:&str)->RegistryValue{RegistryValue{kind:REG_SZ,data:text.encode_utf16().chain(Some(0)).flat_map(u16::to_le_bytes).collect()}}
+    #[test]
+    fn registry_owner_uses_windows_case_and_exact_executable_identity(){
+        let root=tempfile::tempdir().unwrap();let target=root.path().canonicalize().unwrap();fs::write(target.join("leaf.exe"),b"synthetic").unwrap();fs::write(target.join("other.exe"),b"unrelated").unwrap();
+        let mut registry=Registry::from([
+            (TREES[0].into(),Some(BTreeMap::from([("".into(),string(&command_path(&target)))]))),
+            (TREES[1].into(),Some(BTreeMap::from([("displayversion".into(),string("1.0.0"))]))),
+            ("Software\\Classes\\Markdown document\\Shell\\Open\\Command".into(),Some(BTreeMap::from([("".into(),string(&format!("\"{}\" \"%1\"",command_path(&target.join("leaf.exe")))))]))),
+        ]);
+        assert_eq!(installed_version(&target,&registry).unwrap(),"1.0.0");
+        registry.get_mut("Software\\Classes\\Markdown document\\Shell\\Open\\Command").unwrap().as_mut().unwrap().insert("".into(),string(&format!("\"{}\" \"%1\"",command_path(&target.join("other.exe")))));
+        assert!(installed_version(&target,&registry).is_err());
+    }
 }
 
 /// Destructive fixture entry point exists only in native-smoke binaries and

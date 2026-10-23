@@ -9,7 +9,7 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or !$env:RUNNER_TEMP) { throw 'Requires a di
 $root = Join-Path $env:RUNNER_TEMP "Leaf update fixture 中文 apostrophe's spaces"
 $audit = Join-Path $env:RUNNER_TEMP 'leaf-update-audit.json'
 if ($Mode -eq 'SourceFixture') {
-  cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf update_install::windows::tests
+  cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf update_install::windows
   if ($LASTEXITCODE) { throw 'Updater transaction unit tests failed' }
   return
 }
