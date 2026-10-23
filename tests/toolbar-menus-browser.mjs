@@ -17,7 +17,13 @@ try {
     const focusStyle=await page.locator('#'+first).evaluate(el=>{const s=getComputedStyle(el);return {outline:s.outlineStyle,shadow:s.boxShadow,bg:s.backgroundColor};});
     const active=await page.evaluate(()=>document.activeElement.id);
     assert.equal(active,first,`menu ${popup} ${theme} ${size.width} focused ${active}`);
-    assert.equal(focusStyle.outline,'none');assert.equal(focusStyle.shadow,'none');assert.notEqual(focusStyle.bg,'rgba(0, 0, 0, 0)',JSON.stringify({popup,theme,size,active,focusStyle}));
+    assert.equal(focusStyle.outline,'none');assert.equal(focusStyle.shadow,'none');
+    // The shared button rule animates background for 140 ms. Busy CI renderers
+    // may have no paint frame yet after the wall-clock delay above.
+    await page.waitForFunction(id=>{
+      const item=document.getElementById(id),bg=getComputedStyle(item).backgroundColor;
+      return document.activeElement===item && (bg.startsWith('rgba(')?Number(bg.slice(5,-1).split(',')[3])>0:bg!=='transparent');
+    },first,{timeout:2000});
     assert.equal(await page.locator('#'+popup+' button').first().evaluate(el=>getComputedStyle(el).fontSize),'13px');
     if(process.env.LEAF_UI_REVIEW_SHOTS) await page.screenshot({path:`${process.env.LEAF_UI_REVIEW_SHOTS}/51-${popup}-${theme}-${size.width}-browser.png`});
     assert.equal(await page.evaluate(()=>document.activeElement.id),first);

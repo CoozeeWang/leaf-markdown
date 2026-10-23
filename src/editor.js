@@ -620,6 +620,10 @@ function insertWritingTab(view) {
 function setPropertiesFolded(view, folded) {
   view.dispatch({effects: toggleProperties.of(folded)});
   view.requestMeasure();
+  // A toolbar switch can fold the block outside CodeMirror's own event turn.
+  // Measure once more after the replacement widget has reached the DOM so
+  // the selection layer uses the new text position.
+  requestAnimationFrame(() => { if (view.dom.isConnected) view.requestMeasure(); });
 }
 
 function focusNewProperty(view) {
