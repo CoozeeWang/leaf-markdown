@@ -260,7 +260,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
    selection geometry overlaps. Solid
    rectangles in one translucent layer retain the same colour at every overlap. */
 .cm-selectionLayer { display: none; }
-.leaf-selectionLayer { opacity: .28; }
+/* Share the scroller's stacking context: quote paint < selection < text.
+   Pin the custom layer's order instead of depending on CM's layer count. */
+.leaf-selectionLayer { opacity: .28; z-index: -1 !important; }
 .cm-selectionBackground { background: var(--accent) !important; }
 /* CodeMirror draws this selection; native WebKit also paints paragraph gaps
    using the ancestors' ::selection, even when .cm-line is transparent. Suppress
@@ -304,9 +306,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .cm-content sub, .leaf-structured sub { vertical-align: sub; }
 .tok-code { color: var(--code-text); font-family: var(--ui-mono); }
 .leaf-highlight, .leaf-cell-preview mark { background: var(--highlight-bg); color: var(--highlight-text); border-radius: 3px; padding-block: .08em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-.cm-editor .cm-line.cm-leaf-quote { position: relative; isolation: isolate; padding-left: 18px; padding-right: 12px; color: var(--text); }
+.cm-editor .cm-line.cm-leaf-quote { position: relative; padding-left: 18px; padding-right: 12px; color: var(--text); }
 /* Keep the separator outside the painted quote, but inside CM's measured box. */
-.cm-editor .cm-line.cm-leaf-quote::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--quote-bg); border-left: 2px solid color-mix(in srgb, var(--accent) 60%, var(--line)); }
+.cm-editor .cm-line.cm-leaf-quote::before { content: ''; position: absolute; inset: 0; z-index: -2; pointer-events: none; background: var(--quote-bg); border-left: 2px solid color-mix(in srgb, var(--accent) 60%, var(--line)); }
 .cm-editor .cm-line.cm-leaf-list { padding-left: 1.55em; text-indent: -1.3em; padding-bottom: .3em; }
 .cm-leaf-bullet { font-size: 0; }
 .cm-leaf-bullet::after { content: '•'; font-size: var(--editor-font-size); color: var(--accent); }
