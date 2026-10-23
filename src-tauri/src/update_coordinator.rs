@@ -312,7 +312,7 @@ impl UpdateCoordinator {
         state.exit_armed=false;state.exit_taken=true;true
     }
     pub(crate) fn committed(&self)->bool{self.state.lock().unwrap().committed}
-    #[cfg(target_os="macos")]
+    #[cfg(any(target_os="macos",target_os="windows"))]
     pub(crate) fn update_exit_for(&self,id:&PrepareId)->bool{
         let state=self.state.lock().unwrap();state.committed&&state.exit_taken&&state.committed_prepare.as_ref()==Some(id)
     }
@@ -531,9 +531,9 @@ pub(crate) async fn prepare_install(app:&tauri::AppHandle,op:u64,candidate:&str)
             let permit=run_preparation(app,&id,&binding,package,op,candidate).await?;
             return crate::update_test_driver::prepare_handoff(app,op,candidate,&binding,permit).await;
         }
-        #[cfg(target_os="macos")]
+        #[cfg(any(target_os="macos",target_os="windows"))]
         {crate::update_install_gui::handoff(app,&id,op,candidate,&binding,package).await}
-        #[cfg(not(target_os="macos"))]
+        #[cfg(not(any(target_os="macos",target_os="windows")))]
         {let permit=run_preparation(app,&id,&binding,package,op,candidate).await?;drop(permit);Err("update_installer_unavailable".into())}
     }.await;
     guard.complete(result)
