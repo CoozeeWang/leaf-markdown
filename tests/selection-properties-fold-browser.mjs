@@ -11,7 +11,7 @@ try {
   await page.goto('http://127.0.0.1:41732');
   await page.click('#welcomeNewButton');
   await page.locator('.cm-content').fill('---\ntitle: Example\ncategory: sample\n---\n\n# Selected heading\n\nSelected body paragraph.\n');
-  await page.keyboard.press('Meta+A');
+  await page.keyboard.press(process.platform === 'win32' ? 'Control+A' : 'Meta+A');
   await page.evaluate(async () => {
     const { EditorView } = await import('/node_modules/@codemirror/view/dist/index.js');
     window.foldSelectionView = EditorView.findFromDOM(document.querySelector('.cm-content'));
@@ -34,8 +34,8 @@ try {
   };
   assert.ok(await page.evaluate(() => {
     const view = window.foldSelectionView;
-    return view.state.selection.main.from >= view.state.doc.toString().indexOf('# Selected heading') - 1;
-  }), 'Cmd+A begins at body');
+    return !view.state.selection.main.empty && view.state.selection.main.from >= view.state.doc.toString().indexOf('# Selected heading') - 1;
+  }), 'Select All begins at body');
   await expectAligned('initial');
   for (const label of ['collapsed', 'expanded', 'collapsed again', 'expanded again']) {
     await page.locator('.leaf-yaml .leaf-block-top button').first().click();
