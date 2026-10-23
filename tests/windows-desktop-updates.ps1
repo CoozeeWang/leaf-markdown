@@ -15,7 +15,7 @@ if ($Mode -eq 'SourceFixture') {
 }
 if ($Mode -eq 'RecoveryAudit') {
   $results = Get-Content $audit -Raw | ConvertFrom-Json
-  $required = @('normal','after_delete','first_replace','helper_replace','registry_delete','registry_write','before_completion','restore_failure','lock_main','lock_helper','lock_resource','exact_adapter')
+  $required = @('protocol_cancel','normal','after_delete','first_replace','helper_replace','registry_delete','registry_write','before_completion','restore_failure','lock_main','lock_helper','lock_resource','exact_adapter')
   foreach ($name in $required) { if (!($results | Where-Object scenario -eq $name)) { throw "Missing Windows proof: $name" } }
   if ($results.Count -ne $required.Count) { throw 'Unexpected or duplicated Windows scenario' }
   Write-Output 'PASS complete Windows payload/registration/restart audit (identity process restart; online GUI upgrade remains separate)'
@@ -69,7 +69,8 @@ function Invoke-Fixture([string]$Scenario) {
   } elseif ($Scenario -eq 'restore_failure') {
     if ($result.fault_hit -ne 'registry_write') { throw 'The restoration-failure fixture did not reach its mutation point' }
     if ($result.result.state -ne 'rollback_failed' -or !$result.backup_matches -or $result.result.restart_count -ne 0) { throw "False recovery claim: $output" }
-  } elseif ($Scenario.StartsWith('lock_')) {
+  } elseif ($Scenario.StartsWith('lock_') -or $Scenario -eq 'protocol_cancel') {
+    if ($Scenario -eq 'protocol_cancel' -and (!$result.production_ready -or !$result.production_armed)) { throw 'The shipped production helper did not complete its ready/arm handshake' }
     if ($result.result.state -ne 'install_failed' -or !$result.old_matches -or !$result.registry_restored -or $result.backup_matches -or $result.result.restart_count -ne 0) { throw "File occupancy mutated installation: $output" }
   } else {
     if ($result.fault_hit -ne $Scenario) { throw "Fault fixture did not reach $Scenario" }
@@ -96,6 +97,21 @@ try {
       $registration[$name] = $registration[$name].Replace($root,'<fixture>').Replace($env:USERPROFILE,'<runner-profile>')
     }
     $registration | ConvertTo-Json
+    $transaction = Join-Path $root 'transaction argument audit'
+    New-Item $transaction -ItemType Directory | Out-Null
+    [IO.File]::WriteAllText((Join-Path $transaction 'backup-ready'),'disposable fixture')
+    [IO.File]::WriteAllText((Join-Path $transaction 'commit-authorized'),'disposable fixture')
+    [IO.File]::WriteAllText((Join-Path $transaction 'transaction-id'),'fixture-argument-audit')
+    [IO.File]::WriteAllBytes((Join-Path $transaction 'install-target'),[Text.Encoding]::Unicode.GetBytes($target))
+    $commandLine = "/S /NS /UPDATE /LEAFTRANSACTION=`"$transaction`" /D=$target"
+    $p = Start-Process $Installer -ArgumentList $commandLine -PassThru
+    if (!$p.WaitForExit(120000)) { $p.Kill(); throw 'Existing installer argument audit timed out' }
+    if ($p.ExitCode) { throw "Existing installer argument audit failed: $($p.ExitCode)" }
+    $started = Test-Path (Join-Path $transaction 'installer-mutating')
+    $completed = Test-Path (Join-Path $transaction 'installer-complete')
+    $receipt = if ($completed) { [IO.File]::ReadAllText((Join-Path $transaction 'installer-complete')) } else { '' }
+    @{ argumentAuditStarted=$started; argumentAuditCompleted=$completed; receiptMatches=($receipt -eq 'fixture-argument-audit') } | ConvertTo-Json
+    if (!$started -or !$completed -or $receipt -ne 'fixture-argument-audit') { throw 'Transaction option/receipt binding is not proved' }
     return
   }
   # A tiny NSIS fault fixture uses the production transaction hooks and real
@@ -139,6 +155,7 @@ SectionEnd
   & $nsis.FullName /V2 $nsi
   if ($LASTEXITCODE) { throw 'NSIS recovery fixture did not compile' }
   Install-To $OldInstaller $target
+  Invoke-Fixture 'protocol_cancel'
   # The updater must preserve another editor's chosen default and arbitrary
   # unrelated values in the shared extension key, even when NSIS re-registers.
   New-ItemProperty 'HKCU:\Software\Classes\.md' -Name '(default)' -Value 'Synthetic.OtherEditor' -Force | Out-Null

@@ -210,7 +210,12 @@ impl Platform for NativePlatform{
         if destination.contains(['"','\r','\n','\0']){return Err("update_install_scope".into());}
         let encoded=destination.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>();
         persist(&plan.journal.with_file_name("install-target"),&encoded)?;
-        let mut child=Command::new(installer).args(["/S","/NS","/UPDATE"]).arg(format!("/LEAFTRANSACTION={}",command_path(plan.journal.parent().ok_or("update_install_plan")?)))
+        let transaction=command_path(plan.journal.parent().ok_or("update_install_plan")?);
+        if transaction.contains(['"','\r','\n','\0']){return Err("update_install_scope".into());}
+        let mut child=Command::new(installer).args(["/S","/NS","/UPDATE"])
+            // GetOptions recognizes an unquoted switch with a quoted value;
+            // quoting the entire switch hides it from NSIS's option scanner.
+            .raw_arg(format!("/LEAFTRANSACTION=\"{transaction}\""))
             // NSIS requires /D last and unquoted, including paths with spaces.
             // Command::arg would quote the entire switch on Windows.
             .raw_arg(format!("/D={destination}")).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|_|"update_install_start")?;
@@ -304,6 +309,33 @@ pub fn fixture_main()->Result<(),String>{
     let registry=registry()?;let old_version=installed_version(&target,&registry)?;
     let plan=WindowsInstallPlan{transaction:format!("fixture-{}",args[3]),target:target.clone(),staged,helper,backup:root_path.join("Previous"),journal:root_path.join("result.json"),gui_pid:std::process::id(),gui_executable:target.join("leaf.exe"),target_anchor:anchor(&target)?,installer_digest,package_digest:"0".repeat(64),token:"a".repeat(64),created_unix:std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|_|"fixture_clock")?.as_secs(),old_version,new_version:args[2].clone(),old:inventory(&target)?,new,registry};
     let path=root_path.join("plan.json");let bytes=serde_json::to_vec(&plan).map_err(|_|"fixture_plan")?;let digest=hash(&bytes);persist(&path,&bytes)?;persist(&root_path.join("transaction-id"),plan.transaction.as_bytes())?;persist(&root_path.join("commit-authorized"),hash(format!("{}:{}:{}",plan.transaction,digest,plan.token).as_bytes()).as_bytes())?;
+    if args[3]=="protocol_cancel"{
+        use std::io::BufRead;
+        let mut child=Command::new(&plan.helper).arg("--install-plan").arg(&path).arg(&digest).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|_|"fixture_production_helper_start")?;
+        let mut input=child.stdin.take();let output=child.stdout.take().ok_or("fixture_production_helper_pipe")?;
+        let(sender,receiver)=std::sync::mpsc::sync_channel(2);
+        std::thread::spawn(move||{let mut output=std::io::BufReader::new(output);for _ in 0..2{
+            let mut line=String::new();let read=(&mut output).take(8193).read_line(&mut line);
+            let message=if read.is_ok()&&line.len()<=8192&&line.ends_with('\n'){serde_json::from_str::<ChannelMessage>(&line).ok()}else{None};
+            let valid=message.is_some();let _=sender.send(message);if !valid{break;}
+        }});
+        let receive=|kind:&str|->Result<(),String>{let message=receiver.recv_timeout(Duration::from_secs(30)).map_err(|_|"fixture_production_helper_timeout")?.ok_or("fixture_production_helper_channel")?;
+            if valid_message(&message,kind,&plan,&digest){Ok(())}else{Err("fixture_production_helper_binding".into())}};
+        let protocol=(||{
+            receive("ready")?;let pipe=input.as_mut().ok_or("fixture_production_helper_pipe")?;
+            serde_json::to_writer(&mut *pipe,&channel_message("arm",&plan,&digest)).map_err(|_|"fixture_production_helper_pipe")?;
+            pipe.write_all(b"\n").and_then(|_|pipe.flush()).map_err(|_|"fixture_production_helper_pipe")?;receive("armed")?;
+            // A marker and an exited GUI are insufficient: EOF without the
+            // matching commit message must stop the actual production worker.
+            input.take();let deadline=std::time::Instant::now()+Duration::from_secs(5);
+            loop{if let Some(status)=child.try_wait().map_err(|_|"fixture_production_helper_wait")?{if status.success(){return Err("fixture_cancel_accepted".into());}break;}
+                if std::time::Instant::now()>=deadline{return Err("fixture_cancel_timeout".into());}std::thread::sleep(Duration::from_millis(25));}
+            if plan.backup.exists()||plan.journal.with_extension("install-claim").exists()||inventory(&target)?!=plan.old||self::registry()?!=plan.registry{return Err("fixture_cancel_mutated".into());}Ok(())
+        })();
+        if let Err(code)=protocol{input.take();let _=child.kill();let _=child.wait();let mut error=String::new();if let Some(pipe)=child.stderr.take(){let _=pipe.take(8192).read_to_string(&mut error);}eprintln!("fixture_production_helper_error={error}");return Err(code);}
+        let evidence=serde_json::json!({"result":result(&plan,InstallState::InstallFailed,Some("fixture_cancel".into())),"production_ready":true,"production_armed":true,"old_matches":true,"new_matches":false,"registry_restored":true,"shared_values_preserved":true,"backup_matches":false,"root":root_path});
+        let _=root.keep();println!("{evidence}");return Ok(());
+    }
     struct Fixture{native:NativePlatform,scenario:String,restarts:u32}
     impl Platform for Fixture{
         fn ready(&mut self,p:&WindowsInstallPlan,allow:bool)->Result<(),String>{self.native.ready(p,allow)}
@@ -323,7 +355,7 @@ pub fn fixture_main()->Result<(),String>{
     let output=install(&plan,&mut platform);
     if output.restart_count!=platform.restarts{return Err("fixture_restart_count".into());}
     let current=self::registry()?;
-    let evidence=serde_json::json!({"result":output,"fault_hit":fs::read_to_string(root_path.join("fault-hit")).ok(),"old_matches":inventory(&plan.target).ok().as_ref()==Some(&plan.old),"new_matches":inventory(&plan.target).ok().as_ref()==Some(&plan.new),"registry_restored":current==plan.registry,"shared_values_preserved":EXTENSIONS.iter().all(|path|current.get(*path)==plan.registry.get(*path)),"backup_matches":inventory(&plan.backup).ok().as_ref()==Some(&plan.old),"root":root_path});
+    let evidence=serde_json::json!({"result":output,"installer_started":root_path.join("installer-mutating").is_file(),"installer_completed":root_path.join("installer-complete").is_file(),"fault_hit":fs::read_to_string(root_path.join("fault-hit")).ok(),"old_matches":inventory(&plan.target).ok().as_ref()==Some(&plan.old),"new_matches":inventory(&plan.target).ok().as_ref()==Some(&plan.new),"registry_restored":current==plan.registry,"shared_values_preserved":EXTENSIONS.iter().all(|path|current.get(*path)==plan.registry.get(*path)),"backup_matches":inventory(&plan.backup).ok().as_ref()==Some(&plan.old),"root":root_path});
     // Keep only on fixture failure/recovery failure; PowerShell owns this entire
     // disposable parent and removes it after checking retained recovery hashes.
     let _=root.keep();println!("{}",evidence);Ok(())
