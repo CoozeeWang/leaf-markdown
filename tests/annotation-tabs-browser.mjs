@@ -49,6 +49,20 @@ for (const engine of [chromium, webkit]) {
         for (const content of tab.contents) assert.ok(content.left >= tab.left - 0.5 && content.right <= tab.right + 0.5 && content.top >= tab.top && content.bottom <= tab.bottom, description);
       }
     };
+    // Keep real keyboard checks ahead of the 246-entry stress fixture. On macOS,
+    // Playwright WebKit crashes in AppKit when keys follow that long UI session;
+    // the unchanged main branch reproduces it. The stress/layout checks remain below.
+    // Keyboard selection/focus, including Home/End when already at that edge.
+    for (const [key, target] of [['Home', tabs[0]], ['Home', tabs[0]], ['End', tabs[1]], ['End', tabs[1]], ['ArrowRight', tabs[0]], ['ArrowLeft', tabs[1]]]) {
+      await page.locator('.annotation-tabs [aria-selected=true]').press(key);
+      assert.equal(await page.locator(target).getAttribute('aria-selected'), 'true');
+      assert.ok(await page.locator(target).evaluate(el => el === document.activeElement));
+      assert.ok(await page.locator(target).evaluate(el => getComputedStyle(el).outlineStyle !== 'none'));
+    }
+    await page.locator('.annotation-tabs [aria-selected=true]').press('Tab');
+    // Safari's system keyboard-navigation preference may skip native buttons.
+    // Tab must leave this single-stop tablist, regardless of the next OS target.
+    assert.ok(await page.locator('.annotation-tabs').evaluate(el => !el.contains(document.activeElement)));
     for (const language of Object.keys(labels)) {
       await page.evaluate(async language => (await import('/src/i18n.js')).setLanguagePreference(language), language);
       for (const theme of ['light', 'dark']) {
@@ -101,17 +115,6 @@ for (const engine of [chromium, webkit]) {
       for (const id of ['#commentsCount', '#notesCount']) assert.equal(await page.locator(id).innerText(), '123');
       await checkLayout({counts:123, tab});
     }
-    // Keyboard selection/focus, including Home/End when already at that edge.
-    for (const [key, target] of [['Home', tabs[0]], ['Home', tabs[0]], ['End', tabs[1]], ['End', tabs[1]], ['ArrowRight', tabs[0]], ['ArrowLeft', tabs[1]]]) {
-      await page.locator('.annotation-tabs [aria-selected=true]').press(key);
-      assert.equal(await page.locator(target).getAttribute('aria-selected'), 'true');
-      assert.ok(await page.locator(target).evaluate(el => el === document.activeElement));
-      assert.ok(await page.locator(target).evaluate(el => getComputedStyle(el).outlineStyle !== 'none'));
-    }
-    await page.locator('.annotation-tabs [aria-selected=true]').press('Tab');
-    // Safari's system keyboard-navigation preference may skip native buttons.
-    // Tab must leave this single-stop tablist, regardless of the next OS target.
-    assert.ok(await page.locator('.annotation-tabs').evaluate(el => !el.contains(document.activeElement)));
     await page.evaluate(source => v.dispatch({changes:{from:0,to:v.state.doc.length,insert:source}}), source);
     const restored = await snapshot();
     for (const tab of tabs) await page.click(tab);

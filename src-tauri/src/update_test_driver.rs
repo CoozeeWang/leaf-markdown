@@ -1466,22 +1466,22 @@ async fn prepare_smoke(app:tauri::AppHandle)->Result<(),String>{
     if coordinator_reply(&app,&first,"prepare-late-reply",&reply).await?["ok"]!=false{return Err("prepare_late_reply_accepted".into());}
     coordinator_case(&app,"wrong_duplicate_late_reply",json!({"actual_tauri_commands":true,"wrong_window_identity_duplicate_late_denied":true,"production_listener_completed_valid_reply":true}))?;
 
-    let rebind=prepare_untitled(&app,"# Native SaveAs rebind latest\n").await?;
+    let rebind=prepare_untitled(&app,"# Native SaveAs rebind latest\n").await.map_err(|error|format!("prepare_rebind/open:{error}"))?;
     // This case proves retirement of a real native authorization, not merely
     // assigning a first path to an ungranted untitled document.
-    broker.call(&app,"prepare-fixture","list_documents",json!({})).await?;
+    broker.call(&app,"prepare-fixture","list_documents",json!({})).await.map_err(|error|format!("prepare_rebind/authorize:{error}"))?;
     let before=broker.window_binding(rebind.label()).ok_or("prepare_rebind_before")?;
     if before.client.is_none()||before.scope.is_none(){return Err("prepare_rebind_authorization_missing".into());}
-    let mut flight=cross_begin(&app,package.clone(),false).await?;drop(flight.result().await?);
+    let mut flight=cross_begin(&app,package.clone(),false).await.map_err(|error|format!("prepare_rebind/begin:{error}"))?;drop(flight.result().await.map_err(|error|format!("prepare_rebind/flight:{error}"))?);
     let after=broker.window_binding(rebind.label()).ok_or("prepare_rebind_after")?;
-    let renderer=prepare_bridge(&app,&rebind,json!({"action":"session-state"})).await?;
+    let renderer=prepare_bridge(&app,&rebind,json!({"action":"session-state"})).await.map_err(|error|format!("prepare_rebind/renderer:{error}"))?;
     let path=app.state::<crate::Documents>().0.lock().unwrap().get(rebind.label()).cloned().flatten().ok_or("prepare_rebind_path")?;
     let renderer_path_matches=renderer["path"]==json!(path);
     let binding_changed=before.document_id!=after.document_id||before.authorization_epoch!=after.authorization_epoch;
     if !renderer_path_matches||!binding_changed{return Err(format!("prepare_actual_save_as_not_rebound:{}",json!({"renderer_path_matches":renderer_path_matches,
         "binding_epoch_changed":before.authorization_epoch!=after.authorization_epoch,"document_id_changed":before.document_id!=after.document_id,
         "logical_anchor_changed":before.logical_identity!=after.logical_identity,"native_authorization_was_active":before.client.is_some()&&before.scope.is_some()})));}
-    drop(flight);prepare_released(&app).await?;
+    drop(flight);prepare_released(&app).await.map_err(|error|format!("prepare_rebind/release:{error}"))?;
     coordinator_case(&app,"save_as_native_rebind",json!({"actual_native_write_ledger":true,"renderer_and_native_path_match":true,"native_binding_changed":true}))?;
 
     let draft=role_report(&app,&first,"prepare-live-draft",r#"const scope=document.querySelector('.shell')||document.getElementById('app');const box=document.createElement('textarea');box.id='prepare-synthetic-draft';box.value='latest uncommitted synthetic composition';scope.append(box);box.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'synthetic'}));return {value:box.value};"#).await?;
