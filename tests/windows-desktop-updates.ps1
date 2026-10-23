@@ -1,6 +1,6 @@
 # Destructive updater checks: only a disposable Actions runner may run these.
 param(
-  [ValidateSet('SourceFixture','InstalledFixture','RecoveryAudit')][string]$Mode = 'SourceFixture',
+  [ValidateSet('SourceFixture','InstalledFixture','RecoveryAudit','RegistrationAudit')][string]$Mode = 'SourceFixture',
   [string]$Installer,
   [string]$OldInstaller
 )
@@ -45,7 +45,7 @@ $fixtureBuild = Join-Path $env:RUNNER_TEMP 'leaf-update-nsis-build'
 if (Test-Path $fixtureBuild) { throw 'NSIS fixture build root already exists' }
 New-Item $fixtureBuild -ItemType Directory | Out-Null
 $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-$driver = (Resolve-Path src-tauri/target/debug/leaf-update-helper.exe).Path
+$driver = if ($Mode -eq 'RegistrationAudit') { '' } else { (Resolve-Path src-tauri/target/debug/leaf-update-helper.exe).Path }
 $processes = @()
 $results = @()
 function Install-To([string]$Package,[string]$Destination) {
@@ -85,6 +85,19 @@ try {
     if (!(Test-Path (Join-Path $payload $name))) { throw "Installed payload capture is missing $name" }
   }
   Copy-Item $Installer (Join-Path $payload '.leaf-update-installer.exe')
+  if ($Mode -eq 'RegistrationAudit') {
+    Install-To $OldInstaller $target
+    $registration = [ordered]@{
+      expectedExecutable = Join-Path $target 'leaf.exe'
+      installRoot = (Get-Item 'HKCU:\Software\leaf\Leaf').GetValue('')
+      openCommand = (Get-Item 'HKCU:\Software\Classes\Markdown document\shell\open\command').GetValue('')
+    }
+    foreach ($name in @($registration.Keys)) {
+      $registration[$name] = $registration[$name].Replace($root,'<fixture>').Replace($env:USERPROFILE,'<runner-profile>')
+    }
+    $registration | ConvertTo-Json
+    return
+  }
   # A tiny NSIS fault fixture uses the production transaction hooks and real
   # signed-package payload bytes. Fault selection cannot enter release builds.
   $nsis = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'tauri') -Filter makensis.exe -Recurse | Select-Object -First 1

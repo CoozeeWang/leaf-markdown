@@ -15,7 +15,7 @@ on:
       verification_scope:
         description: 'Targeted Windows ChatGPT proxy validation skips unrelated interface, file and PDF checks'
         type: choice
-        options: [standard, chatgpt-proxy, windows-updater]
+        options: [standard, chatgpt-proxy, windows-updater, windows-updater-registration]
         default: standard
 permissions:
   contents: read
@@ -35,13 +35,16 @@ jobs:
         with:
           ref: ${{ inputs.source_ref }}
       - uses: actions/setup-node@v4
+        if: inputs.verification_scope != 'windows-updater-registration'
         with:
           node-version: '22'
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+        if: inputs.verification_scope != 'windows-updater-registration'
         with:
           targets: ${{ env.LEAF_BUILD_TARGET }}
       - uses: Swatinem/rust-cache@v2
+        if: inputs.verification_scope != 'windows-updater-registration'
         with:
           workspaces: src-tauri -> target
           key: ${{ env.LEAF_BUILD_TARGET }}
@@ -51,6 +54,19 @@ jobs:
         shell: bash
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - run: npm ci
+        if: inputs.verification_scope != 'windows-updater-registration'
+      - name: Inspect existing Windows installer registration
+        if: inputs.platform == 'windows' && inputs.verification_scope == 'windows-updater-registration'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $download = Join-Path $env:RUNNER_TEMP 'leaf-registration-candidate'
+          gh run download 40017222346 --repo CoozeeWang/leaf-markdown --name Unvalidated-NSIS-6977528fd289361f1c08d64f5bc2b3ec1508d831 --dir $download
+          if ($LASTEXITCODE) { throw 'Existing candidate download failed; do not rebuild it' }
+          $installer = Get-ChildItem $download -Filter 'Leaf_1.0.1_*.exe' | Select-Object -First 1
+          if (!$installer) { throw 'Expected existing 1.0.1 installer' }
+          ./tests/windows-desktop-updates.ps1 -Mode RegistrationAudit -Installer $installer.FullName
       - run: npm test
         if: inputs.verification_scope == 'standard'
       - name: Targeted ChatGPT source checks
@@ -94,6 +110,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - name: Build installer
         id: installer
+        if: inputs.verification_scope != 'windows-updater-registration'
         shell: bash
         run: npm run desktop:build -- --target "$LEAF_BUILD_TARGET" --config "$LEAF_BUILD_CONFIG"
       - name: Verify Windows supervised installation and recovery
@@ -152,9 +169,11 @@ jobs:
           node tests/windows-native-smoke.mjs --pdf-only
           if ($LASTEXITCODE -ne 0) { throw 'Actual Leaf PDF export failed' }
       - name: Generate checksums
+        if: inputs.verification_scope != 'windows-updater-registration'
         shell: bash
         run: node scripts/package-checksums.mjs "$LEAF_BUILD_TARGET"
       - uses: actions/upload-artifact@v4
+        if: inputs.verification_scope != 'windows-updater-registration'
         with:
           name: Leaf-${{ env.LEAF_BUILD_TARGET }}-${{ steps.source.outputs.sha }}
           path: test-results/packages/
