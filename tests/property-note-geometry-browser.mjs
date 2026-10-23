@@ -41,10 +41,12 @@ try {
      else {await page.mouse.move(0,0);await page.locator('#commandsButton').focus();await page.keyboard.press('Tab');await fold.focus();}
      const result=await fold.evaluate(button=>{
       const b=button.getBoundingClientRect(),svg=button.querySelector('svg'),s=svg.getBoundingClientRect(),p=svg.querySelector('path').getBBox();
-      return {dx:(s.left+s.right-b.left-b.right)/2,dy:(s.top+s.bottom-b.top-b.bottom)/2,pathX:p.x+p.width/2,pathY:p.y+p.height/2,background:getComputedStyle(button).backgroundColor,focused:button===document.activeElement,outline:getComputedStyle(button).outlineStyle};
+      return {dx:(s.left+s.right-b.left-b.right)/2,dy:(s.top+s.bottom-b.top-b.bottom)/2,pathX:p.x+p.width/2,pathY:p.y+p.height/2,iconWidth:parseFloat(getComputedStyle(svg).width),iconHeight:parseFloat(getComputedStyle(svg).height),buttonWidth:parseFloat(getComputedStyle(button).width),buttonHeight:parseFloat(getComputedStyle(button).height),background:getComputedStyle(button).backgroundColor,focused:button===document.activeElement,outline:getComputedStyle(button).outlineStyle};
      });
      assert.ok(Math.abs(result.dx)<.15&&Math.abs(result.dy)<.15,JSON.stringify({theme,font,zoom,state,result}));
      assert.equal(result.pathX,12);assert.equal(result.pathY,12);
+     assert.equal(result.iconWidth,12);assert.equal(result.iconHeight,12);
+     assert.equal(result.buttonWidth,28);assert.equal(result.buttonHeight,26);
      if(state==='hover')assert.notEqual(result.background,'rgba(0, 0, 0, 0)');
      else {assert.ok(result.focused,JSON.stringify({locale,theme,font,zoom,expanded,result,active:await page.evaluate(()=>document.activeElement?.outerHTML.slice(0,180))}));assert.equal(result.outline,'solid');}
     }
@@ -56,6 +58,11 @@ try {
    }
    await page.evaluate(()=>{const scroller=document.querySelector('#editor .cm-scroller');scroller.scrollTop=scroller.scrollHeight;});
    await page.locator('.leaf-endnote-number').first().waitFor();
+   const hint=await page.locator('.leaf-footnote-region-hint').evaluate(el=>{const style=getComputedStyle(el),head=getComputedStyle(el.parentElement),region=getComputedStyle(el.closest('.leaf-footnote-region')),badge=getComputedStyle(el.closest('.leaf-footnote-region').querySelector('.leaf-endnote-number'));return {text:el.textContent,font:parseFloat(style.fontSize),regionFont:parseFloat(region.fontSize),badgeFont:parseFloat(badge.fontSize),color:style.color,headingColor:head.color};});
+   assert.ok(Math.abs(hint.font/hint.regionFont-.8)<.002);
+   assert.ok(Math.abs(hint.badgeFont/hint.regionFont-.75)<.002);
+   assert.notEqual(hint.color,hint.headingColor,'hint is secondary to the heading');
+   assert.ok(!/[()（）]/.test(hint.text),'the approved hint has no parentheses');
    const numbers=await page.locator('.leaf-endnote-number').evaluateAll(nodes=>nodes.map(node=>{
     const r=node.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node);const t=range.getBoundingClientRect();
     return {label:node.textContent,w:r.width,h:r.height,dx:(t.left+t.right-r.left-r.right)/2,textWidth:t.width};
