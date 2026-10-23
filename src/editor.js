@@ -618,6 +618,7 @@ function insertWritingTab(view) {
 // widget is rebuilt from that state after a scroll away, and a caller that
 // poked `body.hidden` alone would be silently undone by the next rebuild.
 function setPropertiesFolded(view, folded) {
+  if (view.state.field(propertiesFolded) === folded) return;
   view.dispatch({effects: toggleProperties.of(folded)});
   view.requestMeasure();
   // A toolbar switch can fold the block outside CodeMirror's own event turn.
@@ -632,7 +633,9 @@ function focusNewProperty(view) {
     if (body) {
       setPropertiesFolded(view, false);
       // Unfolding may replace the widget so CodeMirror can measure its height.
-      view.dom.querySelector('.leaf-property-body [data-action="add-property"]')?.click();
+      requestAnimationFrame(() => {
+        if (view.dom.isConnected) view.dom.querySelector('.leaf-property-body [data-action="add-property"]')?.click();
+      });
     }
   });
 }
