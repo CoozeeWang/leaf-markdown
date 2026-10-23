@@ -125,7 +125,9 @@ SectionEnd
   Copy-Item $Installer (Join-Path $payload '.leaf-update-installer.exe') -Force
   foreach ($lock in @(@('lock_main','leaf.exe'),@('lock_helper','leaf-update-helper.exe'),@('lock_resource','document-icon.ico'))) {
     Install-To $OldInstaller $target
-    $stream = [IO.File]::Open((Join-Path $target $lock[1]),'Open','Read','None')
+    # Reading remains possible for the before/after manifest; replacement does
+    # not. This isolates installation occupancy from a fixture snapshot failure.
+    $stream = [IO.File]::Open((Join-Path $target $lock[1]),'Open','Read','Read')
     try { Invoke-Fixture $lock[0] } finally { $stream.Dispose() }
   }
   # A real mapped executable lock: only the exact installed adapter may stop.

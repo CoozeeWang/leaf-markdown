@@ -21,7 +21,9 @@ pub fn inventory(root:&Path)->Result<Inventory,String>{
         if name.split('/').any(|part|part.is_empty()||part==".."||part.contains(':'))||name.len()>4096||name.split('/').count()>32||result.len()>=20_000{return Err("update_install_inventory".into());}
         let value=if metadata.file_type().is_symlink(){return Err("update_install_reparse_point".into());}
             else if metadata.is_dir(){pending.push(path);"directory".into()}
-            else if metadata.is_file(){total=total.checked_add(metadata.len()).filter(|v|*v<=2*1024*1024*1024).ok_or("update_install_capacity")?;file_hash(&path)?}
+            else if metadata.is_file(){
+                #[cfg(windows)] native::single_link(&path)?;
+                total=total.checked_add(metadata.len()).filter(|v|*v<=2*1024*1024*1024).ok_or("update_install_capacity")?;file_hash(&path)?}
             else{return Err("update_install_inventory".into());};
         // Case aliases are rejected even in Unix fixtures.
         if result.keys().any(|key|key.eq_ignore_ascii_case(&name)){return Err("update_install_path_alias".into());}

@@ -1,5 +1,5 @@
-//! Independent Mac installation transaction. Production stays unavailable until
-//! bundle verification, external-helper readiness and rollback proof are wired.
+//! Independent native installation transactions. Mac uses an atomic app-bundle
+//! exchange; Windows supervises NSIS with complete payload/registration recovery.
 #[cfg(any(target_os="windows",test))]
 #[path="update_install_windows.rs"]
 pub mod windows;

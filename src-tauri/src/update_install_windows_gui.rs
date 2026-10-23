@@ -20,7 +20,7 @@ fn stage_and_arm(package:std::sync::Arc<crate::update_package::VerifiedPackage>,
     if metadata.identifier!=binding.bundle||package.digest()!=binding.digest||metadata.platform!="windows"||metadata.arch!="x86_64"{return Err("update_install_package_binding".into());}
     let mut new=windows::Inventory::new();let prefix=format!("{}/",metadata.root);
     for entry in &metadata.inventory{if entry.path==metadata.root{continue;}let path=entry.path.strip_prefix(&prefix).ok_or("update_install_inventory")?;let value=match entry.kind.as_str(){"directory"=>"directory".into(),"file"=>entry.sha256.clone().ok_or("update_install_inventory")?,_=>return Err("update_install_inventory".into())};if new.insert(path.into(),value).is_some(){return Err("update_install_inventory".into());}}
-    windows::copy_tree(package.staged_root(),&staged,&new)?;
+    windows::copy_tree(&package.staged_root(),&staged,&new)?;
     let installer_digest=new.remove(".leaf-update-installer.exe").ok_or("update_install_installer_missing")?;
     let helper=root_path.join("leaf-update-helper.exe");fs::copy(staged.join("leaf-update-helper.exe"),&helper).map_err(|_|"update_install_helper_missing")?;
     let mut token=[0u8;32];getrandom::fill(&mut token).map_err(|_|"update_instance_entropy")?;

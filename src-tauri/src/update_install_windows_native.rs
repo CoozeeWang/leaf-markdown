@@ -1,7 +1,7 @@
 //! currentUser-only Windows implementation. All executable paths are absolute;
 //! the signed package, not a renderer argument, chooses installer bytes.
 use super::*;
-use std::{ffi::OsStr,os::windows::{ffi::OsStrExt,io::AsRawHandle},process::{Command,Stdio},time::Duration};
+use std::{ffi::OsStr,os::windows::{ffi::OsStrExt,io::AsRawHandle,process::CommandExt},process::{Command,Stdio},time::Duration};
 use windows_sys::Win32::{Foundation::{CloseHandle,ERROR_FILE_NOT_FOUND,ERROR_NO_MORE_ITEMS,ERROR_SUCCESS},System::{Registry::*,Threading::*}};
 fn wide(value:impl AsRef<OsStr>)->Vec<u16>{value.as_ref().encode_wide().chain(Some(0)).collect()}
 fn system(name:&str)->PathBuf{PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(||"C:\\Windows".into())).join("System32").join(name)}
@@ -19,7 +19,11 @@ pub fn protect_root(root:&Path)->Result<(),String>{
     use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
     with_user(|sid|{let mut value=std::ptr::null_mut();if unsafe{ConvertSidToStringSidW(sid,&mut value)}==0{return Err("update_install_owner".into());}
         let mut length=0;while length<184&&unsafe{*value.add(length)}!=0{length+=1;}let text=String::from_utf16(unsafe{std::slice::from_raw_parts(value,length)}).map_err(|_|"update_install_owner")?;unsafe{windows_sys::Win32::Foundation::LocalFree(value.cast());}
-        let status=Command::new(system("icacls.exe")).arg(root).args(["/inheritance:r","/grant:r"]).arg(format!("*{text}:(OI)(CI)F")).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map_err(|_|"update_install_permissions")?;
+        let status=Command::new(system("icacls.exe")).arg(root).args(["/inheritance:r","/grant:r"]).arg(format!("*{text}:(OI)(CI)F")).creation_flags(0x08000000).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map_err(|_|"update_install_permissions")?;
+        if !status.success(){return Err("update_install_permissions".into());}
+        // Elevated test runners may default directory ownership to the local
+        // Administrators group. Bind this fresh directory to the actual user.
+        let status=Command::new(system("icacls.exe")).arg(root).arg("/setowner").arg(format!("*{text}")).creation_flags(0x08000000).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map_err(|_|"update_install_permissions")?;
         if !status.success(){return Err("update_install_permissions".into());}Ok(())})?;
     private_root(root)
 }
@@ -51,6 +55,12 @@ pub fn anchor(path:&Path)->Result<(u64,[u8;16]),String>{
     use std::os::windows::fs::OpenOptionsExt;
     let file=fs::OpenOptions::new().read(true).custom_flags(0x02000000|0x00200000).open(path).map_err(|_|"update_install_target_identity")?;
     let mut id=FileId{volume:0,id:[0;16]};if unsafe{GetFileInformationByHandleEx(file.as_raw_handle(),18,(&mut id as *mut FileId).cast(),std::mem::size_of::<FileId>() as u32)}==0{return Err("update_install_target_identity".into());}Ok((id.volume,id.id))
+}
+pub fn single_link(path:&Path)->Result<(),String>{
+    #[repr(C)]struct Information{attributes:u32,created:[u32;2],accessed:[u32;2],written:[u32;2],volume:u32,size_high:u32,size_low:u32,links:u32,index_high:u32,index_low:u32}
+    #[link(name="kernel32")]unsafe extern "system"{fn GetFileInformationByHandle(handle:*mut std::ffi::c_void,info:*mut Information)->i32;}
+    let file=fs::File::open(path).map_err(|_|"update_install_read")?;let mut information:Information=unsafe{std::mem::zeroed()};
+    if unsafe{GetFileInformationByHandle(file.as_raw_handle(),&mut information)}==0||information.links!=1{return Err("update_install_hardlink".into());}Ok(())
 }
 const TREES:&[&str]=&["Software\\leaf\\Leaf","Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Leaf","Software\\Classes\\Markdown document","Software\\Classes\\Directory\\shell\\Leaf.NewMarkdown","Software\\Classes\\Directory\\Background\\shell\\Leaf.NewMarkdown"];
 const EXTENSIONS:&[&str]=&["Software\\Classes\\.md","Software\\Classes\\.markdown","Software\\Classes\\.mdown"];
@@ -135,7 +145,10 @@ impl Platform for NativePlatform{
     fn ready(&mut self,plan:&WindowsInstallPlan,allow_gui:bool)->Result<(),String>{
         private_root(plan.journal.parent().ok_or("update_install_plan")?)?;
         if anchor(&plan.target)?!=plan.target_anchor||anchor(&plan.target)?.0!=anchor(plan.journal.parent().ok_or("update_install_plan")?)?.0{return Err("update_install_target_identity".into());}
-        for name in ["APPDATA","LOCALAPPDATA"]{if let Some(path)=std::env::var_os(name){if let Ok(path)=fs::canonicalize(path){if path.starts_with(&plan.target)||plan.target==path{return Err("update_install_scope".into());}}}}
+        for name in ["APPDATA","LOCALAPPDATA"]{if let Some(path)=std::env::var_os(name){if let Ok(path)=fs::canonicalize(path){
+            let data=path.join("studio.leaf.editor");
+            if path.starts_with(&plan.target)||plan.target==path||plan.target.starts_with(&data)||data.starts_with(&plan.target){return Err("update_install_scope".into());}
+        }}}
         if installed_version(&plan.target,&plan.registry)?!=plan.old_version{return Err("update_install_version".into());}
         for role in ["leaf","leaf-mcp-adapter","leaf-update-helper"]{verify_binary(&plan.target.join(format!("{role}.exe")),&plan.old_version,role)?;verify_binary(&plan.staged.join(format!("{role}.exe")),&plan.new_version,role)?;}
         verify_binary(&plan.helper,&plan.new_version,"leaf-update-helper")?;
@@ -149,8 +162,13 @@ impl Platform for NativePlatform{
     fn restore_registry(&mut self,registry:&Registry)->Result<(),String>{restore(registry)}
     fn installer(&mut self,plan:&WindowsInstallPlan)->Result<(),String>{
         let installer=plan.staged.join(".leaf-update-installer.exe");
-        let status=Command::new(installer).args(["/S","/NS","/UPDATE"]).arg(format!("/LEAFTRANSACTION={}",command_path(plan.journal.parent().ok_or("update_install_plan")?)))
-            .arg(format!("/D={}",command_path(&plan.target))).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map_err(|_|"update_install_start")?;
+        let mut child=Command::new(installer).args(["/S","/NS","/UPDATE"]).arg(format!("/LEAFTRANSACTION={}",command_path(plan.journal.parent().ok_or("update_install_plan")?)))
+            .arg(format!("/D={}",command_path(&plan.target))).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|_|"update_install_start")?;
+        let deadline=std::time::Instant::now()+Duration::from_secs(120);
+        let status=loop{if let Some(status)=child.try_wait().map_err(|_|"update_install_process_failed")?{break status;}
+            if std::time::Instant::now()>=deadline{let _=child.kill();let _=child.wait();return Err("update_install_timeout".into());}
+            std::thread::sleep(Duration::from_millis(25));
+        };
         if !status.success(){return Err("update_install_process_failed".into());}
         if fs::read(plan.journal.with_file_name("installer-complete")).map_err(|_|"update_install_incomplete")?!=plan.transaction.as_bytes(){return Err("update_install_incomplete".into());}Ok(())
     }
