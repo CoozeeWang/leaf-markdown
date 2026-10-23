@@ -1,6 +1,11 @@
 use std::{fs, io::{Read, Write}, path::{Path, PathBuf, Component}};
 const LIMIT: u64 = 32 * 1024 * 1024;
 
+pub(crate) fn with_admission<T>(lease:&crate::update_admission::OperationLease,operation:impl FnOnce()->Result<T,String>)->Result<T,String> {
+    lease.recheck()?;
+    operation()
+}
+
 pub fn resolve(document: &Path, relative: &str) -> Result<PathBuf, String> {
     if relative.is_empty() || relative.contains(['\\', ':', '\0']) { return Err(crate::i18n::error("resources.invalid_resource_path", serde_json::json!({})).into()); }
     let path = Path::new(relative);

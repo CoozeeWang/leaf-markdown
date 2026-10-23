@@ -13,6 +13,10 @@ path = "src/main.rs"
 name = "leaf-mcp-adapter"
 path = "src/bin/leaf-mcp-adapter.rs"
 
+[[bin]]
+name = "leaf-update-helper"
+path = "src/bin/leaf-update-helper.rs"
+
 [features]
 # Enables a local CDP connection only in native CI probe builds.
 native-smoke = ["tauri/devtools"]
@@ -37,6 +41,16 @@ axum = { version = "=0.8.9", default-features = false, features = ["http1", "tok
 keyring = { version = "=4.2.0", default-features = false, features = ["v1"] }
 getrandom = "=0.3.4"
 pulldown-cmark = { version = "=0.13.0", default-features = false }
+# Already locked transitive dependencies, exposed directly for native HTTPS and SemVer.
+reqwest = { version = "=0.13.4", default-features = false, features = ["rustls", "json", "stream"] }
+semver = "=1.0.28"
+# Official tauri-plugin-updater 2.14.0 uses this same verifier (its wrapper is private).
+minisign-verify = "=0.3.0"
+base64 = "=0.22.1"
+tar = { version = "=0.4.46", default-features = false }
+flate2 = "=1.1.10"
+plist = "=1.10.1"
+unicode-normalization = "=0.1.25"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "=3.7.0"

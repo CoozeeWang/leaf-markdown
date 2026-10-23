@@ -10,8 +10,9 @@ try {
   await page.addInitScript(()=>{
    window.isTauri=true;let id=0;const callbacks={},handlers={},replies={};
    const content='---\ntitle: "Old"\n---\n\n{==**重复😀é**==}{>>one<<}{==重复😀é==}{>>two<<} end{>>point<<}.\n\n%%hidden\n\nliteral%%\n\nPlain😀é end.';
-   window.commentBridge=(operation,args={})=>new Promise(resolve=>{const call_id=`call-${++id}`;replies[call_id]=resolve;handlers['leaf-mcp-editor']({payload:{call_id,operation,args}});});
+   window.commentBridge=(operation,args={})=>new Promise(resolve=>{const call_id=`call-${++id}`;replies[call_id]=resolve;handlers['leaf-mcp-editor']({payload:{window_label:'document-test',call_id,operation,args}});});
    window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'document-test'},currentWebview:{label:'document-test'}},transformCallback:fn=>{callbacks[++id]=fn;return id;},invoke:async(command,args={})=>{
+     if(command==='update_participant_status')return {window_nonce:1,prepare_id:null,phase:null,identity:null,frozen:false,manual_driver:false};
     if(command==='plugin:event|listen'){handlers[args.event]=callbacks[args.handler];return ++id;}
     if(command==='initial_path')return '/samples/comments.md';
     if(command==='observe_document')return {path:'/samples/comments.md',content};

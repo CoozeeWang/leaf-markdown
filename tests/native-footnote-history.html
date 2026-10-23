@@ -10,6 +10,7 @@ window.__TAURI_INTERNALS__={
  transformCallback:fn=>{callbacks.set(++sequence,fn);return sequence;},
  invoke:async(command,args)=>{
   if(command==='plugin:event|listen'){handlers.set(args.event,callbacks.get(args.handler));return ++sequence;}
+  if(command==='update_participant_status')return {window_nonce:1,prepare_id:null,phase:null,identity:null,frozen:false,manual_driver:false};
   if(command==='language_get')return {preference:'system',language:'zh-Hans',revision:0};
   if(command==='initial_path')return path;
   if(command==='observe_document')return {path,content:source};

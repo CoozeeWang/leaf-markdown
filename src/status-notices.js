@@ -45,17 +45,18 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
     else { delete container.dataset.kind; delete text.dataset.kind; }
   };
   const sameMessage = (a, b) => a?.key && b?.key ? a.key === b.key && JSON.stringify(a.values) === JSON.stringify(b.values) : a === b;
+  function announceMessage(message) {
+    clearTimeout(announcementTimer);
+    announcement.textContent = '';
+    if (message) announcementTimer = setTimeout(() => { announcement.textContent = format(resolveMessage(message)); }, 50);
+  }
   function show(message, kind = '', { announce = true, actions: choices } = {}) {
     // A rename or formatting success must not conceal an unresolved save error.
     if (persistent?.kind === 'error' && kind !== 'error' && !(kind === 'saved' && resolved(message))) return;
     clearTimeout(timer);
-    clearTimeout(announcementTimer);
-    announcement.textContent = '';
+    announceMessage(announce && message && kind !== 'pending' && !quiet(message) ? message : null);
     if (kind === 'saved' && resolved(message)) persistent = null;
     if (kind === 'error' || kind === 'manual') saveState = null;
-    if (announce && message && kind !== 'pending' && !quiet(message)) {
-      announcementTimer = setTimeout(() => { announcement.textContent = format(resolveMessage(message)); }, 50);
-    }
     if (saveIndicator && (kind === 'pending' || kind === 'saved' && routineSave.has(copyKeys[message?.key] || message?.key)) && !choices?.length) {
       saveState = {text:message,kind};
       current = null;
@@ -99,6 +100,7 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
     refresh: render,
     setTask(value){task=value;render();},
     show,
+    announce: announceMessage,
     clear(message) {
       if (!message || !sameMessage(persistent?.text, message)) return;
       clearTimeout(announcementTimer);

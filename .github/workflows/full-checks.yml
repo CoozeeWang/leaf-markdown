@@ -15,18 +15,122 @@ on:
       suite:
         description: 'Test suites to run'
         type: choice
-        options: [all, browser, native]
+        options: [all, browser, native, roles, update-unit, update-lock, update-prepare, update-coordinator, update-macos, update-preservation]
         default: all
       browser_suites:
         description: 'Optional space-separated browser suite filenames; empty runs every browser suite'
         type: string
         default: ''
+      update_test_filter:
+        description: 'Bounded native update test selector for update-unit only'
+        type: string
+        default: ''
+      update_test_exact:
+        description: 'Require an exact Rust test name'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: full-tests-${{ inputs.source_ref }}-${{ inputs.platform }}-${{ inputs.suite }}
+  group: full-tests-${{ inputs.source_ref }}-${{ inputs.platform }}-${{ inputs.suite }}-${{ inputs.update_test_filter }}-${{ inputs.update_test_exact }}
   cancel-in-progress: true
 jobs:
+  update-lock:
+    if: inputs.suite == 'update-lock'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve explicitly added workspace dependencies
+        shell: bash
+        run: |
+          cp src-tauri/Cargo.lock "$RUNNER_TEMP/leaf-update-Cargo.before.lock"
+          cargo update --workspace --manifest-path src-tauri/Cargo.toml
+          cargo metadata --locked --no-deps --format-version 1 --manifest-path src-tauri/Cargo.toml > /dev/null
+      - name: Reject changes to previously locked registry identities
+        shell: bash
+        run: |
+          python3 - <<'PYLOCK'
+          import json, os, pathlib, tomllib
+          previous = tomllib.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'leaf-update-Cargo.before.lock').read_text())['package']
+          current = tomllib.loads(pathlib.Path('src-tauri/Cargo.lock').read_text())['package']
+          key = lambda item: (item['name'], item['version'], item.get('source', ''))
+          before = {key(item): item for item in previous}
+          after = {key(item): item for item in current}
+          assert before.keys() <= after.keys(), 'An existing locked package was removed or updated'
+          for identity, item in before.items():
+              assert item.get('checksum') == after[identity].get('checksum'), 'An existing checksum changed'
+          added = [item for identity, item in after.items() if identity not in before]
+          assert len(added) <= 32, 'Unexpected dependency expansion'
+          assert all(item.get('source') == 'registry+https://github.com/rust-lang/crates.io-index' and len(item.get('checksum', '')) == 64 for item in added), 'Unexpected dependency source'
+          pathlib.Path('added-update-packages.json').write_text(json.dumps(added, indent=2) + '\n')
+          print('Existing locked identities unchanged; added registry packages:', len(added))
+          PYLOCK
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-update-cargo-lock
+          path: |
+            src-tauri/Cargo.lock
+            added-update-packages.json
+          if-no-files-found: error
+          retention-days: 3
+  update-unit:
+    if: inputs.suite == 'update-unit'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.platform == 'both' && '["windows-latest","macos-latest"]' || inputs.platform == 'macos' && '["macos-latest"]' || '["windows-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: native
+          cache-on-failure: true
+      - run: npm ci
+      - run: npm run build
+      - name: Compile the independent Mac helper
+        if: runner.os == 'macOS' && startsWith(inputs.update_test_filter, 'update_install::macos::tests') && hashFiles('src-tauri/src/bin/leaf-update-helper.rs') != ''
+        run: cargo build --locked --manifest-path src-tauri/Cargo.toml --bin leaf-update-helper
+      - name: Nonzero selected update Rust tests
+        shell: bash
+        env:
+          LEAF_UPDATE_TEST_FILTER: ${{ inputs.update_test_filter }}
+          LEAF_UPDATE_TEST_EXACT: ${{ inputs.update_test_exact }}
+        run: |
+          if [[ ! "$LEAF_UPDATE_TEST_FILTER" =~ ^((updates|update_releases|update_package|update_admission|update_barrier|update_coordinator|update_install|update_install_fixture)::tests|update_install::(macos|windows)::tests)(::[a-zA-Z0-9_]+)*$ ]]; then
+            echo 'Invalid bounded update test selector'
+            exit 1
+          fi
+          selection=(cargo --manifest-path src-tauri/Cargo.toml --filter "$LEAF_UPDATE_TEST_FILTER")
+          if [[ "$LEAF_UPDATE_TEST_EXACT" == 'true' ]]; then selection+=(--exact); fi
+          node scripts/run-selected-tests.mjs "${selection[@]}" -- --nocapture
+  roles:
+    if: inputs.suite == 'roles'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Standalone native window role contract
+        shell: bash
+        run: |
+          rustc --edition=2021 --test src-tauri/src/window_role.rs --crate-name leaf_window_roles -o "$RUNNER_TEMP/leaf-window-roles"
+          "$RUNNER_TEMP/leaf-window-roles" --nocapture
   frontend:
     if: inputs.suite == 'all' || inputs.suite == 'browser'
     strategy:
@@ -43,6 +147,11 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: cargo --version
       - run: npm ci
       - run: npx playwright install chromium webkit
       - run: npm run check
@@ -62,6 +171,79 @@ jobs:
         with:
           name: browser-results-${{ matrix.os }}
           path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+  update-preservation:
+    if: inputs.suite == 'update-preservation'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: native
+          cache-on-failure: true
+      - name: Require the supported preservation platform
+        env:
+          LEAF_FOCUS_PLATFORM: ${{ inputs.platform }}
+        run: node -e "if(process.env.LEAF_FOCUS_PLATFORM!=='macos')throw Error('Preservation requires macos')"
+      - run: npm ci
+      - name: Compile both actual Leaf versions and verify installed preservation
+        run: node scripts/build-desktop-update-preservation.mjs --evidence-root test-results/desktop-updates-installed
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-update-installed-results
+          path: test-results/desktop-updates-installed/
+          if-no-files-found: ignore
+          retention-days: 7
+  update-native-focus:
+    if: inputs.suite == 'update-prepare' || inputs.suite == 'update-coordinator' || inputs.suite == 'update-macos'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+      - name: Require the supported native focus platform
+        env:
+          LEAF_FOCUS_PLATFORM: ${{ inputs.platform }}
+        run: node -e "if(process.env.LEAF_FOCUS_PLATFORM!=='macos')throw Error('Native focus requires macos')"
+      - run: npm ci
+      - name: Build the actual native probe
+        run: npm run desktop:build -- --debug --no-bundle --features native-smoke,tauri/custom-protocol
+      - name: Run only the selected actual native matrix
+        if: inputs.suite != 'update-macos'
+        timeout-minutes: 6
+        env:
+          LEAF_FOCUS_MODE: ${{ inputs.suite == 'update-prepare' && '--prepare' || '--coordinator' }}
+        run: node scripts/desktop-update-package-fixture.mjs src-tauri/target/debug/leaf "$LEAF_FOCUS_MODE"
+      - name: Run only the actual Mac helper matrix
+        if: inputs.suite == 'update-macos'
+        timeout-minutes: 8
+        run: node tests/desktop-updates-macos.mjs --fixture --binary src-tauri/target/debug/leaf --evidence-root test-results/desktop-updates-native/mac-install
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-update-native-results
+          path: test-results/desktop-updates-native/
           if-no-files-found: ignore
           retention-days: 7
   native:
@@ -98,6 +280,61 @@ jobs:
           else
             echo 'available=false' >> "$GITHUB_OUTPUT"
           fi
+      - name: Build desktop update native probe
+        id: update_probe_build
+        if: runner.os == 'macOS' && hashFiles('src-tauri/src/update_test_driver.rs') != ''
+        run: npm run desktop:build -- --debug --no-bundle --features native-smoke,tauri/custom-protocol
+      - name: Desktop update native admission and real I/O races
+        if: runner.os == 'macOS' && steps.update_probe_build.outcome == 'success'
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          node -e "require('node:fs').rmSync('test-results/desktop-updates-native/admission-result.json',{force:true})"
+          src-tauri/target/debug/leaf --update-admission-smoke
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const r = JSON.parse(fs.readFileSync('test-results/desktop-updates-native/admission-result.json', 'utf8'));
+          const names = ['resource_callback', 'recovery_callback', 'cancelled_save', 'initialization_and_os_open', 'mcp_existing_task_settlement', 'mcp_timeout_late_apply', 'mcp_receipt_autosave', 'sealed_settlement', 'actual_print_completion', 'mapped_native_mutators', 'scoped_save_and_resource_io'];
+          if (r.pass !== true || r.layer !== 'actual-tauri' || r.tracer !== 'updates-admission' || r.executed !== names.length || !Array.isArray(r.scenarios) || r.scenarios.length !== names.length || names.some(name => r.scenarios.filter(s => s.name === name && s.pass === true).length !== 1)) throw Error('Native admission report failed: ' + JSON.stringify(r));
+          console.log(JSON.stringify({ pass: true, layer: r.layer, tracer: r.tracer, executed: r.executed }));
+          NODE
+      - name: Desktop update native coordinator and one-use exit
+        if: runner.os == 'macOS' && steps.update_probe_build.outcome == 'success'
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          node -e "require('node:fs').rmSync('test-results/desktop-updates-native/coordinator-result.json',{force:true})"
+          node scripts/desktop-update-package-fixture.mjs src-tauri/target/debug/leaf --coordinator
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const r = JSON.parse(fs.readFileSync('test-results/desktop-updates-native/coordinator-result.json', 'utf8'));
+          const names = ['empty_set_global_gate', 'native_saved_ledger', 'native_settled_snapshot', 'actual_reply_identity_matrix', 'partial_save_cancel', 'abort_draining_real_write', 'mcp_busy_and_finish', 'pending_and_queued_open', 'timeout_and_participant_loss', 'native_close_same_action', 'ordinary_quit_competition', 'native_save_as_rebind', 'handoff_failure_and_stale_permit', 'one_commit_real_exit'];
+          const zeros = e => e && ['destroy', 'exit', 'install', 'restart', 'leaf_close', 'accepted_exit_requested', 'exit_events', 'harness_exit'].every(k => e[k] === 0);
+          const finalEffects = e => e && ['destroy', 'install', 'restart', 'leaf_close', 'harness_exit', 'rejected_exit_requested'].every(k => e[k] === 0) && e.exit === 1 && e.accepted_exit_requested === 1 && e.exit_events === 1;
+          if (r.pass !== true || r.layer !== 'actual-tauri' || r.tracer !== 'updates-coordinator' || r.executed !== names.length || !Array.isArray(r.scenarios) || r.scenarios.length !== names.length || names.some(name => r.scenarios.filter(s => s.name === name && s.pass === true).length !== 1) || !finalEffects(r.side_effects)) throw Error('Native coordinator report failed: ' + JSON.stringify(r));
+          for (const row of r.scenarios) {
+            if (row.name === 'one_commit_real_exit') {
+              if (!finalEffects(row.side_effects) || row.details.actual_run_event_exit !== true || row.details.permit_consumptions !== 1 || row.details.verified_package_consumed !== true || row.details.installer_invocations !== 0 || row.details.restart_invocations !== 0) throw Error('Native final exit evidence failed');
+            } else if (!zeros(row.side_effects)) throw Error('Native precommit effects: ' + row.name);
+          }
+          console.log(JSON.stringify({ pass: true, layer: r.layer, tracer: r.tracer, executed: r.executed, side_effects: r.side_effects }));
+          NODE
+      - name: Desktop update production participant and multi-document races
+        if: always() && runner.os == 'macOS' && steps.update_probe_build.outcome == 'success'
+        timeout-minutes: 6
+        shell: bash
+        run: |
+          node scripts/desktop-update-package-fixture.mjs src-tauri/target/debug/leaf --prepare
+          node --input-type=module - <<'NODE'
+          import {readFileSync} from 'node:fs';
+          import {verifyPrepareReport} from './scripts/desktop-update-package-fixture.mjs';
+          const r=verifyPrepareReport(JSON.parse(readFileSync('test-results/desktop-updates-native/prepare-result.json','utf8')));
+          console.log(JSON.stringify({pass:true,layer:r.layer,tracer:r.tracer,executed:r.executed,side_effects:r.side_effects}));
+          NODE
+      - name: Mac independent helper atomic install and rollback
+        if: always() && runner.os == 'macOS' && steps.update_probe_build.outcome == 'success'
+        timeout-minutes: 8
+        run: node tests/desktop-updates-macos.mjs --fixture --binary src-tauri/target/debug/leaf --evidence-root test-results/desktop-updates-native/mac-install
       - run: npm run desktop:build -- --no-bundle
         if: runner.os != 'Windows' || steps.probe.outputs.available != 'true'
       - run: npm run desktop:build -- --no-bundle --features native-smoke
@@ -116,6 +353,55 @@ jobs:
         if: runner.os == 'Windows' && steps.probe.outputs.available == 'true'
         timeout-minutes: 5
         run: node tests/windows-native-smoke.mjs
+      - name: Desktop update real official HTTPS
+        if: runner.os == 'macOS' && steps.update_probe_build.outcome == 'success'
+        timeout-minutes: 3
+        env:
+          LEAF_UPDATE_OFFICIAL_PROBE_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir -p test-results/desktop-updates-native
+          src-tauri/target/debug/leaf --update-official-probe 2>&1 | tee test-results/desktop-updates-native/official-probe.log
+      - name: Desktop update published catalog fixtures
+        if: runner.os == 'macOS' && steps.update_probe_build.outcome == 'success'
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          mkdir -p test-results/desktop-updates-native
+          src-tauri/target/debug/leaf --update-catalog-smoke 2>&1 | tee test-results/desktop-updates-native/catalog-probe.log
+      - name: Desktop update signed package boundary fixtures
+        if: runner.os == 'macOS' && steps.update_probe_build.outcome == 'success'
+        timeout-minutes: 5
+        shell: bash
+        run: node scripts/desktop-update-package-fixture.mjs src-tauri/target/debug/leaf | tee test-results/desktop-updates-native/package-probe.log
+      - name: Desktop update native download and continuation races
+        if: runner.os == 'macOS' && steps.update_probe_build.outcome == 'success'
+        timeout-minutes: 3
+        shell: bash
+        run: node scripts/desktop-update-package-fixture.mjs src-tauri/target/debug/leaf --races | tee test-results/desktop-updates-native/package-races.log
+      - name: Desktop update native window tracer
+        if: always() && runner.os == 'macOS' && steps.update_probe_build.outcome == 'success'
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          node -e "require('node:fs').rmSync('test-results/desktop-updates-native/result.json',{force:true})"
+          src-tauri/target/debug/leaf --update-tracer-role-matrix
+          node -e "const r=JSON.parse(require('node:fs').readFileSync('test-results/desktop-updates-native/result.json','utf8')); if(r.pass!==true||r.layer!=='actual-tauri'||r.tracer!=='updates-role-matrix') throw Error('Native update report failed: '+JSON.stringify(r))"
+      - name: Desktop update native UI and continuation
+        if: always() && runner.os == 'macOS' && steps.update_probe_build.outcome == 'success'
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          node -e "require('node:fs').rmSync('test-results/desktop-updates-native/ui-result.json',{force:true})"
+          src-tauri/target/debug/leaf --update-ui-smoke
+          node -e "const r=JSON.parse(require('node:fs').readFileSync('test-results/desktop-updates-native/ui-result.json','utf8')); if(r.pass!==true||r.layer!=='actual-tauri'||r.tracer!=='updates-ui') throw Error('Native update report failed: '+JSON.stringify(r))"
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'macOS' && hashFiles('src-tauri/src/update_test_driver.rs') != ''
+        with:
+          name: macos-update-native-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always() && runner.os == 'Windows'
         with:

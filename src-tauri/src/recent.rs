@@ -152,11 +152,13 @@ impl Recent {
     }
 
     pub fn import(&self, app: &AppHandle, old: Vec<Entry>) -> Result<(), String> {
+        let _lease=crate::native_admission(app,None)?;
         if self.data.lock().unwrap().migrated { return Ok(()); }
         self.change(app, |data| merge_legacy(data, old))
     }
 
     pub fn clear_missing(&self, app: &AppHandle) -> Result<usize, String> {
+        let _lease=crate::native_admission(app,None)?;
         let before = self.list().len();
         self.change(app, |data| retain_valid(&mut data.entries))?;
         Ok(before - self.list().len())
@@ -210,6 +212,7 @@ pub fn recent_import(app: AppHandle, recent: tauri::State<Recent>, items: Vec<En
 pub fn recent_clear_missing(app: AppHandle, recent: tauri::State<Recent>) -> Result<usize, String> { recent.clear_missing(&app) }
 
 pub fn open(app: &AppHandle, path: &str) -> Result<(), String> {
+    let _lease=crate::native_admission(app,None)?;
     let (verified, token) = app.state::<Recent>().verified_path(path)?;
     crate::create_document(app.clone(), Some(verified.to_string_lossy().into_owned()), None, Some(token))
 }

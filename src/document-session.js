@@ -3,7 +3,7 @@ import {rewriteResourcePaths} from './resource-paths.js';
 // Native I/O is injected so delayed writes, conflicts and recovery can be
 // exercised without a WebView or a user's files.
 export function createDocumentSession(io) {
-  let path = null, disk = null, ready = false, revision = 0, paused = false;
+  let path = null, disk = null, ready = false, revision = 0, paused = false, generation = 0;
   let pollFailure = null;
   let aiResult = null;
   const publishAi=async (result, update) => {
@@ -43,6 +43,7 @@ export function createDocumentSession(io) {
     },
     edited() { revision++; },
     async initialize(source, content) {
+      generation++;
       path = source; disk = content;
       pollFailure = null;
       await io.load(content, source);
@@ -55,39 +56,62 @@ export function createDocumentSession(io) {
         if (ready && io.content() !== disk) await io.checkpoint(io.content());
       });
     },
-    save({ as = false, manual = true } = {}) {
+    save({ as = false, manual = true, transaction = null } = {}) {
       return serialize(async () => {
         if (!ready || (paused && !manual)) return false;
-        const ai=aiResult,context=io.saveContext?.();
-        let locationCheckFailed = false;
+        const ai=aiResult,owner=generation;let context;
+        const sameDocument=()=>generation===owner;
+        const current=async()=>{if(!sameDocument())throw Error('save_document_replaced');if(transaction)await transaction.assertCurrent();};
+        let locationCheckFailed = false,completedWrite = false;
         try {
+          await current();
           if (path && !as && io.observe) {
-            try { follow(await io.observe()); }
+            let observation;
+            try { observation=await io.observe(); }
             catch (error) { locationCheckFailed = true; throw error; }
+            await current();follow(observation);
           }
           let target = path, expected = disk;
           if (!target || as) {
-            target = await io.select(path);
+            target = await io.select(path,transaction);
+            await current();
             if (!target) return false;
             expected = await io.readTarget(target);
+            await current();
           }
+          context=io.saveContext?.();
           let content = io.content();
-          await io.checkpoint(content);
+          await current();
+          await io.checkpoint(content,false,transaction);
+          await current();
           await publishAi(ai,{checkpoint:{state:'protected'},diskResult:{state:'pending',revision:null},saveContext:context});
+          await current();
           status(translatedMessage("document_session.saving"), 'pending');
-          const result = await io.write(target, content, expected,context);
+          const result = await io.write(target, content, expected,context,transaction);
+          if(!sameDocument())throw Error('save_document_replaced');
           const cleanupWarning = result && typeof result === 'object' ? result.warning : result;
+          if (result && typeof result === 'object') content = result.content;
+          // Native success is already durable. Reconcile its own baseline before
+          // any optional buffer rewrite, which may refuse a newer live IME/draft.
+          path = result?.path || target; disk = content; paused = false; pollFailure = null;
+          completedWrite=true;io.saved(content, path);
+          await current();
           if (result && typeof result === 'object') {
-            content = result.content;
             const latest = rewriteResourcePaths(io.content(), result.mappings);
-            if (latest !== io.content()) io.restore(latest);
+            if (latest !== io.content()) await io.restore(latest,transaction);
           }
-          path = target; disk = content; paused = false; pollFailure = null;
-          io.saved(content, target);
+          if(!sameDocument())throw Error('save_document_replaced');
+          await current();
           await publishAi(ai,{diskResult:{state:'saved',revision:context?.revision ?? ai?.bufferResult.revision}});
+          await current();
           status(cleanupWarning || (io.content() === content ? translatedMessage("document_session.saved") : translatedMessage("document_session.waiting_to_autosave")), cleanupWarning ? 'error' : io.content() === content ? 'saved' : 'pending', { announce: manual });
           return true;
         } catch (error) {
+          // Cancellation owns no new status or AI receipt in this document,
+          // especially if an await returned into a replacement document.
+          if(!sameDocument()||['update_prepare_stale','save_document_replaced'].includes(String(error?.message||error)))return false;
+          // Cancellation after successful native I/O is not a failed disk write.
+          if(completedWrite)return false;
           await publishAi(ai,{diskResult:{state:'failed',revision:null},saveContext:context}).catch(()=>{});
           status(locationCheckFailed || unavailable(error)
             ? translatedMessage("document_session.the_original_file_is_unavailable_your_changes")

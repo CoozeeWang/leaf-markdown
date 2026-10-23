@@ -1,5 +1,5 @@
 :root { color-scheme:light; --export-bg:#f3f4ef; --export-surface:#fafaf7; --export-text:#353b38; --export-muted:#697164; --export-line:#dedfd7; --export-accent:#405a49; --export-accent-text:#ffffff; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color:var(--export-text); background:var(--export-bg); }
-:root[data-export-theme="dark"] { color-scheme:dark; --export-bg:#1d211d; --export-surface:#242824; --export-text:#e7e9e2; --export-muted:#a0a69c; --export-line:#3a413a; --export-accent:#b3d0b7; --export-accent-text:#1d211d; }
+:root[data-export-theme="dark"] { color-scheme:dark; --export-bg:#1d211d; --export-surface:#292e29; --export-text:#e7e9e2; --export-muted:#b1b8ad; --export-line:#485048; --export-accent:#b3d0b7; --export-accent-text:#1d211d; }
 * { box-sizing: border-box; }
 body { margin: 0; }
 .export-toolbar { position: sticky; top: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 16px 28px; background:var(--export-surface); border-bottom:1px solid var(--export-line); font-size: 13px; }

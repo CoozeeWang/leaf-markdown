@@ -18,7 +18,7 @@ try {
  assert.equal(await page.getByRole('button',{name:'确认添加属性',exact:true}).count(),0);
  await page.locator('.brand').click();
  const value=page.getByRole('textbox',{name:'version',exact:true});
- await value.fill('v2');assert.ok((await source()).includes('"version": "v2"'));
+ await value.fill('v2');await value.press('Enter');assert.ok((await source()).includes('"version": "v2"'));
  await page.getByRole('button',{name:'编辑此块 Markdown 源码'}).click();
  const before=await source();await page.getByRole('textbox',{name:'文档属性源码',exact:true}).press('Enter');
  assert.equal((await source()).length,before.length+1);
@@ -33,7 +33,7 @@ try {
  await page.getByRole('textbox',{name:'新属性名',exact:true}).fill('状态');
  await page.getByRole('textbox',{name:'新属性值',exact:true}).fill('草稿');
  await page.locator('.brand').click();
- await page.getByRole('textbox',{name:'状态',exact:true}).fill('完成');
+ await page.getByRole('textbox',{name:'状态',exact:true}).fill('完成');await page.getByRole('textbox',{name:'状态',exact:true}).press('Enter');
  assert.ok((await source()).includes('"状态": "完成"'));
  await page.screenshot({path:artifactPath('leaf-yaml-entry.png')});
  assert.deepEqual(errors,[]);

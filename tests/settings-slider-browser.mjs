@@ -27,9 +27,10 @@ for (const engine of ['chrome', 'webkit']) {
       assert.equal(await activeTab.getAttribute('id'), `settingsTab-${tab}`);
       assert.equal(await page.evaluate(() => document.activeElement.id), `settingsTab-${tab}`);
       assert.ok(await page.locator(`#settingsPanel-${tab}`).isVisible());
-      const other = tab === 'appearance' ? 'recovery' : 'appearance';
-      assert.ok(await page.locator(`#settingsPanel-${other}`).isHidden());
-      assert.equal(await page.locator(`#settingsTab-${other}`).getAttribute('tabindex'), '-1');
+      for (const other of ['appearance','recovery','ai'].filter(other => other !== tab)) {
+        assert.ok(await page.locator(`#settingsPanel-${other}`).isHidden());
+        assert.equal(await page.locator(`#settingsTab-${other}`).getAttribute('tabindex'), '-1');
+      }
     };
     await checkTab('appearance');
     for (const language of ['zh-Hans', 'zh-Hant-TW', 'en']) {
@@ -39,9 +40,9 @@ for (const engine of ['chrome', 'webkit']) {
       await page.waitForFunction(language => document.documentElement.lang === language, language);
       await page.click('#settingsTab-appearance');
       for (const [key, tab] of [
-        ['ArrowLeft', 'recovery'], ['ArrowLeft', 'appearance'],
-        ['ArrowRight', 'recovery'], ['ArrowRight', 'appearance'],
-        ['End', 'recovery'], ['Home', 'appearance'],
+        ['ArrowLeft', 'ai'], ['ArrowLeft', 'recovery'], ['ArrowLeft', 'appearance'],
+        ['ArrowRight', 'recovery'], ['ArrowRight', 'ai'], ['ArrowRight', 'appearance'],
+        ['End', 'ai'], ['Home', 'appearance'],
       ]) {
         await page.keyboard.press(key);
         await checkTab(tab);

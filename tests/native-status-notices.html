@@ -11,6 +11,7 @@ window.startTest = async () => {
    metadata: {currentWindow: {label: 'document-test'}, currentWebview: {label: 'document-test'}},
    transformCallback: () => 1,
    invoke: async (cmd, args) => {
+     if(cmd==='update_participant_status')return {window_nonce:1,prepare_id:null,phase:null,identity:null,frozen:false,manual_driver:false};
     if (cmd === 'initial_path') return '/tmp/提示检查.md';
     if (cmd === 'read_document') {
       if (readFails) throw 'No such file or directory (os error 2)';

@@ -913,7 +913,7 @@ async fn file_transition_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpB
         let applied=broker.bridge(app,&label,"snapshot",json!({})).await?;
         if action=="save-as" {
             let save_binding=json!({"document_id":d.document_id,"session_id":d.session_id,"revision":receipt["applied_revision"]});
-            super::write_document(app.clone(),window.clone(),app.state::<super::Documents>(),app.state::<super::DocumentAnchors>(),app.state::<super::RecoveryState>(),target.to_string_lossy().into(),"Assisted! saved draft".into(),None,vec![],Some(save_binding)).await?;
+            super::write_document(app.clone(),window.clone(),app.state::<super::Documents>(),app.state::<super::DocumentAnchors>(),app.state::<super::RecoveryState>(),target.to_string_lossy().into(),"Assisted! saved draft".into(),None,vec![],Some(save_binding),None).await?;
             ensure(std::fs::read_to_string(&source).unwrap()==initial,"save-as leaves original disk unchanged")?;
         }else if action=="rename" {
             let canonical=app.state::<super::Documents>().0.lock().unwrap().get(&label).cloned().flatten().ok_or("rename source absent")?;
@@ -1161,7 +1161,7 @@ async fn history_gate(app:&tauri::AppHandle,label:&str,broker:&super::mcp::LeafM
         }
         if reason=="save-failed" {
             let path=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap()).join("missing-folder/Synthetic.md");
-            let saved=super::write_document(app.clone(),app.get_webview_window(label).unwrap(),app.state::<super::Documents>(),app.state::<super::DocumentAnchors>(),app.state::<super::RecoveryState>(),path.to_string_lossy().into_owned(),final_text.into(),None,vec![],None).await;
+            let saved=super::write_document(app.clone(),app.get_webview_window(label).unwrap(),app.state::<super::Documents>(),app.state::<super::DocumentAnchors>(),app.state::<super::RecoveryState>(),path.to_string_lossy().into_owned(),final_text.into(),None,vec![],None,None).await;
             ensure(saved.is_err(),"native save failure injected without disk overwrite")?;
         }
         let mut end=binding.clone();end["task_id"]=task["task_id"].clone();end["reason"]=json!(reason);

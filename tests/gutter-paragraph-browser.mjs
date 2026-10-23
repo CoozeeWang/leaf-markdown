@@ -19,7 +19,8 @@ try {
    const coords=v.coordsAtPos(line.from);
    const range=document.createRange();range.selectNodeContents(el);
    const label=range.getBoundingClientRect();
-   if(coords && Math.abs((label.top+label.bottom-coords.top-coords.bottom)/2)>2) throw new Error('Label does not align with first text line');
+   const delta=coords?(label.top+label.bottom-coords.top-coords.bottom)/2:0;
+   if(coords && Math.abs(delta)>2) throw new Error(`Label does not align with first text line (line ${line.number}, delta ${delta.toFixed(3)} px, label ${label.top.toFixed(3)}..${label.bottom.toFixed(3)}, text ${coords.top.toFixed(3)}..${coords.bottom.toFixed(3)})`);
    return Math.abs(el.getBoundingClientRect().top-(v.documentTop+b.top));
   }));
   assert.ok(errors.every(x=>x<2),JSON.stringify(errors));

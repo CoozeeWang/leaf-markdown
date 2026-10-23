@@ -1,4 +1,5 @@
 import { Direction, RectangleMarker, layer } from '@codemirror/view';
+import { toggleProperties } from './structured-preview.js';
 
 // CodeMirror derives the continuation edges from the first rendered .cm-line.
 // In live preview that may be an indented list/quote, unrelated to the selection.
@@ -43,5 +44,6 @@ export const leafSelection = layer({
     }
     return markers;
   },
-  update: update => update.docChanged || update.selectionSet || update.viewportChanged || update.geometryChanged,
+  update: update => update.docChanged || update.selectionSet || update.viewportChanged || update.geometryChanged
+    || update.transactions.some(tr => tr.effects.some(effect => effect.is(toggleProperties))),
 });

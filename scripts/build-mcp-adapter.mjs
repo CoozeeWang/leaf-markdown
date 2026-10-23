@@ -29,16 +29,23 @@ export async function stageAdapter({ target = 'current', debug = false, nativeSm
   const cargoConfig = JSON.parse(env.TAURI_CONFIG || '{}'); cargoConfig.bundle = { ...cargoConfig.bundle, externalBin: [] };
   const buildEnv = { ...env, TAURI_CONFIG: JSON.stringify(cargoConfig) };
   if (target.includes('apple-darwin')) buildEnv.MACOSX_DEPLOYMENT_TARGET = debug ? '14.0' : '11.0';
-  if(!reuseBuild)await run('cargo', ['build', '--locked', '--manifest-path', 'src-tauri/Cargo.toml', '--bin', 'leaf-mcp-adapter', ...(nativeSmoke ? ['--features','native-smoke'] : []), ...(debug ? [] : ['--release']), ...(target === host ? [] : ['--target', target])], { env: buildEnv });
+  if(!reuseBuild)await run('cargo', ['build', '--locked', '--manifest-path', 'src-tauri/Cargo.toml', '--bin', 'leaf-mcp-adapter', '--bin', 'leaf-update-helper', ...(nativeSmoke ? ['--features','native-smoke'] : []), ...(debug ? [] : ['--release']), ...(target === host ? [] : ['--target', target])], { env: buildEnv });
   const binary = join(root, 'src-tauri/target', ...(target === host ? [] : [target]), debug ? 'debug' : 'release', `leaf-mcp-adapter${suffix}`);
   if(target===host) {
     const identity=(await output(binary,['--leaf-build-identity'])).trim();
     assert(identity.includes(nativeSmoke?':native-smoke:':':production:'),'helper feature identity must match the selected build');
   }
+  const updateHelper = join(root, 'src-tauri/target', ...(target === host ? [] : [target]), debug ? 'debug' : 'release', `leaf-update-helper${suffix}`);
+  if(target===host) {
+    const identity=(await output(updateHelper,['--leaf-build-identity'])).trim();
+    assert(identity.includes(nativeSmoke?':native-smoke:':':production:'),'update helper feature identity must match the selected build');
+  }
   const staging = join(root, 'src-tauri/binaries'); await mkdir(staging, { recursive: true });
-  await copyFile(binary, join(staging, `leaf-mcp-adapter-${target}${suffix}`));
-  if (!suffix) await chmod(join(staging, `leaf-mcp-adapter-${target}`), 0o755);
-  return { target, host, suffix, binary };
+  for(const [source,name] of [[binary,'leaf-mcp-adapter'],[updateHelper,'leaf-update-helper']]) {
+    const destination=join(staging,`${name}-${target}${suffix}`);await copyFile(source,destination);
+    if(!suffix)await chmod(destination,0o755);
+  }
+  return { target, host, suffix, binary, updateHelper };
 }
 export async function producePackages(options = {}) {
   const built = await stageAdapter({...options,nativeSmoke:!!options.testBundle||!!options.nativeSmoke});

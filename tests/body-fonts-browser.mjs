@@ -172,7 +172,7 @@ for (const engine of process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGIN
     assert.equal(await page.locator('#chineseFontSelect').inputValue(),chinese);
     assert.equal(await page.locator('#englishFontSelect').inputValue(),english);
     await page.click('#welcomeNewButton'); await page.locator('.editor-host .cm-content').fill(sample);
-    for(const [language,label] of [['zh-Hans','东亚字体'],['zh-Hant-TW','東亞字型'],['en','East Asian font']]) {
+    for(const [language,label] of [['zh-Hans','东亚字体'],['zh-Hant-TW','東亞字型'],['en','East Asian Font']]) {
       await page.click('#editorLanguageSelect'); await page.click(`[data-language="${language}"]`);
       await page.waitForFunction(language=>document.documentElement.lang===language,language);
       await openSettings(page);
@@ -222,7 +222,7 @@ for (const engine of process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGIN
     await missing.goto(base); await ready(missing);
     assert.equal(await missing.locator('#englishFontSelect').inputValue(),'georgia');
     assert.equal(await missing.locator('#englishFontSelect option[value="georgia"]').evaluate(option=>option.disabled),true);
-    assert.match(await missing.locator('#bodyFontStatus').innerText(),/Georgia is unavailable\. Using (Arial|SF Pro Text|Segoe UI|Liberation Sans)/);
+    assert.match(await missing.locator('#bodyFontStatus').innerText(),/^“Georgia” is unavailable\. Using “(Arial|SF Pro Text|Segoe UI|Liberation Sans)”\.$/);
     assert.match(await missing.locator('.shell').evaluate(el=>el.style.getPropertyValue('--body-font')),/en sans/);
     assert.equal(await missing.evaluate(()=>JSON.parse(localStorage.getItem('leaf-body-fonts-v1')).en),'georgia','Missing requested choice is retained for later reinstallation');
     await missing.close();

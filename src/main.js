@@ -16,9 +16,10 @@ import './style.css';
 import { renderPrintDocument } from './print-document.js';
 import { frontmatter } from './markdown-model.js';
 import './reading.css';
-import { desktop, desktopRevealDocument, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopAiApplied, desktopFileState, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, chooseAttachments } from './desktop.js';
+import { desktop, desktopRevealDocument, desktopExportBundle, desktopRename, desktopOpen, desktopNew, desktopSave, desktopAiApplied, desktopFileState, desktopHasPath, initDesktop, desktopTitle, desktopEdited, desktopRestore, desktopRecoveryPaused, desktopRun, desktopPreparing, desktopParticipantReady, desktopTestPrepare, chooseAttachments } from './desktop.js';
 import { invoke } from '@tauri-apps/api/core';
 import { listen as listenNative } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open as pickNativeFile } from '@tauri-apps/plugin-dialog';
 import { shortcutText, renderShortcutText, renderTooltipText } from './platform-shortcuts.js';
 import { labels as calloutLabels } from './callout.js';
@@ -279,17 +280,22 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <div class="ai-actions ai-config-actions"><button id="aiEditSetup" class="ai-button" hidden>${h('ai.edit_setup')}</button><button id="aiClear" class="ai-button ai-danger" disabled></button></div>
         <p id="aiConnectionError" class="setting-hint ai-error" role="alert"></p>
         <div id="aiLocalSetup" hidden><h4 id="aiClaudeManualTitle" class="ai-local-title" hidden></h4><ol class="setting-hint ai-local-steps"><li id="aiLocalStep1"></li><li id="aiLocalStep2"></li><li id="aiLocalStep3"></li></ol><div class="ai-actions ai-config-actions"><button id="aiLocalConfigure" class="ai-button ai-primary"></button></div><p id="aiLocalResult" class="setting-hint" role="status"></p></div>
+        <div id="aiSetupHelp" class="ai-setup-help"><button id="aiHelpToggle" class="ai-text-button" aria-expanded="false" aria-controls="aiHelpContent">${h('ai.help_title')}</button><div id="aiHelpContent" hidden><p class="setting-hint">${h('ai.help_hint')}</p><p class="setting-hint ai-setup-prompt">${h('ai.help_prompt')}</p><button id="aiCopyPrompt" class="ai-button">${h('ai.copy_prompt')}</button></div></div>
         <div id="aiChatGPTSetup" class="ai-guided-card">
           <h4>${h('ai.guided_title')}</h4><p id="aiSavedStatus" class="setting-hint" role="status"></p>
           <ol class="ai-guided-steps">
             <li><label for="aiTunnelId">${h('ai.tunnel_id')}</label><p class="setting-hint">${h('ai.setup_at')} <a href="https://platform.openai.com/settings/organization/tunnels" data-ai-link>${h('ai.tunnel_link')}</a> ${h('ai.tunnel_help')}</p><input id="aiTunnelId" autocomplete="off" spellcheck="false" data-i18n-placeholder="ai.tunnel_placeholder" placeholder="${t('ai.tunnel_placeholder')}" disabled></li>
             <li><label for="aiTunnelProgram">${h('ai.program')}</label><div class="ai-input-row"><input id="aiTunnelProgram" readonly data-i18n-placeholder="ai.program_placeholder" placeholder="${t('ai.program_placeholder')}"><button id="aiPickProgram" class="ai-button" disabled>${h('ai.choose_program')}</button></div><div class="ai-device-row"><span id="aiDevice" class="setting-hint"></span><button id="aiRefreshDownload" class="ai-text-button">${h('ai.recheck')}</button></div><p id="aiDownloadStatus" class="setting-hint" role="status"></p><a id="aiDownload" href="https://github.com/openai/tunnel-client/releases/latest" data-ai-link>${h('ai.downloads')}</a><p id="aiProgramHelp" class="setting-hint"></p><details id="aiMacHelp" open><summary>${h('ai.mac_title')}</summary><p class="setting-hint">${h('ai.mac_help')}</p></details></li>
             <li><label for="aiRuntimeKey">${h('ai.runtime_key')}</label><p class="setting-hint">${h('ai.key_requirement')}</p><input id="aiRuntimeKey" type="password" autocomplete="off" spellcheck="false" disabled><p class="setting-hint">${h('ai.setup_at')} <a href="https://platform.openai.com/settings/organization/api-keys" data-ai-link>${h('ai.key_link')}</a> ${h('ai.key_help')}</p><p id="aiKeepKey" class="setting-hint" hidden>${h('ai.keep_key')}</p><div class="ai-actions"><button id="aiSaveSetup" class="ai-button ai-primary" disabled>${h('ai.save_setup')}</button><button id="aiCancelSetup" class="ai-button" hidden>${h('ai.cancel')}</button></div></li>
-            <li><span class="ai-step-title">${h('ai.add_title')}</span><p class="setting-hint">${h('ai.add_help')}</p><p id="aiRuntimeStatus" class="setting-hint" role="status"></p><div class="ai-actions ai-add-actions"><button id="aiAddChatGPT" class="ai-button ai-primary" disabled>${h('ai.add_button')}</button><button id="aiCopyTunnel" class="ai-button" disabled>${h('ai.copy_tunnel')}</button></div><button id="aiRetryTunnel" class="ai-text-button ai-retry" hidden>${h('ai.retry_connection')}</button><details><summary>${h('ai.existing_title')}</summary><p class="setting-hint">${h('ai.existing_help')}</p></details></li>
+            <li><span class="ai-step-title">${h('ai.add_title')}</span><p class="setting-hint">${h('ai.add_help')}</p><p id="aiRuntimeStatus" class="setting-hint" role="status"></p><div class="ai-actions ai-add-actions"><button id="aiAddChatGPT" class="ai-button ai-primary" disabled>${h('ai.add_button')}</button><button id="aiCopyTunnel" class="ai-button" disabled>${h('ai.copy_tunnel')}</button></div><button id="aiRetryTunnel" class="ai-text-button ai-retry" hidden>${h('ai.retry_connection')}</button><button id="aiExistingToggle" class="ai-text-button" aria-expanded="false" aria-controls="aiExistingHelp">${h('ai.existing_title')}</button><p id="aiExistingHelp" class="setting-hint" hidden>${h('ai.existing_help')}</p></li>
           </ol>
-          <button id="aiTroubleshoot" class="ai-text-button" hidden>${h('ai.troubleshoot')}</button><details id="aiAdvanced"><summary>${h('ai.advanced_title')}</summary><label for="aiTunnelProxy">${h('ai.proxy_label')}</label><input id="aiTunnelProxy" autocomplete="off" spellcheck="false" placeholder="${t('ai.proxy_placeholder')}" disabled><p class="setting-hint">${h('ai.proxy_help')}</p><h5>${h('ai.diagnostics_title')}</h5>${h('ai.diagnostics_title')}</summary><p class="setting-hint">${h('ai.diagnostics_help')}</p><pre id="aiDiagnosticsText" class="setting-hint" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre><button id="aiCopyDiagnostics" class="ai-text-button">${h('ai.copy_diagnostics')}</button></details>
+          <button id="aiTroubleshoot" class="ai-text-button" hidden>${h('ai.troubleshoot')}</button>
+          <details id="aiAdvanced" class="ai-advanced"><summary>${h('ai.advanced_title')}</summary>
+            <section class="ai-advanced-section" aria-labelledby="aiProxyLabel"><label id="aiProxyLabel" for="aiTunnelProxy">${h('ai.proxy_label')}</label><input id="aiTunnelProxy" autocomplete="off" spellcheck="false" placeholder="${t('ai.proxy_placeholder')}" disabled><div class="ai-actions ai-proxy-actions"><button id="aiEditProxy" class="ai-button" hidden>${h('ai.edit_setup')}</button><button id="aiSaveProxy" class="ai-button" disabled>${h('ai.save_setup')}</button><button id="aiCancelProxy" class="ai-button" hidden>${h('ai.cancel')}</button></div><p class="setting-hint">${h('ai.proxy_help')}</p></section>
+            <section class="ai-advanced-section ai-diagnostics" aria-labelledby="aiDiagnosticsTitle"><div class="ai-diagnostics-heading"><h5 id="aiDiagnosticsTitle">${h('ai.diagnostics_title')}</h5><button id="aiCopyDiagnostics" class="ai-text-button">${h('ai.copy_diagnostics')}</button></div><p id="aiDiagnosticsStatus" class="setting-hint"></p><p class="setting-hint">${h('ai.diagnostics_help')}</p><button id="aiDiagnosticsToggle" class="ai-text-button" aria-expanded="false" aria-controls="aiDiagnosticsText">${h('ai.view_diagnostics')}</button><pre id="aiDiagnosticsText" tabindex="0" hidden></pre></section>
+          </details>
         </div>
-        <details id="aiSetupHelp" class="ai-setup-help"><summary>${h('ai.help_title')}</summary><p class="setting-hint">${h('ai.help_hint')}</p><p class="setting-hint ai-setup-prompt">${h('ai.help_prompt')}</p><button id="aiCopyPrompt" class="ai-button">${h('ai.copy_prompt')}</button></details>
+
         <p id="aiActionStatus" class="setting-hint" role="status"></p>
         </fieldset>
       </section>
@@ -916,6 +922,7 @@ function scheduleSave() {
   clearTimeout(state.saveTimer);
   if (desktop) {
     desktopEdited();
+    if(desktopPreparing())return;
     if (desktopRecoveryPaused()) { setStatus(translatedMessage("main.autosave_paused_after_recovery_review_and_save"), 'manual'); return; }
     if (desktopHasPath()) {
       setStatus(translatedMessage("main.waiting_to_autosave"), 'pending');
@@ -975,7 +982,7 @@ const editor = createLeafEditor({
         if(aiPresentationTask?.task_id===task.task_id){
           button.disabled=false;notice.setAttribute('aria-busy','false');notice.dataset.state='running';
           setAttr(notice,'aria-label',()=>t('ai.stop_failed'));
-          setText(document.querySelector('#statusAnnouncement'),()=>t('ai.stop_failed'));
+          statusNotices.announce(translatedMessage('ai.stop_failed'));
         }
       }
     }}:null);
@@ -985,7 +992,7 @@ const editor = createLeafEditor({
       const receipt=desktopFileState()?.aiEditResult;
       const pending=receipt?.bufferResult.changed&&receipt?.diskResult.state!=='saved';
       notice.dataset.state=pending?'applied-pending-save':'ended';
-      setText(document.querySelector('#statusAnnouncement'),()=>t(pending?'ai.task_pending_save':'ai.task_ended'));
+      statusNotices.announce(translatedMessage(pending?'ai.task_pending_save':'ai.task_ended'));
     }
     if(task){
       const text=notice.querySelector('span');text.className='ai-task-copy';
@@ -1922,6 +1929,10 @@ function renderAiConnections() {
   const diagnostics={...value.tunnel?.diagnostics,tunnel:runtime?{local_ready:runtime.local_ready,cloud_connected:runtime.cloud_connected,cloud_state:runtime.cloud_state,proxy_source:runtime.proxy_source,consecutive_failures:runtime.consecutive_failures,http_status:runtime.http_status,tunnel_instance:runtime.tunnel_instance,last_error:runtime.last_error}:null};
   aiNode('aiDiagnosticsText').textContent=JSON.stringify(diagnostics,null,2);
   aiNode('aiCopyDiagnostics').disabled=controls.disabled||!value.tunnel?.diagnostics;
+  aiNode('aiDiagnosticsText').tabIndex=controls.disabled?-1:0;
+  aiNode('aiDiagnosticsStatus').textContent=aiNode('aiRuntimeStatus').textContent;
+  aiNode('aiDiagnosticsStatus').classList.toggle('ai-error',!!cloudError);
+  aiNode('aiDiagnosticsToggle').textContent=t(aiNode('aiDiagnosticsText').hidden?'ai.view_diagnostics':'ai.hide_diagnostics');
   if (runtime?.last_error&&!cloudError) showAiError(runtime.last_error,'runtime');
   else if(aiNode('aiConnectionError').dataset.errorOrigin==='runtime')aiNode('aiConnectionError').textContent='';
   for (const id of ['aiTunnelId','aiRuntimeKey','aiTunnelProxy']) {
@@ -1938,6 +1949,12 @@ function renderAiConnections() {
   aiNode('aiEditSetup').disabled = value.busy;
   aiNode('aiCancelSetup').hidden = !value.editing || !runtime?.saved_config;
   aiNode('aiCancelSetup').disabled = value.busy;
+  aiNode('aiEditProxy').hidden=aiNode('aiEditSetup').hidden;
+  aiNode('aiEditProxy').disabled=controls.disabled;
+  aiNode('aiSaveProxy').hidden=aiNode('aiSaveSetup').hidden;
+  aiNode('aiSaveProxy').disabled=controls.disabled||aiNode('aiSaveSetup').disabled;
+  aiNode('aiCancelProxy').hidden=aiNode('aiCancelSetup').hidden;
+  aiNode('aiCancelProxy').disabled=controls.disabled||value.busy;
   aiNode('aiRetryTunnel').hidden = !profiles?.enabled || !runtime?.saved_config || !!runtime?.process || value.editing;
   aiNode('aiRetryTunnel').disabled = value.busy;
   aiNode('aiAddChatGPT').disabled = value.busy || !connected || value.editing;
@@ -2065,6 +2082,18 @@ async function copyAiText(text) {
   catch {aiNode('aiConnectionError').textContent = t('ai.copy_failed');}
 }
 aiNode('aiCopyDiagnostics').onclick=()=>{void copyAiText(aiNode('aiDiagnosticsText').textContent);};
+for(const [button,content] of [['aiHelpToggle','aiHelpContent'],['aiExistingToggle','aiExistingHelp'],['aiDiagnosticsToggle','aiDiagnosticsText']]) {
+  aiNode(button).onclick=()=>{
+    if(aiNode('aiConnectionControls').disabled)return;
+    const target=aiNode(content);target.hidden=!target.hidden;
+    aiNode(button).setAttribute('aria-expanded',String(!target.hidden));
+    if(button==='aiDiagnosticsToggle')aiNode(button).textContent=t(target.hidden?'ai.view_diagnostics':'ai.hide_diagnostics');
+    requestAnimationFrame(updateAppearanceScrollHint);
+  };
+}
+aiNode('aiEditProxy').onclick=()=>{aiConnection.editing=true;renderAiConnections();aiNode('aiTunnelProxy').focus();};
+aiNode('aiSaveProxy').onclick=()=>aiNode('aiSaveSetup').click();
+aiNode('aiCancelProxy').onclick=()=>{aiNode('aiCancelSetup').click();aiNode('aiEditProxy').focus();};
 aiNode('aiCopyTunnel').onclick = () => {void copyAiText(aiConnection.tunnel.profile.tunnel.tunnel_id);};
 aiNode('aiCopyPrompt').onclick = () => {void copyAiText(t('ai.help_prompt'));};
 function validAiSetupLink(url) {
@@ -2569,6 +2598,18 @@ if (desktop) {
     menuCurrent:binding=>binding&&mcpBinding&&['document_id','session_id','authorization_epoch','mutation_generation'].every(key=>binding[key]===mcpBinding[key]),
     content: () => state.content,
     saveContext:()=>mcpBinding ? {...mcpBinding,...editor.mcpSnapshot()} : null,
+    pauseUpdate:()=>{clearTimeout(state.saveTimer);setStatus(translatedMessage('updates.preparing'),'pending');},
+    resumeUpdate:()=>{updateHistoryControls();scheduleSave();},
+    settleUpdate:()=>editor.updateSettlement(),
+    // Read only; desktop invokes this only after native exact prepare-test mode.
+    traceUpdate:()=>{
+      const snapshot=editor.mcpSnapshot(),node=document.querySelector('.cm-content');
+      return {model:snapshot.content.slice(0,512),model_utf16_length:snapshot.content.length,revision:snapshot.revision,
+        dom_lines:[...document.querySelectorAll('.cm-content .cm-line')].slice(0,20).map(line=>line.textContent.slice(0,512)),
+        readonly:node?.getAttribute('aria-readonly'),contentEditable:node?.contentEditable,focused:document.hasFocus(),active:document.activeElement?.className};
+    },
+    freezeUpdate:id=>{editor.freezeUpdate(id);updateHistoryControls();},
+    releaseUpdate:id=>{editor.releaseUpdate(id);updateHistoryControls();},
     loadedImages: () => loadedLocalImagePaths(),
     retryMissingImages: () => retryMissingImages(),
     dirty: () => state.content !== state.savedContent,
@@ -2576,7 +2617,7 @@ if (desktop) {
     recoveryAvailable: statusNotices.recoveryAvailable,
     load: (content, name, path) => { state.resourcePath = path; return setDocument(content, name); },
     recovery: () => showDocumentRecovery({ invoke, drafts: !welcomeScreen.hidden }),
-    restore: (content,context) => { if(context)editor.assertMutationCurrent(context);if(!editor.mutationAllowed())throw new Error('document_locked');clearTimeout(state.saveTimer); editor.restoreValue(content); if (state.reading) renderReading(); },
+    restore: (content,context,transaction) => { if(transaction){editor.restorePreparedValue(content,transaction.prepare_id);if(state.reading)renderReading();return;}if(context)editor.assertMutationCurrent(context);if(!editor.mutationAllowed())throw new Error('document_locked');clearTimeout(state.saveTimer); editor.restoreValue(content); if (state.reading) renderReading(); },
     find: openDocumentSearch,
     exportPdf,
     cycleMode,
@@ -2613,10 +2654,13 @@ if (desktop) {
     shell.style.pointerEvents = '';
     await desktopRevealDocument().catch(error => console.error('Document window reveal failed', error));
     if (welcomeScreen.hidden && !state.reading) editor.focus();
-    const testMode=await invoke('mcp_test_mode').catch(()=>null);
+    const testMode=await invoke('mcp_test_mode').catch(()=>null) || (await invoke('update_test_prepare_mode').catch(()=>false)?'passive':null);
     nativeTestMode=testMode;
     const hiddenTestMutations=new Set();
     await listenNative('leaf-mcp-editor',async ({payload})=>{
+      // Native owns the recipient. Check before binding, task, test or editor
+      // side effects; a wrong-window reply would be rejected only afterwards.
+      if(payload?.window_label!==getCurrentWindow().label)return;
       let reply;
       try {
         const {operation,args}=payload;
@@ -2664,6 +2708,7 @@ if (desktop) {
           }
           if(args.action==='reset') await setDocument(args.content,'Synthetic MCP.md');
           else if(args.action==='save') result={saved:await desktopSave(false,false),...desktopFileState()};
+          else if(args.action==='update-prepare')result={...await desktopTestPrepare(args.command),settlement:editor.updateSettlement(),snapshot:editor.mcpSnapshot()};
           else if(args.action==='session-state') result=desktopFileState();
           else if(args.action==='pause-auto-timer') {clearTimeout(state.saveTimer);result={paused_timer:true};}
           else if(args.action==='undo') editor.undo();
@@ -2743,8 +2788,8 @@ if (desktop) {
         if(payload.operation==='apply' && editor.mcpSnapshot().revision===payload.args.revision)reply.mutation_state='UNAPPLIED';
       }
       await invoke('mcp_renderer_reply',{callId:payload.call_id,reply}).catch(()=>{});
-    });
-    if(welcomeScreen.hidden) mcpBinding=await invoke('mcp_register');
+    },{target:{kind:'Window',label:getCurrentWindow().label}});
+    if(welcomeScreen.hidden){mcpBinding=await invoke('mcp_register');await desktopParticipantReady();}
     if(testMode && testMode!=='passive') {
       const report=await invoke('mcp_test_run',{mode:testMode}).catch(()=>({pass:false,failure:'native driver failure'}));
       await invoke('mcp_test_report',{report});

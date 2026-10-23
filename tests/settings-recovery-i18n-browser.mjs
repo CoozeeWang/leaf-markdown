@@ -19,6 +19,7 @@ for (const engine of (process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGI
           metadata: { currentWindow: { label: 'document-test' }, currentWebview: { label: 'document-test' } },
           transformCallback: fn => { callbacks[++id] = fn; return id; },
           invoke: async (command, args) => {
+            if(command==='update_participant_status')return {window_nonce:1,prepare_id:null,phase:null,identity:null,frozen:false,manual_driver:false};
             if (command === 'language_get') return language;
             if (command === 'language_set') return (language = { preference: args.preference, language: args.preference, revision: language.revision + 1 });
             if (command === 'plugin:event|listen') { handlers[args.event] = callbacks[args.handler]; return ++id; }
@@ -56,7 +57,9 @@ for (const engine of (process.env.LEAF_TEST_ENGINE ? [process.env.LEAF_TEST_ENGI
           await page.setViewportSize({ width, height: width === 900 ? 480 : 800 });
           await page.waitForTimeout(100);
           // Resizing intentionally dismisses popovers; reopen the settings for measurement.
-          if (await page.locator('#appearancePopover').isHidden()) await page.click('#appearanceButton');
+          await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+          if (await page.locator('#appearancePopover').isVisible()) await page.click('#appearanceButton');
+          await page.click('#appearanceButton');
           await page.click('#settingsTab-recovery');
           await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
           const geometry = await page.locator('#settingsRecovery').evaluate(el => {

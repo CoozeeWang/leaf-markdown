@@ -4,6 +4,9 @@ use std::{fs, io::Write, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}, 
 
 const MAX_VERSIONS: usize = 20;
 const MAX_BYTES: usize = 32 * 1024 * 1024;
+pub(crate) fn with_admission<T>(lease:&crate::update_admission::OperationLease,operation:impl FnOnce()->Result<T,String>)->Result<T,String> {
+    lease.recheck()?;operation()
+}
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub fn unique_id() -> String {
