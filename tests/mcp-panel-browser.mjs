@@ -23,7 +23,9 @@ try{
   await panel.locator('.comment-card[data-kind=hidden] button').click();assert.equal(await panel.locator('.located').count(),1);
   assert.equal(await panel.locator('[contenteditable],textarea,input').count(),0);
   assert.equal(await panel.locator('#reader script').count(),0);assert.equal(await panel.locator('#reader img').count(),0);
-  await page.evaluate(()=>{readerCurrent=readerValue(2);});await panel.locator('#refresh').click();
+  await page.evaluate(()=>{readerCurrent=readerValue(2);});
+  assert.equal(await panel.locator('#refresh').isEnabled(),true,JSON.stringify({status:await panel.locator('#status').innerText(),calls:await page.evaluate(()=>readerCalls.map(call=>call.name)),errors}));
+  await panel.locator('#refresh').click();
   await panel.locator('#identity').filter({hasText:'Revision 2'}).waitFor();assert.match(await panel.locator('#diff').innerText(),/updated/);
   // Duplicate and late replies retain both the latest text and the single diff.
   const diff=await panel.locator('#diff').innerText();await panel.locator('#refresh').click();assert.equal(await panel.locator('#diff').innerText(),diff);

@@ -15,7 +15,9 @@ try {
     await page.click('#'+trigger);
     await page.waitForTimeout(180);
     const focusStyle=await page.locator('#'+first).evaluate(el=>{const s=getComputedStyle(el);return {outline:s.outlineStyle,shadow:s.boxShadow,bg:s.backgroundColor};});
-    assert.equal(focusStyle.outline,'none');assert.equal(focusStyle.shadow,'none');assert.notEqual(focusStyle.bg,'rgba(0, 0, 0, 0)');
+    const active=await page.evaluate(()=>document.activeElement.id);
+    assert.equal(active,first,`menu ${popup} ${theme} ${size.width} focused ${active}`);
+    assert.equal(focusStyle.outline,'none');assert.equal(focusStyle.shadow,'none');assert.notEqual(focusStyle.bg,'rgba(0, 0, 0, 0)',JSON.stringify({popup,theme,size,active,focusStyle}));
     assert.equal(await page.locator('#'+popup+' button').first().evaluate(el=>getComputedStyle(el).fontSize),'13px');
     if(process.env.LEAF_UI_REVIEW_SHOTS) await page.screenshot({path:`${process.env.LEAF_UI_REVIEW_SHOTS}/51-${popup}-${theme}-${size.width}-browser.png`});
     assert.equal(await page.evaluate(()=>document.activeElement.id),first);

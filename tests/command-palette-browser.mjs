@@ -17,7 +17,7 @@ try {
  assert.equal(await input.getAttribute('aria-activedescendant'),await exportItem.getAttribute('id'));
  await input.press('ArrowUp');
  assert.equal(await page.getByRole('option',{name:'保存与恢复',exact:true}).getAttribute('aria-selected'),'true');
- assert.equal(await exportItem.evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)');
+ assert.equal(await exportItem.evaluate(e=>getComputedStyle(e).backgroundColor.match(/, ([\d.]+)\)$/)?.[1]),'0');
  await page.mouse.move(1,1);
  await input.fill('Callout');
  assert.equal(await page.locator('#paletteList button span').textContent(),'插入提示块');
