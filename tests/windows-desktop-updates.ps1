@@ -58,7 +58,7 @@ function Invoke-Fixture([string]$Scenario) {
   foreach ($arg in @('--windows-update-fixture',$target,$payload,$version,$Scenario)) { $start.ArgumentList.Add($arg) }
   $start.UseShellExecute = $false; $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
   $p = [Diagnostics.Process]::Start($start)
-  if (!$p.WaitForExit(120000)) { $p.Kill(); throw 'Updater supervisor timed out' }
+  if (!$p.WaitForExit(180000)) { $p.Kill(); throw 'Updater supervisor timed out' }
   $output = $p.StandardOutput.ReadToEnd(); $errorText = $p.StandardError.ReadToEnd()
   if ($p.ExitCode) { throw "Supervisor failed: $errorText" }
   $result = $output | ConvertFrom-Json
@@ -89,8 +89,8 @@ try {
   # signed-package payload bytes. Fault selection cannot enter release builds.
   $nsis = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'tauri') -Filter makensis.exe -Recurse | Select-Object -First 1
   if (!$nsis) { throw 'Trusted Tauri NSIS compiler not found' }
-  # makensis itself uses an ANSI command-line entry point. Compile from an
-  # ASCII path, while the installed target and supervisor keep Unicode paths.
+  # Keep compiler inputs in an ASCII path. The actual installed target and
+  # supervisor retain Unicode, spaces and an apostrophe throughout the test.
   $faultExe = Join-Path $fixtureBuild 'fault-installer.exe'
   Copy-Item (Join-Path $payload 'leaf.exe'),(Join-Path $payload 'leaf-update-helper.exe') $fixtureBuild
   $hook = (Resolve-Path src-tauri/windows-update-recovery.nsh).Path

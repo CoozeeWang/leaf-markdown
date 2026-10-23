@@ -13,6 +13,20 @@ Var LeafInstallTransaction
     IfFileExists "$LeafInstallTransaction\commit-authorized" +3 0
       SetErrorLevel 42
       Quit
+    ; Confirm NSIS parsed the exact authorized destination before the install
+    ; section replaces payload or registrations. UTF-16 preserves Unicode target paths.
+    ClearErrors
+    FileOpen $R0 "$LeafInstallTransaction\install-target" r
+    FileReadUTF16LE $R0 $R1
+    FileClose $R0
+    ${If} ${Errors}
+      SetErrorLevel 42
+      Quit
+    ${EndIf}
+    ${If} $R1 != $INSTDIR
+      SetErrorLevel 42
+      Quit
+    ${EndIf}
     ClearErrors
     FileOpen $R0 "$LeafInstallTransaction\installer-mutating" w
     FileWrite $R0 "payload-and-registration"

@@ -110,6 +110,11 @@ pub fn install(plan:&WindowsInstallPlan,platform:&mut dyn Platform)->InstallResu
     });
     if let Err(code)=installed{
         output.error=Some(code);
+        if output.error.as_deref()==Some("update_install_worker_uncontrolled"){
+            // Recovery must never race an installer whose termination could
+            // not be proved. Keep the complete backup and require recovery.
+            output.state=InstallState::RollbackFailed;let _=persist_result(plan,&output);return output;
+        }
         let restored=(||{
             // Do not follow any link/reparse point created by a failed installer.
             let _=inventory(&plan.target)?;
@@ -148,6 +153,7 @@ mod tests{
         fn restore_registry(&mut self,registry:&Registry)->Result<(),String>{if self.restore_bad{return Err("restore_denied".into());}self.registry=registry.clone();Ok(())}
         fn installer(&mut self,p:&WindowsInstallPlan)->Result<(),String>{
             assert_eq!(inventory(&p.backup)?,p.old);assert!(p.journal.with_file_name("backup-ready").exists());
+            if self.fault==Some("uncontrolled"){return Err("update_install_worker_uncontrolled".into());}
             fs::remove_file(p.target.join("leaf.exe")).unwrap();if self.fault==Some("after_delete"){return Err("fault".into());}
             fs::copy(p.staged.join("leaf.exe"),p.target.join("leaf.exe")).unwrap();if self.fault==Some("first_replace"){return Err("fault".into());}
             fs::copy(p.staged.join("leaf-update-helper.exe"),p.target.join("leaf-update-helper.exe")).unwrap();if self.fault==Some("helper_replace"){return Err("fault".into());}
@@ -174,5 +180,6 @@ mod tests{
         let(_root,p,mut platform)=fixture();platform.fault=Some("registry_write");platform.restore_bad=true;assert_eq!(install(&p,&mut platform).state,InstallState::RollbackFailed);assert_eq!(platform.restarts,0);assert_eq!(inventory(&p.backup).unwrap(),p.old);
     }
     #[test]fn occupied_or_changed_payload_blocks_before_backup_and_mutation(){let(_root,p,mut platform)=fixture();platform.block=true;assert_eq!(install(&p,&mut platform).state,InstallState::InstallFailed);assert!(!p.backup.exists());assert_eq!(inventory(&p.target).unwrap(),p.old);platform.block=false;fs::write(p.staged.join("leaf.exe"),b"tampered").unwrap();assert!(check_ready(&p,&mut platform).is_err());}
+    #[test]fn an_uncontrolled_installer_cannot_race_recovery_or_restart(){let(_root,p,mut platform)=fixture();platform.fault=Some("uncontrolled");assert_eq!(install(&p,&mut platform).state,InstallState::RollbackFailed);assert_eq!(platform.restarts,0);assert_eq!(inventory(&p.backup).unwrap(),p.old);assert_eq!(inventory(&p.target).unwrap(),p.old);}
     #[test]fn reparse_or_case_alias_payload_is_rejected(){let(_root,p,mut platform)=fixture();fs::write(p.staged.join("LEAF.EXE"),b"alias").unwrap();assert!(check_ready(&p,&mut platform).is_err());}
 }

@@ -4,7 +4,6 @@ use super::*;
 use std::{ffi::OsStr,os::windows::{ffi::OsStrExt,io::AsRawHandle,process::CommandExt},process::{Command,Stdio},time::Duration};
 use windows_sys::Win32::{Foundation::{CloseHandle,ERROR_FILE_NOT_FOUND,ERROR_NO_MORE_ITEMS,ERROR_SUCCESS},System::{Registry::*,Threading::*}};
 fn wide(value:impl AsRef<OsStr>)->Vec<u16>{value.as_ref().encode_wide().chain(Some(0)).collect()}
-fn system(name:&str)->PathBuf{PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(||"C:\\Windows".into())).join("System32").join(name)}
 fn with_user<T>(f:impl FnOnce(*mut std::ffi::c_void)->Result<T,String>)->Result<T,String>{
     use windows_sys::Win32::Security::*;
     let mut token=std::ptr::null_mut();if unsafe{OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&mut token)}==0{return Err("update_install_owner".into());}
@@ -13,35 +12,42 @@ fn with_user<T>(f:impl FnOnce(*mut std::ffi::c_void)->Result<T,String>)->Result<
     let ok=unsafe{GetTokenInformation(token,TokenUser,words.as_mut_ptr().cast(),length,&mut length)};unsafe{CloseHandle(token);}
     if ok==0{return Err("update_install_owner".into());}let user=unsafe{&*(words.as_ptr() as *const TOKEN_USER)};f(user.User.Sid)
 }
-/// Drop inherited grants before putting authority, executable code or recovery
-/// material in the transaction. The helper independently checks every ACE.
+/// Restrict this newly created transaction to the actual user. No system or
+/// installation ACL is changed. The helper independently checks every ACE.
 pub fn protect_root(root:&Path)->Result<(),String>{
-    use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
-    with_user(|sid|{let mut value=std::ptr::null_mut();if unsafe{ConvertSidToStringSidW(sid,&mut value)}==0{return Err("update_install_owner".into());}
-        let mut length=0;while length<184&&unsafe{*value.add(length)}!=0{length+=1;}let text=String::from_utf16(unsafe{std::slice::from_raw_parts(value,length)}).map_err(|_|"update_install_owner")?;unsafe{windows_sys::Win32::Foundation::LocalFree(value.cast());}
-        let status=Command::new(system("icacls.exe")).arg(root).args(["/inheritance:r","/grant:r"]).arg(format!("*{text}:(OI)(CI)F")).creation_flags(0x08000000).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map_err(|_|"update_install_permissions")?;
-        if !status.success(){return Err("update_install_permissions".into());}
-        // Elevated test runners may default directory ownership to the local
-        // Administrators group. Bind this fresh directory to the actual user.
-        let status=Command::new(system("icacls.exe")).arg(root).arg("/setowner").arg(format!("*{text}")).creation_flags(0x08000000).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map_err(|_|"update_install_permissions")?;
-        if !status.success(){return Err("update_install_permissions".into());}Ok(())})?;
+    use windows_sys::Win32::Security::{*,Authorization::*};
+    with_user(|sid|{
+        let mut value=std::ptr::null_mut();if unsafe{ConvertSidToStringSidW(sid,&mut value)}==0{return Err("update_install_owner".into());}
+        let mut length=0;while length<184&&unsafe{*value.add(length)}!=0{length+=1;}
+        let text=String::from_utf16(unsafe{std::slice::from_raw_parts(value,length)}).map_err(|_|"update_install_owner")?;unsafe{windows_sys::Win32::Foundation::LocalFree(value.cast());}
+        let sddl=format!("O:{text}D:P(A;OICI;FA;;;{text})");let mut descriptor=std::ptr::null_mut();
+        if unsafe{ConvertStringSecurityDescriptorToSecurityDescriptorW(wide(sddl).as_ptr(),1,&mut descriptor,std::ptr::null_mut())}==0{return Err(permission_error("descriptor"));}
+        let code=unsafe{SetFileSecurityW(wide(root).as_ptr(),OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,descriptor)};
+        unsafe{windows_sys::Win32::Foundation::LocalFree(descriptor);}
+        if code==0{return Err(permission_error("protect"));}Ok(())
+    })?;
     private_root(root)
+}
+fn permission_error(stage:&str)->String{
+    #[cfg(feature="native-smoke")] eprintln!("windows_update_permissions_stage={stage}; win32={}",std::io::Error::last_os_error().raw_os_error().unwrap_or(0));
+    #[cfg(not(feature="native-smoke"))] let _=stage;
+    "update_install_permissions".into()
 }
 pub fn private_root(root:&Path)->Result<(),String>{
     use windows_sys::Win32::Security::{*,Authorization::*};
     use std::os::windows::fs::MetadataExt;
     let meta=fs::symlink_metadata(root).map_err(|_|"update_install_permissions")?;
-    if !meta.is_dir()||meta.file_attributes()&0x400!=0||root.canonicalize().ok().as_deref()!=Some(root){return Err("update_install_permissions".into());}
+    if !meta.is_dir()||meta.file_attributes()&0x400!=0||root.canonicalize().ok().as_deref()!=Some(root){return Err(permission_error("root"));}
     with_user(|sid|{let mut owner=std::ptr::null_mut();let mut dacl=std::ptr::null_mut();let mut descriptor=std::ptr::null_mut();
         let code=unsafe{GetNamedSecurityInfoW(wide(root).as_ptr(),SE_FILE_OBJECT,OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION,&mut owner,std::ptr::null_mut(),&mut dacl,std::ptr::null_mut(),&mut descriptor)};
-        if code!=ERROR_SUCCESS{return Err("update_install_permissions".into());}
-        let check=(||{if owner.is_null()||dacl.is_null()||unsafe{EqualSid(owner,sid)}==0{return Err("update_install_permissions".into());}
-            let mut size:ACL_SIZE_INFORMATION=unsafe{std::mem::zeroed()};if unsafe{GetAclInformation(dacl,(&mut size as *mut ACL_SIZE_INFORMATION).cast(),std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,AclSizeInformation)}==0||size.AceCount==0{return Err("update_install_permissions".into());}
-            for index in 0..size.AceCount{let mut ace=std::ptr::null_mut();if unsafe{GetAce(dacl,index,&mut ace)}==0{return Err("update_install_permissions".into());}
+        if code!=ERROR_SUCCESS{return Err(permission_error("security_query"));}
+        let check=(||{if owner.is_null()||dacl.is_null()||unsafe{EqualSid(owner,sid)}==0{return Err(permission_error("owner"));}
+            let mut size:ACL_SIZE_INFORMATION=unsafe{std::mem::zeroed()};if unsafe{GetAclInformation(dacl,(&mut size as *mut ACL_SIZE_INFORMATION).cast(),std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,AclSizeInformation)}==0||size.AceCount==0{return Err(permission_error("acl"));}
+            for index in 0..size.AceCount{let mut ace=std::ptr::null_mut();if unsafe{GetAce(dacl,index,&mut ace)}==0{return Err(permission_error("ace"));}
                 let header=unsafe{&*(ace as *const ACE_HEADER)};
-                if header.AceType!=0{return Err("update_install_permissions".into());}
+                if header.AceType!=0{return Err(permission_error("ace_type"));}
                 let allowed=unsafe{&*(ace as *const ACCESS_ALLOWED_ACE)};let granted=(&allowed.SidStart as *const u32).cast_mut().cast();
-                if unsafe{EqualSid(granted,sid)}==0{return Err("update_install_permissions".into());}
+                if unsafe{EqualSid(granted,sid)}==0{return Err(permission_error("ace_owner"));}
             }Ok(())})();unsafe{windows_sys::Win32::Foundation::LocalFree(descriptor);}check})
 }
 pub fn available_bytes(path:&Path)->Result<u64,String>{
@@ -151,6 +157,12 @@ fn occupancy(plan:&WindowsInstallPlan,allow_gui:bool)->Result<(),String>{
     }Ok(())
 }
 pub struct NativePlatform{pub plan_path:PathBuf,pub digest:String}
+fn stop_installer(child:&mut std::process::Child)->bool{
+    let _=child.kill();let deadline=std::time::Instant::now()+Duration::from_secs(2);
+    loop{match child.try_wait(){Ok(Some(_))=>return true,Err(_)=>return false,Ok(None)=>{}}
+        if std::time::Instant::now()>=deadline{return false;}std::thread::sleep(Duration::from_millis(25));
+    }
+}
 impl Platform for NativePlatform{
     fn ready(&mut self,plan:&WindowsInstallPlan,allow_gui:bool)->Result<(),String>{
         private_root(plan.journal.parent().ok_or("update_install_plan")?)?;
@@ -172,11 +184,17 @@ impl Platform for NativePlatform{
     fn restore_registry(&mut self,registry:&Registry)->Result<(),String>{restore(registry)}
     fn installer(&mut self,plan:&WindowsInstallPlan)->Result<(),String>{
         let installer=plan.staged.join(".leaf-update-installer.exe");
+        let destination=command_path(&plan.target);
+        if destination.contains(['"','\r','\n','\0']){return Err("update_install_scope".into());}
+        let encoded=destination.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>();
+        persist(&plan.journal.with_file_name("install-target"),&encoded)?;
         let mut child=Command::new(installer).args(["/S","/NS","/UPDATE"]).arg(format!("/LEAFTRANSACTION={}",command_path(plan.journal.parent().ok_or("update_install_plan")?)))
-            .arg(format!("/D={}",command_path(&plan.target))).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|_|"update_install_start")?;
+            // NSIS requires /D last and unquoted, including paths with spaces.
+            // Command::arg would quote the entire switch on Windows.
+            .raw_arg(format!("/D={destination}")).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|_|"update_install_start")?;
         let deadline=std::time::Instant::now()+Duration::from_secs(120);
-        let status=loop{if let Some(status)=child.try_wait().map_err(|_|"update_install_process_failed")?{break status;}
-            if std::time::Instant::now()>=deadline{let _=child.kill();let _=child.wait();return Err("update_install_timeout".into());}
+        let status=loop{match child.try_wait(){Ok(Some(status))=>break status,Ok(None)=>{},Err(_)=>return Err(if stop_installer(&mut child){"update_install_process_failed"}else{"update_install_worker_uncontrolled"}.into())}
+            if std::time::Instant::now()>=deadline{return Err(if stop_installer(&mut child){"update_install_timeout"}else{"update_install_worker_uncontrolled"}.into());}
             std::thread::sleep(Duration::from_millis(25));
         };
         if !status.success(){return Err("update_install_process_failed".into());}
@@ -211,7 +229,23 @@ pub fn helper_main()->Result<(),String>{
     let marker=hash(format!("{}:{}:{}",plan.transaction,digest,plan.token).as_bytes());
     if fs::read(plan.journal.with_file_name("commit-authorized")).map_err(|_|"update_helper_authority")?!=marker.as_bytes(){return Err("update_helper_authority".into());}
     fs::OpenOptions::new().create_new(true).write(true).open(plan.journal.with_extension("install-claim")).and_then(|file|file.sync_all()).map_err(|_|"update_helper_replayed")?;
-    let result=install(&plan,&mut platform);if matches!(result.state,InstallState::Installed|InstallState::RolledBack){Ok(())}else{Err(result.error.unwrap_or_else(||"update_install_failed".into()))}
+    let result=install(&plan,&mut platform);if matches!(result.state,InstallState::Installed|InstallState::RolledBack){Ok(())}else{
+        // The GUI has exited. Surface existing translated recovery guidance
+        // directly instead of losing the result in a detached worker's stderr.
+        show_failure(&plan,&result);Err(result.error.unwrap_or_else(||"update_install_failed".into()))
+    }
+}
+fn show_failure(plan:&WindowsInstallPlan,result:&InstallResult){
+    let locale=sys_locale::get_locale().unwrap_or_default().to_ascii_lowercase();
+    let source=if locale.starts_with("zh"){
+        if locale.contains("tw")||locale.contains("hk")||locale.contains("hant"){include_str!("../../src/locales/zh-Hant-TW.json")}else{include_str!("../../src/locales/zh-Hans.json")}
+    }else{include_str!("../../src/locales/en.json")};
+    let Ok(copy)=serde_json::from_str::<serde_json::Value>(source)else{return;};
+    let key=if result.state==InstallState::RollbackFailed{"updates.rollback_failed"}else{"updates.install_failed"};
+    let mut text=copy[key].as_str().unwrap_or("Leaf update failed.").to_owned();
+    if inventory(&plan.backup).ok().as_ref()==Some(&plan.old){text.push_str("\n\n");text.push_str(&copy["updates.recovery_location"].as_str().unwrap_or("{{path}}").replace("{{path}}",&command_path(&plan.backup)));}
+    #[link(name="user32")]unsafe extern "system"{fn MessageBoxW(window:*mut std::ffi::c_void,text:*const u16,title:*const u16,kind:u32)->i32;}
+    unsafe{MessageBoxW(std::ptr::null_mut(),wide(text).as_ptr(),wide("Leaf").as_ptr(),0x10|0x10000);}
 }
 
 /// Destructive fixture entry point exists only in native-smoke binaries and
