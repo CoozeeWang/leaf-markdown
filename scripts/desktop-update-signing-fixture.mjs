@@ -103,7 +103,7 @@ function payloadFor(options, root, manifest, fresh = false) {
   check(!['signer-private.pem', 'signer-public.key', 'run-manifest.json', 'run-manifest.sig', 'payload-binding.json'].includes(relative(root, file)), 'fixture metadata cannot be a payload');
   check(s.size > 0 && s.size <= MAX_PAYLOAD, 'payload size out of bounds');
   check(/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(basename(file)), 'simple synthetic payload filename required');
-  if (fresh) check(s.birthtimeMs >= manifest.createdMs && s.mtimeMs >= manifest.createdMs, 'payload predates initialized run');
+  if (fresh) check(s.birthtimeMs >= manifest.createdMs && s.mtimeMs >= manifest.createdMs, `payload predates initialized run (birth delta ${Math.round(s.birthtimeMs - manifest.createdMs)} ms, modification delta ${Math.round(s.mtimeMs - manifest.createdMs)} ms)`);
   const bytes = readFileSync(file);
   return {bytes, binding: {mode: MODE, runId: manifest.runId, fingerprint: manifest.fingerprint, version: manifest.version, platform: manifest.platform, arch: manifest.arch, sha256: hash(bytes), size: bytes.length, file: relative(root, file)}};
 }
