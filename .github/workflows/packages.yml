@@ -15,10 +15,11 @@ on:
       verification_scope:
         description: 'Targeted Windows ChatGPT proxy validation skips unrelated interface, file and PDF checks'
         type: choice
-        options: [standard, chatgpt-proxy]
+        options: [standard, chatgpt-proxy, windows-updater]
         default: standard
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: packages-${{ inputs.source_ref }}-${{ inputs.platform }}
   cancel-in-progress: true
@@ -51,21 +52,21 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm test
-        if: inputs.verification_scope != 'chatgpt-proxy'
+        if: inputs.verification_scope == 'standard'
       - name: Targeted ChatGPT source checks
         if: inputs.verification_scope == 'chatgpt-proxy'
         run: node --test tests/ai-connections.test.js
       - name: Claude extension transport regression
-        if: inputs.verification_scope != 'chatgpt-proxy'
+        if: inputs.verification_scope == 'standard'
         run: node tests/claude-stdio-host.cjs src-tauri/src/claude_stdio.cjs
       - name: Windows trilingual interface checks
-        if: inputs.platform == 'windows' && inputs.verification_scope != 'chatgpt-proxy'
+        if: inputs.platform == 'windows' && inputs.verification_scope == 'standard'
         shell: bash
         run: |
           npx playwright install chromium webkit
           npm run test:browser -- i18n-browser.mjs ai-connections-browser.mjs
       - name: Native unit tests
-        if: inputs.verification_scope != 'chatgpt-proxy'
+        if: inputs.verification_scope == 'standard'
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
       - name: Targeted proxy status and native tests
         if: inputs.verification_scope == 'chatgpt-proxy'
@@ -81,7 +82,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: ./tests/windows-mcp-config.ps1 -ProxyOnly -VendorOnly
       - name: Verify Windows MCP configuration and native restart
-        if: inputs.platform == 'windows'
+        if: inputs.platform == 'windows' && inputs.verification_scope != 'windows-updater'
         shell: pwsh
         run: |
           npm run desktop:build -- --debug --no-bundle --features native-smoke --config src-tauri/tauri.mcp-test.conf.json
@@ -94,8 +95,30 @@ jobs:
       - name: Build installer
         shell: bash
         run: npm run desktop:build -- --target "$LEAF_BUILD_TARGET" --config "$LEAF_BUILD_CONFIG"
+      - name: Verify Windows supervised installation and recovery
+        if: inputs.platform == 'windows' && inputs.verification_scope == 'windows-updater'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ./tests/windows-desktop-updates.ps1 -Mode SourceFixture
+          cargo build --locked --manifest-path src-tauri/Cargo.toml --bin leaf-update-helper --features native-smoke
+          if ($LASTEXITCODE) { throw 'Windows fixture supervisor build failed' }
+          $installer = Get-ChildItem "src-tauri/target/$env:LEAF_BUILD_TARGET/release/bundle/nsis/*.exe" | Select-Object -First 1
+          ./tests/windows-desktop-updates.ps1 -Mode InstalledFixture -Installer $installer.FullName
+          ./tests/windows-desktop-updates.ps1 -Mode RecoveryAudit
+      - uses: actions/upload-artifact@v4
+        if: inputs.platform == 'windows' && inputs.verification_scope == 'windows-updater'
+        with:
+          name: Windows-updater-payload-${{ steps.source.outputs.sha }}
+          path: |
+            test-results/windows-updater-payload/
+            test-results/windows-update-audit.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
       - name: Verify Windows file integration
-        if: inputs.platform == 'windows' && inputs.verification_scope != 'chatgpt-proxy'
+        if: inputs.platform == 'windows' && inputs.verification_scope == 'standard'
         shell: pwsh
         run: |
           $installer = Get-ChildItem "src-tauri/target/$env:LEAF_BUILD_TARGET/release/bundle/nsis/*.exe" | Select-Object -First 1
@@ -108,7 +131,7 @@ jobs:
         shell: bash
         run: node tests/document-icons-package.mjs "src-tauri/target/$LEAF_BUILD_TARGET/release/bundle/macos/Leaf.app"
       - name: Verify actual Windows PDF rendering
-        if: inputs.platform == 'windows' && inputs.verification_scope != 'chatgpt-proxy'
+        if: inputs.platform == 'windows' && inputs.verification_scope == 'standard'
         shell: pwsh
         run: |
           npm run desktop:build -- --debug --no-bundle --features native-smoke
@@ -128,7 +151,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v4
-        if: always() && inputs.platform == 'windows' && inputs.verification_scope != 'chatgpt-proxy'
+        if: always() && inputs.platform == 'windows' && inputs.verification_scope == 'standard'
         with:
           name: Windows-PDF-${{ steps.source.outputs.sha }}
           path: test-results/windows-pdf/

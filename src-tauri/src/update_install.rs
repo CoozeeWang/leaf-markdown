@@ -1,5 +1,8 @@
 //! Independent Mac installation transaction. Production stays unavailable until
 //! bundle verification, external-helper readiness and rollback proof are wired.
+#[cfg(any(target_os="windows",test))]
+#[path="update_install_windows.rs"]
+pub mod windows;
 #[cfg(target_os="macos")]
 pub mod macos {
     use std::{collections::BTreeMap,path::{Path,PathBuf}};

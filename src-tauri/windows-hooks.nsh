@@ -1,7 +1,9 @@
 !include "${__FILEDIR__}\windows-locales.nsh"
 !include "${__FILEDIR__}\windows-adapter-upgrade.nsh"
+!include "${__FILEDIR__}\windows-update-recovery.nsh"
 
 !macro NSIS_HOOK_PREINSTALL
+  !insertmacro LeafUpdateBegin
   !insertmacro LeafPrepareAdapterUpgrade ""
 !macroend
 
@@ -15,6 +17,7 @@
   WriteRegStr HKCU "Software\Classes\Directory\Background\shell\Leaf.NewMarkdown" "" "$(LeafNewMarkdown)"
   WriteRegStr HKCU "Software\Classes\Directory\Background\shell\Leaf.NewMarkdown" "Icon" '"$INSTDIR\${MAINBINARYNAME}.exe",0'
   WriteRegStr HKCU "Software\Classes\Directory\Background\shell\Leaf.NewMarkdown\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" --new-in "%V\."'
+  !insertmacro LeafUpdateComplete
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL

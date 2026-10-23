@@ -29,6 +29,9 @@ mod updates;
 mod update_releases;
 mod update_package;
 mod update_install;
+#[cfg(target_os="windows")]
+#[path="update_install_windows_gui.rs"]
+mod update_install_gui;
 #[cfg(all(target_os="macos",feature="native-smoke"))]
 mod update_macos_test_driver;
 #[cfg(all(target_os="macos",feature="native-smoke"))]
@@ -1547,7 +1550,7 @@ fn main() {
     let builder = builder.manage(OpenRequests::default());
     let update_trust=context.config().plugins.0.get("leafUpdater").cloned().unwrap_or(serde_json::Value::Null);
     let builder=builder.manage(updates::Updates::with_trust_config(update_trust)).manage(Mutex::new(window_role::OrdinaryQuit::default()));
-    #[cfg(target_os="macos")]
+    #[cfg(any(target_os="macos",target_os="windows"))]
     let builder=builder.manage(update_install_gui::Handoff::default());
     #[cfg(feature="native-smoke")]
     let builder=builder.manage(update_test_driver::Driver::default());
@@ -1584,7 +1587,7 @@ fn main() {
             }
         })
         .setup(|app| {
-            #[cfg(target_os="macos")] update_install_gui::reconcile_launch(app.handle());
+            # [cfg(any(target_os="macos",target_os="windows"))] update_install_gui::reconcile_launch(app.handle());
             let handle=app.handle().clone();
             app.state::<AdmissionRegistry>().set_reopen_hook(std::sync::Arc::new(move||{resume_os_requests(handle.clone());refresh_document_menu_on_main(&handle);}));
             app.state::<mcp::LeafMcpBroker>().initialize(app.handle()).map_err(std::io::Error::other)?;
@@ -1804,7 +1807,7 @@ fn main() {
                 }
             }
             tauri::RunEvent::Exit => {
-                #[cfg(target_os="macos")] update_install_gui::application_exited(app);
+                # [cfg(any(target_os="macos",target_os="windows"))] update_install_gui::application_exited(app);
                 #[cfg(all(target_os="macos",feature="native-smoke"))] update_preservation_test_driver::exited(app);
                 #[cfg(feature="native-smoke")] update_test_driver::coordinator_exited(app);
                 let _=app.state::<mcp::LeafMcpBroker>().inner.tunnel.lock().unwrap().stop();

@@ -80,7 +80,7 @@ impl Updates {
     }
     pub fn snapshot(&self) -> UpdateSnapshot { self.session.lock().unwrap().snapshot.clone() }
     /// Called only after native journal/current-bundle reconciliation on launch.
-    #[cfg(target_os="macos")]
+    #[cfg(any(target_os="macos",target_os="windows"))]
     pub(crate) fn reconcile_install_result(&self,state:UpdateState,installed_version:String,target_version:String,error:Option<String>,recovery_location:Option<String>)->Result<(),String>{
         if !matches!(state,UpdateState::Installed|UpdateState::InstallFailed|UpdateState::RolledBack|UpdateState::RollbackFailed){return Err("update_install_reconcile_invalid".into());}
         let mut session=self.session.lock().unwrap();
