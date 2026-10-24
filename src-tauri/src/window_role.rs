@@ -18,7 +18,7 @@ pub fn allows_command(role:WindowRole,command:&str)->bool {
         WindowRole::Launcher=>!command.starts_with("update_") && command!="ordinary_quit_cancelled",
         WindowRole::Document=>!command.starts_with("update_"),
         WindowRole::Export=>matches!(command,"language_get"|"export_snapshot"|"print_export"|"read_resource"|"open_link"),
-        WindowRole::Update=>matches!(command,"language_get"|"update_status"|"update_check"|"update_close"|"update_open_releases"|"update_start"|"update_resume"|"update_cancel_download"),
+        WindowRole::Update=>matches!(command,"language_get"|"update_status"|"update_check"|"update_close"|"update_open_releases"|"update_open_download"),
         WindowRole::Unknown=>false,
     }
 }
@@ -51,6 +51,16 @@ impl OrdinaryQuit {
 mod tests {
     use super::*;
     #[test]
+    fn manual_update_window_cannot_download_install_or_freeze_documents() {
+        for role in [WindowRole::Launcher,WindowRole::Document,WindowRole::Export,WindowRole::Update,WindowRole::Unknown] {
+            for command in ["update_start","update_resume","update_cancel_download","update_participant_status","update_participant_reply"] {
+                assert!(!allows_command(role,command),"{role:?} must reject {command}");
+            }
+        }
+        assert!(allows_command(WindowRole::Update,"update_open_download"));
+    }
+
+    #[test]
     fn classifies_known_native_windows_and_unknowns() {
         for (label,role) in [("main",WindowRole::Launcher),("document-1",WindowRole::Document),
             ("export-42",WindowRole::Export),("desktop-update",WindowRole::Update),
@@ -61,7 +71,7 @@ mod tests {
     }
     #[test]
     fn updater_authority_is_narrow_and_unknowns_fail_closed() {
-        for command in ["language_get","update_status","update_check","update_close","update_open_releases","update_start","update_resume","update_cancel_download"] {
+        for command in ["language_get","update_status","update_check","update_close","update_open_releases","update_open_download"] {
             assert!(allows_command(WindowRole::Update,command),"{command}");
             assert!(!allows_command(WindowRole::Unknown,command),"{command}");
         }

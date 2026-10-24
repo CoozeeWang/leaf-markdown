@@ -19,6 +19,7 @@ pub struct UpdateSnapshot {
     pub state_revision: u64,
     pub op_id: u64,
     pub installed_version: String,
+    pub platform: String,
     pub target_version: Option<String>,
     pub notes: Option<String>,
     pub error_code: Option<String>,
@@ -32,7 +33,7 @@ pub struct UpdateSnapshot {
 }
 impl Default for UpdateSnapshot {
     fn default() -> Self { Self { state: UpdateState::Idle, state_revision: 0, op_id: 0,
-        installed_version: env!("CARGO_PKG_VERSION").into(), target_version: None,
+        installed_version: env!("CARGO_PKG_VERSION").into(), platform:crate::update_releases::platform(), target_version: None,
         notes: None, error_code: None, reason: None, candidate_id:None,
         downloaded_bytes:0,total_bytes:None,prepared_documents:None,total_documents:None,recovery_location:None } }
 }
@@ -212,7 +213,7 @@ impl Updates {
         if session.snapshot.op_id!=op||session.snapshot.state!=UpdateState::Checking {return None;}
         let revision=session.snapshot.state_revision.checked_add(1)?;
         session.candidate=result.as_ref().ok().and_then(|result|result.candidate.clone());
-        let readiness=if result.as_ref().is_ok_and(|result|result.state==UpdateState::Available) {
+        let readiness=if result.as_ref().is_ok_and(|result|result.state==UpdateState::Available&&result.candidate.as_ref().is_some_and(|c|!c.signature.is_empty())) {
             #[cfg(feature="native-smoke")]
             let simulated=crate::update_test_driver::ui_enabled();
             #[cfg(not(feature="native-smoke"))]
@@ -357,6 +358,7 @@ fn promote_verified(session:&Mutex<UpdateSession>,op:u64,candidate:&str,instance
     let s=&mut session.snapshot;s.state_revision=revision;s.state=if authorized {UpdateState::Preparing}else{UpdateState::Ready};
     Some(s.clone())
 }
+#[cfg(any(test,feature="legacy-updater-tests"))]
 impl OperationJob {
     async fn run(self,cache:std::path::PathBuf,source:Option<String>,publish:StatePublisher) {
         let Self{app,session,op,candidate,app_instance,trust,cached,mut cancel,resume}=self;
@@ -426,21 +428,26 @@ pub fn update_close(app:tauri::AppHandle,window:tauri::WebviewWindow)->Result<()
 }
 pub fn hide_update_window(app:&tauri::AppHandle)->Result<(),String> {
     let snapshot=app.state::<Updates>().close()?;
-    crate::update_coordinator::abort_and_release(app,"update_cancelled");publish(app,&snapshot);
+    #[cfg(feature="legacy-updater-tests")]
+    crate::update_coordinator::abort_and_release(app,"update_cancelled");
+    publish(app,&snapshot);
     if let Some(window)=app.get_webview_window(LABEL) {window.hide().map_err(|_|"update_window_failed")?;}
     if app.state::<crate::Documents>().0.lock().unwrap().is_empty() {
         if let Some(launcher)=app.get_webview_window(crate::LAUNCHER) {let _=launcher.show();let _=launcher.set_focus();}
     }
     Ok(())
 }
+#[cfg(any(test,feature="legacy-updater-tests"))]
 #[tauri::command]
 pub fn update_start(app:tauri::AppHandle,window:tauri::WebviewWindow,candidate_id:String,state_revision:u64)->Result<UpdateSnapshot,String> {
     require_updater(&window)?;start_operation(&app,&candidate_id,state_revision,false)
 }
+#[cfg(any(test,feature="legacy-updater-tests"))]
 #[tauri::command]
 pub fn update_resume(app:tauri::AppHandle,window:tauri::WebviewWindow,candidate_id:String,state_revision:u64)->Result<UpdateSnapshot,String> {
     require_updater(&window)?;start_operation(&app,&candidate_id,state_revision,true)
 }
+#[cfg(any(test,feature="legacy-updater-tests"))]
 fn start_operation(app:&tauri::AppHandle,candidate:&str,revision:u64,resume:bool)->Result<UpdateSnapshot,String> {
     let updates=app.state::<Updates>();
     #[cfg(feature="native-smoke")]
@@ -460,20 +467,34 @@ fn start_operation(app:&tauri::AppHandle,candidate:&str,revision:u64,resume:bool
     tauri::async_runtime::spawn(job.run(cache,source,std::sync::Arc::new(move|snapshot|publish(&handle,&snapshot))));
     Ok(snapshot)
 }
+#[cfg(any(test,feature="legacy-updater-tests"))]
 #[tauri::command]
 pub fn update_cancel_download(app:tauri::AppHandle,window:tauri::WebviewWindow)->Result<UpdateSnapshot,String> {
     require_updater(&window)?;let snapshot=app.state::<Updates>().cancel_download()?;publish(&app,&snapshot);Ok(snapshot)
 }
 #[tauri::command]
-pub fn update_open_releases(window:tauri::WebviewWindow)->Result<(),String> {
+pub fn update_open_releases(app:tauri::AppHandle,window:tauri::WebviewWindow)->Result<(),String>{
     require_updater(&window)?;
+    let state=app.state::<Updates>();let session=state.session.lock().unwrap();
+    let page=session.candidate.as_ref().map(|c|format!("{RELEASES_PAGE}/tag/{}",c.tag)).unwrap_or_else(||RELEASES_PAGE.into());
+    open_external(&page)
+}
+#[tauri::command]
+pub fn update_open_download(app:tauri::AppHandle,window:tauri::WebviewWindow,candidate_id:String,state_revision:u64)->Result<(),String>{
+    require_updater(&window)?;
+    let state=app.state::<Updates>();let session=state.session.lock().unwrap();
+    if session.snapshot.state!=UpdateState::Available||session.snapshot.state_revision!=state_revision||session.snapshot.candidate_id.as_deref()!=Some(&candidate_id){return Err("update_stale_confirmation".into());}
+    let candidate=session.candidate.as_ref().ok_or("update_stale_candidate")?;
+    if !crate::update_releases::official_asset(&candidate.url,&candidate.tag){return Err("update_asset_rejected".into());}
+    open_external(&candidate.url)
+}
+fn open_external(url:&str)->Result<(),String>{
     #[cfg(target_os="macos")]
-    let result=std::process::Command::new("open").arg(RELEASES_PAGE).spawn();
+    let result=std::process::Command::new("open").arg(url).spawn();
     #[cfg(target_os="windows")]
-    let result={use std::os::windows::process::CommandExt;
-        std::process::Command::new("rundll32.exe").args(["url.dll,FileProtocolHandler",RELEASES_PAGE]).creation_flags(0x08000000).spawn()};
+    let result={use std::os::windows::process::CommandExt;std::process::Command::new("rundll32.exe").args(["url.dll,FileProtocolHandler",url]).creation_flags(0x08000000).spawn()};
     #[cfg(not(any(target_os="macos",target_os="windows")))]
-    let result=std::process::Command::new("xdg-open").arg(RELEASES_PAGE).spawn();
+    let result=std::process::Command::new("xdg-open").arg(url).spawn();
     result.map(|_|()).map_err(|_|"update_releases_unavailable".into())
 }
 pub fn check_for_updates(app:&tauri::AppHandle)->Result<UpdateSnapshot,String> {
@@ -492,7 +513,9 @@ pub fn check_for_updates(app:&tauri::AppHandle)->Result<UpdateSnapshot,String> {
 }
 pub fn open_update_window(app:&tauri::AppHandle)->Result<(),String> {
     if let Some(window)=app.get_webview_window(LABEL) {
-        window.show().and_then(|_|window.unminimize()).and_then(|_|window.set_focus()).map_err(|_|"update_window_failed".into())
+        window.show().and_then(|_|window.unminimize()).and_then(|_|window.set_focus()).map_err(|_|"update_window_failed")?;
+        if app.state::<Updates>().snapshot().state!=UpdateState::Checking{check_for_updates(app)?;}
+        Ok(())
     } else {
         let state=app.state::<Updates>();
         let mut opening=state.opening.lock().unwrap();
@@ -545,7 +568,8 @@ pub async fn read_official_catalog_probe()->Result<CheckResult,String> {
 }
 async fn catalog(source:&str,token:Option<&str>)->Result<CheckResult,String> {
     use crate::update_releases::CatalogOutcome;
-    let result=crate::update_releases::read_catalog(source,env!("CARGO_PKG_VERSION"),&crate::update_releases::platform(),token).await?;
+    let _=token;
+    let result=crate::update_releases::read_manual_catalog(source,env!("CARGO_PKG_VERSION"),&crate::update_releases::platform()).await?;
     let state=match result.outcome {CatalogOutcome::Current=>UpdateState::Current,CatalogOutcome::NoCatalog|CatalogOutcome::NoPackage=>UpdateState::NoPackage,CatalogOutcome::Available=>UpdateState::Available};
     let reason=match result.outcome {CatalogOutcome::NoCatalog=>Some("no_catalog".into()),CatalogOutcome::NoPackage=>Some("no_package".into()),_=>None};
     Ok(CheckResult{state,version:result.candidate.as_ref().map(|candidate|candidate.version.clone()),notes:result.notes,reason,

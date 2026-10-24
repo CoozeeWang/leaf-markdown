@@ -1,6 +1,6 @@
 [package]
 name = "leaf"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 license = "MIT"
 default-run = "leaf"
@@ -16,10 +16,13 @@ path = "src/bin/leaf-mcp-adapter.rs"
 [[bin]]
 name = "leaf-update-helper"
 path = "src/bin/leaf-update-helper.rs"
+required-features = ["legacy-updater-tests"]
 
 [features]
 # Enables a local CDP connection only in native CI probe builds.
-native-smoke = ["tauri/devtools"]
+native-smoke = ["tauri/devtools", "legacy-updater-tests"]
+# Historical installer fixtures only; never enabled for distributed applications.
+legacy-updater-tests = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

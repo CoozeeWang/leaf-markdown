@@ -32,7 +32,7 @@ const directory=await mkdtemp(join(tmpdir(),'leaf-mcp-native-'));
 const result=join(directory,'result.json');
 const env={...process.env,NODE_OPTIONS:'--test-reporter=tap',PATH:`${homedir()}/.cargo/bin:${process.env.PATH}`,LEAF_MCP_TEST_DIR:directory,LEAF_MCP_TEST_MODE:mode};
 let app, server;
-let runtimeOutput='';
+let runtimeOutput='',serverOutput='';
 function start(command,args,options={}) { return spawn(command,args,{cwd:root,env,stdio:['ignore','pipe','pipe'],...options}); }
 function completed(child) { return new Promise((res,rej)=>{ child.on('error',rej);child.on('exit',code=>code===0?res():rej(new Error(`process exited ${code}`))); }); }
 try {
@@ -64,7 +64,14 @@ try {
     assert(executable.includes('Leaf Native Test.app/Contents/MacOS/leaf'),'native Tunnel route must use the disposable staged bundle');
   }
   server=start('node',['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','41731','--strictPort']);
-  for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:41731')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+  for(const pipe of [server.stdout,server.stderr])pipe.on('data',chunk=>{serverOutput=(serverOutput+chunk).slice(-4000);});
+  let serving=false;
+  for(let i=0;i<100;i++){
+    assert.equal(server.exitCode,null,'owned native-test server exited: '+serverOutput);
+    try{if(serverOutput.replace(/\x1b\[[0-9;]*m/g,'').includes('Local:')&&(await fetch('http://127.0.0.1:41731')).ok){serving=true;break;}}catch{}
+    await new Promise(r=>setTimeout(r,100));
+  }
+  assert.ok(serving,'owned native-test server never became ready: '+serverOutput);
   for(const runMode of mode==='renderer-ack-loss'?[mode,'renderer-ack-loss-restart']:[mode]) {
     await rm(result,{force:true});
     app=start(executable,[],{env:{...env,LEAF_MCP_TEST_MODE:runMode}});
@@ -72,7 +79,8 @@ try {
     app.stdout.on('data',chunk=>{runtimeOutput+=chunk;});
     let report;
     for(let i=0;i<(mode==='chatgpt-tunnel-dev-bundle'?3000:900);i++){try{report=JSON.parse(await readFile(result,'utf8'));break;}catch{}if(app.exitCode!==null)break;await new Promise(r=>setTimeout(r,100));}
-    assert(report,'actual Tauri driver must return evidence');
+    let stage=null;try{stage=JSON.parse(await readFile(join(directory,'native-stage.json'),'utf8'));}catch{}
+    assert(report,'actual Tauri driver must return evidence: '+JSON.stringify({stage,exitCode:app.exitCode,signal:app.signalCode,serverExit:server.exitCode,serverTail:serverOutput.slice(-1000),runtimeTail:runtimeOutput.slice(-2000)}));
     await test(`native ${runMode} controlled task contract`,()=>assert.equal(report.pass,true,`${runMode}: ${report.failure || 'native assertions failed'}`));
     if(app.exitCode===null)await new Promise(resolve=>{app.once('exit',resolve);setTimeout(()=>{app.kill('SIGTERM');resolve();},2000).unref();});
     if(!report.pass)break;
@@ -97,6 +105,10 @@ try {
     }
   }
 } finally {
-  app?.kill('SIGTERM');server?.kill('SIGTERM');await rm(directory,{recursive:true,force:true});
+  for(const child of [app,server]){
+    if(!child||child.exitCode!==null||child.signalCode!==null)continue;
+    await new Promise(resolve=>{child.once('exit',resolve);child.kill('SIGTERM');setTimeout(()=>{child.kill('SIGKILL');resolve();},5000).unref();});
+  }
+  await rm(directory,{recursive:true,force:true});
 }
 }

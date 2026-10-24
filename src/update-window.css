@@ -1,7 +1,7 @@
-.update-window { background:var(--surface-strong); color:var(--text); font-family:var(--ui-font); }
+.update-window { background:var(--surface-strong); color:var(--text); font-family:var(--ui-font); font-size:var(--ui-size); }
 .update-window #app { height:100dvh; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; padding:0; gap:0; font-size:13px; overflow:hidden; }
 .update-window #app > header { padding:20px 20px 0; }
-.update-window h1,.update-confirm h2 { font-size:18px; font-weight:600; line-height:1.4; margin:0 0 8px; }
+.update-window h1 { font-size:var(--ui-dialog-title); font-weight:600; line-height:1.4; margin:0 0 8px; }
 .update-window header p { font-size:12px; color:var(--muted); margin:0; }
 .update-window #update-content { min-height:0; overflow:auto; overflow-wrap:anywhere; padding:24px 20px 20px; }
 .update-window #update-result { font-size:14px; font-weight:600; line-height:1.5; margin:0 0 8px; }
@@ -18,11 +18,5 @@
 .update-window button.text-action { border-color:transparent; background:transparent; color:var(--muted); padding-left:0; padding-right:0; text-align:left; }
 .update-window button:focus-visible,.update-window summary:focus-visible { outline:1px solid var(--accent); outline-offset:2px; box-shadow:none; }
 .update-window #update-result:focus { outline:none; }
-.update-window progress { width:100%; accent-color:var(--accent); }
-.update-window #update-progress-text { font-size:12px; color:var(--muted); }
-.update-confirm-backdrop { position:fixed; inset:0; padding:20px; background:rgb(0 0 0 / .2); display:grid; place-items:center; z-index:1000; }
-.update-confirm { width:min(440px,100%); max-height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; padding:20px; border:1px solid var(--line); border-radius:var(--ui-radius-dialog); background:var(--surface-strong); overflow:hidden; }
-.update-confirm > p { overflow:auto; overflow-wrap:anywhere; min-height:0; }
-.update-confirm > footer { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; padding-top:16px; }
 @media(max-width:400px) { .update-window #update-footer > .text-action { flex-basis:100%; } }
 @media(prefers-reduced-motion:reduce) { .update-window *, .update-window *::before, .update-window *::after { animation:none!important; transition:none!important; } }

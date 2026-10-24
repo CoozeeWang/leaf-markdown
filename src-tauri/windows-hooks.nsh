@@ -1,9 +1,35 @@
 !include "${__FILEDIR__}\windows-locales.nsh"
 !include "${__FILEDIR__}\windows-adapter-upgrade.nsh"
-!include "${__FILEDIR__}\windows-update-recovery.nsh"
+
+LangString LeafLegacyUpdaterBusy 1033 "Cannot remove the previous Leaf update helper. Quit Leaf normally and retry. Only the registered installation folder can be cleaned; documents and settings are kept."
+LangString LeafLegacyUpdaterBusy 2052 "无法移除旧版 Leaf 更新助手。请正常退出 Leaf 后重试。只清理已登记的安装目录，文档和设置会保留。"
+LangString LeafLegacyUpdaterBusy 1028 "無法移除舊版 Leaf 更新助手。請正常結束 Leaf 後重試。只清理已登記的安裝目錄，文件與設定會保留。"
 
 !macro NSIS_HOOK_PREINSTALL
-  !insertmacro LeafUpdateBegin
+  Push $0
+  Push $1
+  ; Tauri upgrades leave files no longer listed as sidecars. Remove only this
+  ; retired product file in the exact registered per-user installation, and
+  ; fail before payload replacement if it is occupied or the owner differs.
+  IfFileExists "$INSTDIR\leaf-update-helper.exe" 0 leaf_legacy_done
+  ReadRegStr $0 HKCU "Software\leaf\Leaf" ""
+  StrCmp $0 "" leaf_legacy_failed
+  GetFullPathName $0 "$0"
+  GetFullPathName $1 "$INSTDIR"
+  StrCmp $0 $1 0 leaf_legacy_failed
+  ClearErrors
+  Delete "$INSTDIR\leaf-update-helper.exe"
+  IfErrors leaf_legacy_failed
+  IfFileExists "$INSTDIR\leaf-update-helper.exe" leaf_legacy_failed leaf_legacy_done
+  leaf_legacy_failed:
+    Pop $1
+    Pop $0
+    IfSilent +2
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(LeafLegacyUpdaterBusy)"
+    Abort
+  leaf_legacy_done:
+  Pop $1
+  Pop $0
   !insertmacro LeafPrepareAdapterUpgrade ""
 !macroend
 
@@ -20,7 +46,6 @@
   WriteRegStr HKCU "Software\Classes\Directory\Background\shell\Leaf.NewMarkdown" "" "$(LeafNewMarkdown)"
   WriteRegStr HKCU "Software\Classes\Directory\Background\shell\Leaf.NewMarkdown" "Icon" '"$INSTDIR\${MAINBINARYNAME}.exe",0'
   WriteRegStr HKCU "Software\Classes\Directory\Background\shell\Leaf.NewMarkdown\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" --new-in "%V\."'
-  !insertmacro LeafUpdateComplete
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL

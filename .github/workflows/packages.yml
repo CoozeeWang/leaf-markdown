@@ -15,8 +15,20 @@ on:
       verification_scope:
         description: 'Targeted Windows ChatGPT proxy validation skips unrelated interface, file and PDF checks'
         type: choice
-        options: [standard, chatgpt-proxy, windows-updater, windows-updater-registration]
+        options: [standard, chatgpt-proxy, manual-update, manual-repackage]
         default: standard
+      reuse_run_id:
+        description: 'For manual-repackage only: existing installer run'
+        type: string
+        default: ''
+      reuse_source:
+        description: 'Exact application commit of the existing installer'
+        type: string
+        default: ''
+      reuse_installer_sha256:
+        description: 'Verified SHA256 of the existing installer'
+        type: string
+        default: ''
 permissions:
   contents: read
   actions: read
@@ -35,16 +47,13 @@ jobs:
         with:
           ref: ${{ inputs.source_ref }}
       - uses: actions/setup-node@v4
-        if: inputs.verification_scope != 'windows-updater-registration'
         with:
           node-version: '22'
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-        if: inputs.verification_scope != 'windows-updater-registration'
         with:
           targets: ${{ env.LEAF_BUILD_TARGET }}
       - uses: Swatinem/rust-cache@v2
-        if: inputs.verification_scope != 'windows-updater-registration'
         with:
           workspaces: src-tauri -> target
           key: ${{ env.LEAF_BUILD_TARGET }}
@@ -54,19 +63,6 @@ jobs:
         shell: bash
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - run: npm ci
-        if: inputs.verification_scope != 'windows-updater-registration'
-      - name: Inspect existing Windows installer registration
-        if: inputs.platform == 'windows' && inputs.verification_scope == 'windows-updater-registration'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $download = Join-Path $env:RUNNER_TEMP 'leaf-registration-candidate'
-          gh run download 40017222346 --repo CoozeeWang/leaf-markdown --name Unvalidated-NSIS-6977528fd289361f1c08d64f5bc2b3ec1508d831 --dir $download
-          if ($LASTEXITCODE) { throw 'Existing candidate download failed; do not rebuild it' }
-          $installer = Get-ChildItem $download -Filter 'Leaf_1.0.1_*.exe' | Select-Object -First 1
-          if (!$installer) { throw 'Expected existing 1.0.1 installer' }
-          ./tests/windows-desktop-updates.ps1 -Mode RegistrationAudit -Installer $installer.FullName
       - run: npm test
         if: inputs.verification_scope == 'standard'
       - name: Targeted ChatGPT source checks
@@ -108,41 +104,76 @@ jobs:
         env:
           LEAF_VERIFICATION_SCOPE: ${{ inputs.verification_scope }}
           GH_TOKEN: ${{ github.token }}
-      - name: Build installer
-        id: installer
-        if: inputs.verification_scope != 'windows-updater-registration'
+      - name: Targeted manual-update source and role checks
+        if: (inputs.verification_scope == 'manual-update' || inputs.verification_scope == 'manual-repackage')
         shell: bash
-        run: npm run desktop:build -- --target "$LEAF_BUILD_TARGET" --config "$LEAF_BUILD_CONFIG"
-      - name: Verify Windows supervised installation and recovery
-        if: inputs.platform == 'windows' && inputs.verification_scope == 'windows-updater'
+        run: |
+          node --test tests/i18n.test.js tests/desktop-close.test.js tests/version-consistency.test.js
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf window_role::tests
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf update_coordinator::tests
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf restart_retires_client_capabilities_and_profiles_persist_without_secrets
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf protecting_shared_app_directory_preserves_siblings_and_nested_access
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf update_releases::manual_catalog_tests
+          npx playwright install chromium
+          LEAF_TEST_ENGINE=chrome npm run test:browser -- desktop-updates-browser.mjs
+      - name: Repackage existing production executables
+        id: repackage
+        if: inputs.platform == 'windows' && inputs.verification_scope == 'manual-repackage'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          LEAF_REUSE_RUN: ${{ inputs.reuse_run_id }}
+          LEAF_REUSE_SOURCE: ${{ inputs.reuse_source }}
+          LEAF_REUSE_SHA256: ${{ inputs.reuse_installer_sha256 }}
+        run: ./tests/windows-repackage.ps1
+      - name: Build installer
+        id: installer
+        if: inputs.verification_scope != 'manual-repackage'
+        shell: bash
+        run: npm run desktop:build -- --target "$LEAF_BUILD_TARGET" --config "$LEAF_BUILD_CONFIG"
+      - name: Verify manual installation and configuration preservation
+        if: inputs.platform == 'windows' && (inputs.verification_scope == 'manual-update' || inputs.verification_scope == 'manual-repackage')
+        shell: pwsh
         run: |
-          ./tests/windows-desktop-updates.ps1 -Mode SourceFixture
-          cargo build --locked --manifest-path src-tauri/Cargo.toml --bin leaf-update-helper --features native-smoke
-          if ($LASTEXITCODE) { throw 'Windows fixture supervisor build failed' }
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $installers = @(Get-ChildItem "src-tauri/target/$env:LEAF_BUILD_TARGET/release/bundle/nsis/Leaf_$($version)_*.exe")
-          if ($installers.Count -ne 1) { throw 'Expected exactly one installer for the current product version' }
-          ./tests/windows-desktop-updates.ps1 -Mode InstalledFixture -Installer $installers[0].FullName
-          ./tests/windows-desktop-updates.ps1 -Mode RecoveryAudit
+          $installer = Get-ChildItem "src-tauri/target/$env:LEAF_BUILD_TARGET/release/bundle/nsis/Leaf_$($version)_*.exe" | Select-Object -First 1
+          if (!$installer) { throw 'Final installer missing' }
+          ./tests/windows-manual-update.ps1 -Installer $installer.FullName
+          if ($env:LEAF_REUSED_APPLICATION_SOURCE) {
+            $proof = Get-Content test-results/windows-manual-update.json -Raw | ConvertFrom-Json
+            $proof | Add-Member application_source $env:LEAF_REUSED_APPLICATION_SOURCE
+            $proof | Add-Member packaging_source (git rev-parse HEAD)
+            $proof | ConvertTo-Json | Set-Content test-results/windows-manual-update.json -Encoding UTF8
+          }
+          if ($LASTEXITCODE) { throw 'Manual installer preservation checks failed' }
+          ./tests/windows-adapter-upgrade.ps1 -Installer $installer.FullName
+          if ($LASTEXITCODE) { throw 'MCP adapter replacement regression failed' }
+      - name: Verify native Windows welcome close and unsaved protection
+        if: inputs.platform == 'windows' && (inputs.verification_scope == 'manual-update' || inputs.verification_scope == 'manual-repackage')
+        shell: pwsh
+        run: |
+          npm run desktop:build -- --debug --no-bundle --features native-smoke --config src-tauri/tauri.windows.conf.json
+          if ($LASTEXITCODE) { throw 'Native close probe build failed' }
+          $env:LEAF_NATIVE_SMOKE_EXE = Join-Path $PWD 'src-tauri/target/debug/leaf.exe'
+          node tests/windows-native-smoke.mjs --launcher-close-only --close-language=zh-Hans
+          if ($LASTEXITCODE) { throw 'Welcome close failed' }
+          node tests/windows-native-smoke.mjs --launcher-close-only --system-close --close-language=en
+          if ($LASTEXITCODE) { throw 'System close failed' }
+          node tests/windows-native-smoke.mjs --launcher-close-only --with-documents --close-language=zh-Hans
+          if ($LASTEXITCODE) { throw 'Unsaved-document protection failed' }
       - uses: actions/upload-artifact@v4
-        if: failure() && inputs.platform == 'windows' && steps.installer.outcome == 'success'
+        if: inputs.platform == 'windows' && (inputs.verification_scope == 'manual-update' || inputs.verification_scope == 'manual-repackage')
+        with:
+          name: Manual-update-evidence-${{ steps.source.outputs.sha }}
+          path: test-results/windows-manual-update.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure() && inputs.platform == 'windows' && (steps.installer.outcome == 'success' || steps.repackage.outcome == 'success')
         with:
           name: Unvalidated-NSIS-${{ steps.source.outputs.sha }}
           path: src-tauri/target/${{ env.LEAF_BUILD_TARGET }}/release/bundle/nsis/*.exe
           if-no-files-found: ignore
-          retention-days: 7
-      - uses: actions/upload-artifact@v4
-        if: inputs.platform == 'windows' && inputs.verification_scope == 'windows-updater'
-        with:
-          name: Windows-updater-payload-${{ steps.source.outputs.sha }}
-          path: |
-            test-results/windows-updater-payload/
-            test-results/windows-update-audit.json
-          include-hidden-files: true
-          if-no-files-found: error
           retention-days: 7
       - name: Verify Windows file integration
         if: inputs.platform == 'windows' && inputs.verification_scope == 'standard'
@@ -169,11 +200,9 @@ jobs:
           node tests/windows-native-smoke.mjs --pdf-only
           if ($LASTEXITCODE -ne 0) { throw 'Actual Leaf PDF export failed' }
       - name: Generate checksums
-        if: inputs.verification_scope != 'windows-updater-registration'
         shell: bash
         run: node scripts/package-checksums.mjs "$LEAF_BUILD_TARGET"
       - uses: actions/upload-artifact@v4
-        if: inputs.verification_scope != 'windows-updater-registration'
         with:
           name: Leaf-${{ env.LEAF_BUILD_TARGET }}-${{ steps.source.outputs.sha }}
           path: test-results/packages/

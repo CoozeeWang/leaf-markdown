@@ -99,8 +99,18 @@ fn captured_participants(barrier:&BarrierGuard,snapshot:&crate::update_admission
 }
 impl UpdateCoordinator {
     pub(crate) fn begin_close(&self,registry:&AdmissionRegistry,label:&str,window_nonce:u64)->Result<CloseAction,String>{
+        self.begin_close_action(registry,label,window_nonce,false)
+    }
+    pub(crate) fn begin_native_close(&self,registry:&AdmissionRegistry,label:&str,window_nonce:u64)->Result<CloseAction,String>{
+        self.begin_close_action(registry,label,window_nonce,true)
+    }
+    fn begin_close_action(&self,registry:&AdmissionRegistry,label:&str,window_nonce:u64,native_gesture:bool)->Result<CloseAction,String>{
         let mut state=self.state.lock().unwrap();
         if registry.snapshot().instances.get(label)!=Some(&window_nonce){return Err("update_close_window_stale".into());}
+        // Native prevention may suppress the renderer callback entirely. A new
+        // OS gesture can replace its denied claim; active allowed closes and
+        // the legacy-callback fence retain their existing authority.
+        if native_gesture&&state.close_actions.get(label).is_some_and(|a|a.window_nonce==window_nonce&&!a.allowed){state.close_actions.remove(label);}
         if let Some(action)=state.close_actions.get(label){
             if action.window_nonce!=window_nonce{return Err("update_close_window_stale".into());}
             return Ok(action.clone());
@@ -133,11 +143,13 @@ impl UpdateCoordinator {
     }
     pub(crate) fn begin_quit(&self,registry:&AdmissionRegistry)->Result<(crate::update_admission::CloseDecision,Option<(PrepareId,Vec<String>)>),String>{
         let mut state=self.state.lock().unwrap();
-        if state.ordinary_quit||!state.close_actions.is_empty(){return Err("ordinary_close_busy".into());}
+        if state.ordinary_quit||state.close_actions.values().any(|action|action.allowed){return Err("ordinary_close_busy".into());}
         let decision=registry.close_decision();
         let interrupted=if decision==crate::update_admission::CloseDecision::CancelledPrepare{state.active.take()}else{None};
         let notice=interrupted.as_ref().map(|tx|(tx.id.clone(),tx.participants.keys().cloned().collect()));
-        if decision==crate::update_admission::CloseDecision::Allowed&&!state.committed{state.ordinary_quit=true;}
+        if decision==crate::update_admission::CloseDecision::Allowed&&!state.committed{
+            state.close_actions.retain(|_,action|action.allowed);state.ordinary_quit=true;
+        }
         drop(state);drop(interrupted);self.changed.notify_waiters();Ok((decision,notice))
     }
     pub(crate) fn cancel_quit(&self,label:Option<&str>){
@@ -146,7 +158,7 @@ impl UpdateCoordinator {
     }
     pub(crate) fn begin(&self,registry:&AdmissionRegistry,package:PackageBinding)->Result<PrepareId,String>{
         let mut state=self.state.lock().unwrap();
-        if state.active.is_some()||state.committed||state.ordinary_quit||!state.close_actions.is_empty(){return Err("update_prepare_busy".into());}
+        if state.active.is_some()||state.committed||state.ordinary_quit||state.close_actions.values().any(|action|action.allowed){return Err("update_prepare_busy".into());}
         if package.candidate.is_empty()||package.digest.is_empty()||package.target.is_empty()||package.bundle.is_empty(){return Err("update_package_target_invalid".into());}
         state.sequence=state.sequence.checked_add(1).filter(|value|*value<=9_007_199_254_740_991).ok_or("update_prepare_sequence_exhausted")?;
         let id=PrepareId(format!("{}-{}",state.sequence,nonce()?));
@@ -510,6 +522,7 @@ impl<F:FnMut(&str)> Drop for PrepareGuard<F> {fn drop(&mut self){
 }}
 /// Download completion invokes this native-only method. Plan11's handshake is
 /// required before production can freeze, and Plan06 must supply a ready helper.
+#[cfg(any(test,feature="legacy-updater-tests"))]
 pub(crate) async fn prepare_install(app:&tauri::AppHandle,op:u64,candidate:&str)->Result<(),String>{
     let coordinator=app.state::<UpdateCoordinator>();let registry=app.state::<AdmissionRegistry>();
     if !coordinator.renderer_supported(&registry){return Err("update_renderer_prepare_unavailable".into());}
@@ -814,6 +827,45 @@ mod tests {
         registry.cancel_current();registry.reserve_document("document-a").unwrap().commit();registry.document_ready("document-a");
         assert!(captured_participants(&barrier,&registry.snapshot()).is_err(),"a recreated same-label instance cannot be included in the old epoch");
         drop(barrier);assert!(registry.admit().is_ok());
+    }
+
+    #[test]
+    fn cancelled_native_gesture_cannot_deadlock_later_quit_or_another_document() {
+        let registry=AdmissionRegistry::default();
+        for label in ["document-a","document-b"]{registry.reserve_document(label).unwrap().commit();registry.document_ready(label);}
+        let coordinator=UpdateCoordinator::default();let nonce=registry.snapshot().instances["document-a"];
+        coordinator.begin(&registry,package()).unwrap();
+        let denied=coordinator.begin_native_close(&registry,"document-a",nonce).unwrap();assert!(!denied.allowed);
+        assert_eq!(coordinator.begin_quit(&registry).unwrap().0,crate::update_admission::CloseDecision::Allowed);
+        let close=coordinator.begin_close(&registry,"document-a",nonce).unwrap();assert!(close.allowed);
+        assert!(coordinator.begin(&registry,package()).is_err());
+        coordinator.complete_close("document-a",nonce,close.action_id).unwrap();coordinator.cancel_quit(Some("document-a"));
+        assert_eq!(registry.snapshot().participants.len(),2,"cancelled unsaved close keeps both documents registered");
+        assert!(coordinator.begin(&registry,package()).is_ok());
+    }
+
+    #[test]
+    fn new_native_gesture_replaces_only_denied_claim_and_keeps_stale_callbacks_fenced() {
+        let registry=AdmissionRegistry::default();registry.reserve_document("document-a").unwrap().commit();registry.document_ready("document-a");
+        let coordinator=UpdateCoordinator::default();let nonce=registry.snapshot().instances["document-a"];
+        coordinator.begin(&registry,package()).unwrap();
+        let denied=coordinator.begin_native_close(&registry,"document-a",nonce).unwrap();assert!(!denied.allowed);
+        let next=coordinator.begin_native_close(&registry,"document-a",nonce).unwrap();assert!(next.allowed);assert_ne!(next.action_id,denied.action_id);
+        assert!(coordinator.legacy_close_denied("document-a",nonce));
+        assert!(coordinator.complete_close("document-a",nonce,denied.action_id).is_err());
+        assert_eq!(coordinator.begin_native_close(&registry,"document-a",nonce).unwrap().action_id,next.action_id);
+        assert!(coordinator.begin(&registry,package()).is_err(),"a real unsaved-document close still blocks preparation");
+        coordinator.complete_close("document-a",nonce,next.action_id).unwrap();
+        assert!(coordinator.begin(&registry,package()).is_ok());
+    }
+
+    #[test]
+    fn denied_native_close_without_renderer_ack_does_not_block_retry() {
+        let registry=AdmissionRegistry::default();registry.reserve_document("document-a").unwrap().commit();registry.document_ready("document-a");
+        let coordinator=UpdateCoordinator::default();let nonce=registry.snapshot().instances["document-a"];
+        coordinator.begin(&registry,package()).unwrap();
+        let denied=coordinator.begin_close(&registry,"document-a",nonce).unwrap();assert!(!denied.allowed);
+        assert!(coordinator.begin(&registry,package()).is_ok(),"a cancelled native gesture has no active document write to wait for, even if its renderer never acknowledges");
     }
 
     #[test]

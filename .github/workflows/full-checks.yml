@@ -15,7 +15,7 @@ on:
       suite:
         description: 'Test suites to run'
         type: choice
-        options: [all, browser, native, roles, launcher-close, update-unit, update-lock, update-prepare, update-coordinator, update-macos, update-preservation]
+        options: [all, browser, native, launcher-close]
         default: all
       browser_suites:
         description: 'Optional space-separated browser suite filenames; empty runs every browser suite'
