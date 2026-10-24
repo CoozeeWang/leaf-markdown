@@ -4,6 +4,14 @@
   },
   "bundle": {
     "targets": ["app", "dmg"],
+    "macOS": {
+      "dmg": {
+        "background": "dmg-background.png",
+        "windowSize": {"width":660,"height":480},
+        "appPosition": {"x":180,"y":180},
+        "applicationFolderPosition": {"x":480,"y":180}
+      }
+    },
     "resources": {
       "icons/document-icon.icns": "document-icon.icns",
       "locales/en.lproj/ServicesMenu.strings": "en.lproj/ServicesMenu.strings",

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="480" viewBox="0 0 660 480">
+  <rect width="660" height="480" fill="#fafaf7"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" fill="#353b38">
+    <text x="330" y="48" text-anchor="middle" font-size="22" font-weight="600">Leaf · 安装 / 安裝 / Install</text>
+    <text x="330" y="76" text-anchor="middle" font-size="13" fill="#697164">拖入右侧文件夹 · 拖入右側資料夾 · Drag to Applications</text>
+    <path d="M270 180h120m-14-14 16 14-16 14" fill="none" stroke="#607b68" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M44 285h572" stroke="#dedfd7"/>
+    <g font-size="13">
+      <text x="44" y="314">首次安装：将 Leaf.app 拖入 Applications。</text>
+      <text x="44" y="335">更新旧版：先退出 Leaf，再拖入并选择“替换”。</text>
+      <text x="44" y="366">首次安裝：將 Leaf.app 拖入 Applications。</text>
+      <text x="44" y="387">更新舊版：先結束 Leaf，再拖入並選擇「取代」。</text>
+      <text x="44" y="418">First install: drag Leaf.app into Applications.</text>
+      <text x="44" y="439">Updating: quit Leaf first, then drag it in and choose Replace.</text>
+    </g>
+  </g>
+</svg>

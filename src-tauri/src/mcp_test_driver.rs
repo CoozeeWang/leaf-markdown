@@ -819,6 +819,7 @@ async fn file_identity_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBro
     let root=std::path::PathBuf::from(std::env::var("LEAF_MCP_TEST_DIR").unwrap());
     for (index,atomic) in [false,true].into_iter().enumerate() {
         let path=root.join(if atomic{"different.md"}else{"synthetic.md"});
+        std::fs::write(root.join("native-stage.json"),json!({"phase":"file-open","atomic":atomic}).to_string()).map_err(|_|"test stage")?;
         let initial=std::fs::read_to_string(&path).map_err(|_|"synthetic seed")?;
         let previous=broker.inner.registry.lock().unwrap().documents.values().map(|d|d.label.clone()).collect::<Vec<_>>();
         super::create_document(app.clone(),Some(path.to_string_lossy().into()),None,None)?;
@@ -834,6 +835,7 @@ async fn file_identity_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBro
         let mut begin=binding.clone();begin["revision"]=snapshot["revision"].clone();begin["request_id"]=json!(format!("file-begin-{index}"));
         let task=tool(client,"begin_edit",begin).await?;
         let mut batch=binding.clone();batch["task_id"]=task["task_id"].clone();batch["request_id"]=json!(format!("file-first-{index}"));batch["revision"]=snapshot["revision"].clone();batch["changes"]=json!([{"from":0,"to":9,"expected":&initial[..9],"insert":"Assisted!"}]);
+        std::fs::write(root.join("native-stage.json"),json!({"phase":"file-first-edit","atomic":atomic}).to_string()).map_err(|_|"test stage")?;
         let first=tool(client,"apply_edit_batch",batch.clone()).await?;
         ensure(first["bufferResult"]["state"]=="applied"&&first["diskResult"]["state"]=="pending","buffer receipt does not claim disk success")?;
         let mut revision=first["applied_revision"].clone();
@@ -860,6 +862,7 @@ async fn file_identity_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBro
         let before_identity=broker.window_binding(&label).unwrap().logical_identity;
         let external=if atomic{"External replacement draft"}else{"External in-place draft"};
         if atomic {let replacement=root.join("external-replacement.md");std::fs::write(&replacement,external).map_err(|_|"replacement seed")?;std::fs::rename(replacement,&path).map_err(|_|"external atomic replacement")?;}else{std::fs::write(&path,external).map_err(|_|"external in-place write")?;}
+        std::fs::write(root.join("native-stage.json"),json!({"phase":"file-watcher","atomic":atomic}).to_string()).map_err(|_|"test stage")?;
         // Observe the application's real three-second file watcher, not a
         // mocked event or forced read in this driver.
         for _ in 0..100 {
@@ -898,6 +901,7 @@ async fn file_identity_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBro
 
 async fn file_transition_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBroker,client:&rmcp::service::Peer<rmcp::service::RoleClient>,root:&std::path::Path)->Result<(),String>{
     for action in ["save-as","rename","relocate","external-rename","save-failure"] {
+        std::fs::write(root.join("native-stage.json"),json!({"phase":"identity-transition","action":action}).to_string()).map_err(|_|"test stage")?;
         let source=root.join(format!("{action}-source.md"));let target=root.join(format!("{action}-target.md"));
         let initial="Synthetic saved draft";std::fs::write(&source,initial).map_err(|_|"transition seed")?;
         let previous=broker.inner.registry.lock().unwrap().documents.values().map(|d|d.label.clone()).collect::<Vec<_>>();
