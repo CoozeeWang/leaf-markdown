@@ -1,99 +1,115 @@
-# AI 辅助编辑与 MCP 连接
+[简体中文](AI_CONNECTIONS.zh-CN.md) · [繁體中文](AI_CONNECTIONS.zh-TW.md) · **English**
 
-Leaf 桌面版在 MCP 开启后可把已打开文档交给 ChatGPT、Claude Desktop 或 WorkBuddy 读取和辅助编辑，也包括尚未保存的新文档。连接默认关闭。打开“设置 → AI 辅助编辑”，页内标题为“MCP 连接”。网页版不能启动桌面连接。
+# AI-assisted editing and MCP connections
 
-当前功能仍在内部测试。源码、浏览器模拟宿主与隔离 macOS 原生检查已有证据；真实 ChatGPT web／desktop、Claude Desktop、WorkBuddy、Windows、日用安装版和用户验收须各自验证。配置保存、程序运行或文件预览不能证明真实客户端已经连通。
+Connect through MCP to let AI read, edit, and review documents in Leaf. This guide helps you set up the connection and use AI in your everyday writing.
 
-## 连接客户端
+Leaf currently supports **ChatGPT, Claude Desktop, and WorkBuddy** for AI-assisted editing and review through MCP. Set up the MCP connection for your chosen app before use.
 
-开启“启用 MCP 连接”，再选择 AI 软件。总开关关闭时，下方输入、按钮、链接与折叠控件全部禁用，已保存内容仍可查看；打开总开关后恢复操作。下拉框只切换设置内容，不清除其他连接；三个客户端的配置分别保存。关闭总开关会停止访问与编辑任务，保留已应用的稿件和连接配置。重新启用后，客户端重新发现并读取已打开的文档。
+## Let AI help you connect
+
+**Use Leaf from the AI app you already know.** You do not need to configure a separate model API for Leaf or use coding tools such as Codex or Claude Code. Once connected, use your chosen AI app and account to request changes in conversation.
+
+MCP connects Leaf to your AI app. You do not need to understand its technical details. You can give this guide to AI and ask it to help:
+
+> I want to connect Leaf to my AI app. Using this guide, first confirm my operating system and AI app, then walk me through setup. Tell me where to sign in, grant access, or enter keys when needed. Finally, read a sample document I have open in Leaf to confirm the connection. Do not edit it yet.
+
+AI can guide you through the steps. An AI with computer-use capabilities may also help with parts of setup. Sign in, grant permissions, and enter keys yourself in the relevant interface; do not send keys in the conversation.
+
+Your AI app's account permissions, subscription, and usage limits still apply. Connecting ChatGPT also requires a tunnel key to establish the connection. This is separate from configuring a model API for Leaf.
+
+## Choose a connection
+
+Open the Leaf desktop app, go to **Settings → AI-Assisted Editing**, enable **Enable MCP connection**, and select your AI app. Keep Leaf and the documents you want to work on open while using the connection.
+
+| AI app | Connection method |
+| --- | --- |
+| ChatGPT | Uses an OpenAI tunnel. Requires a tunnel ID, the tunnel client, and a connection key. |
+| Claude Desktop | Add an extension from Leaf and confirm installation in Claude. |
+| WorkBuddy | Add a connection from Leaf, then enable it in WorkBuddy. |
+
+Follow only the steps for the app you use. Each client's configuration is saved separately. Selecting a different app in Settings does not clear the other connections.
 
 ### ChatGPT
 
-按 Leaf 中的四步说明准备连接：
+Leaf uses an OpenAI secure tunnel to connect ChatGPT to Leaf running on your computer. For initial setup, ask AI to help you follow the [OpenAI tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels).
 
-1. 在 OpenAI 的隧道设置创建或选择 Leaf 专用 Tunnel，填入对应 Tunnel ID。平台组织与目标 ChatGPT 工作区的关联和权限需正确。
-2. 下载适合系统与芯片的完整官方 `tunnel-client` 包并解压，在 Leaf 选择程序。Windows 选择 `tunnel-client.exe`。
-3. 在 Leaf 的密钥输入框输入 Runtime API key，保存连接配置。密钥使用系统凭据存储；输入框随后清空，修改配置时留空可保留已有密钥。不要把密钥贴入聊天、截图或日志。
-4. 总开关开启时，保存配置后 Leaf 自动启用连接。本地就绪后，在 ChatGPT 添加自定义 MCP 服务器，连接选 Tunnel 和同一个隧道，按 Leaf 指引完成安装。随后打开合成文档，做一次只读调用。
+1. **Prepare a tunnel.** Open OpenAI's tunnel settings using the link in Leaf. Create or select a dedicated tunnel for Leaf and enter its Tunnel ID in Leaf. Check that it is linked to your intended ChatGPT workspace and that you have permission to create and use tunnels.
+2. **Select the tunnel client.** Follow Leaf's download link to get the complete official `tunnel-client` package for your operating system and processor, then extract it. Select the extracted program in Leaf; on Windows, this is `tunnel-client.exe`. Keep the entire extracted folder in a permanent location.
+3. **Enter the connection key.** Enter the Runtime API key in Leaf's connection-key field and save the configuration. This key is for the tunnel connection. Do not include it in chats, screenshots, or issue reports. The field clears after saving. When changing settings later, leave it blank to keep the saved key.
+4. **Add Leaf in ChatGPT.** Keep MCP enabled in Leaf. Once the local service is ready, add a custom MCP server on ChatGPT's web plugin page, choose Tunnel as the connection method, and select the same tunnel. Set Authentication to **No authentication** for this Tunnel connection only; organization and workspace access permissions still apply. Follow the prompts to create and install it. See [ChatGPT custom MCP connection instructions](https://developers.openai.com/api/docs/guides/custom-mcp-server) for the entry point.
+5. **Check that it can read.** In a ChatGPT conversation, use `@` to select the installed Leaf plugin and ask it to read a sample document already open in Leaf.
 
-OpenAI 的账号权限和界面可能变化，请以[官方 Secure MCP Tunnel 指南](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)和[添加自定义 MCP 服务器说明](https://developers.openai.com/api/docs/guides/custom-mcp-server)为准。隧道创建与运行所需权限不同，ChatGPT 工作区是否允许添加服务器也需单独核对。Leaf 不替用户登录或批准平台权限。
+If your account does not show the relevant options, or the tunnel is missing from the list, check account permissions and workspace links first. Refer to OpenAI's current documentation for the interface and availability.
 
-Leaf 与 Ripple 同时运行时，应使用各自的隧道：两者都用 `main` 通道连接不同服务器，仅修改 ChatGPT 插件名称不能分开路由。密钥与隧道是两项配置；已有 Runtime API key 是否可复用取决于其组织和 Tunnels Read / Use 权限。换隧道后须在 ChatGPT 重新添加使用新隧道的连接。
+### Claude Desktop
 
-开发者排查所选程序时可先查看其当前接口：
+1. Select Claude Desktop in Leaf and click **Add to Claude**.
+2. Confirm installation of Leaf in the Claude extension installer that opens.
+3. Keep Leaf open with MCP enabled. Select Leaf in a Claude conversation and ask it to read a sample document.
 
-```sh
-tunnel-client --version
-tunnel-client help quickstart
-tunnel-client init --help
-tunnel-client doctor --help
-```
+The normal installation flow does not require manually editing configuration files or installing Node or Python separately.
 
-Leaf 保存配置时检查这些接口，用自带的 `leaf-mcp-adapter` 和当前连接描述文件生成 profile，并执行 `doctor`。正常使用由 Leaf 管理启动与停止，不需要手工填写任意 MCP 命令或在命令行输入密钥。旧 profile 不匹配当前程序或连接代际时，需要在 Leaf 重新保存配置。
+### WorkBuddy
 
-| 状态 | 能说明什么 |
+1. Select WorkBuddy in Leaf, click **Add to WorkBuddy**, and confirm the connection.
+2. Enable Leaf under **专家·技能·连接器 → 连接器 → 自定义连接器** in WorkBuddy. If the connection does not appear, restart WorkBuddy and check again.
+3. Keep Leaf open with MCP enabled. Ask WorkBuddy directly to read a sample document; you do not need to select Leaf from the “+” menu.
+
+Leaf backs up the existing configuration and preserves other connections and settings.
+
+### Confirm the connection
+
+Create a sample document in Leaf with just a few sentences, then ask AI:
+
+> Read the sample document I have open through the Leaf connection and summarize it. Do not make changes.
+
+The connection is confirmed when AI can read the current document through it. A saved configuration or a ready local service means setup has progressed; an actual read is still needed to confirm it works.
+
+## Start writing and reviewing
+
+Once connected, AI can read and organize your document, polish or revise the body, organize properties, edit footnotes and tables, add review comments, or revise the text based on existing comments. Say what you want done and whether you want suggestions or direct edits. If several documents are open, include the filename. Changes appear in Leaf so you can check them and keep editing.
+
+### What AI can access
+
+With MCP and the relevant client enabled, AI can access **documents currently open in Leaf, including unsaved content**. Relevant text is sent to the AI service you use. Decide whether to enable the connection based on the document and your needs.
+
+Leaf's MCP connection does not let AI scan folders, read the recent-files list, or open other files on your computer by itself. Closing a document ends access to it through the connection. Turning off MCP stops all connection access, but does not recall content already sent to the AI service.
+
+## Stay in control of edits
+
+### View and end editing
+
+When AI starts editing, Leaf displays an editing notice. That document is temporarily read-only, but you can still browse, scroll, and search it, or edit other documents that are not in use. Only one AI editing task can work on a document at a time.
+
+To stop a task, click **End editing** in the notice. **Ending editing keeps changes already made and restores manual editing. It does not automatically undo changes.**
+
+### Check, undo, and save
+
+After a task finishes, review its changes in Leaf. If you are not happy with them, a single undo reverses that AI task's changes. You can also make a more specific request.
+
+Applied changes mean the document content has been updated; a saved status means it has been written to the file. Watch the save status. A new document without a save location still needs to be saved as a file. For the difference between autosave and draft recovery, see [Installation and usage guide](INSTALL.md#open-and-save-documents).
+
+### Read beside the conversation
+
+AI apps that support a live reading panel can display a Leaf document beside the conversation. Ask AI to open the document's live reading view to check the body, properties, footnotes, and comments together.
+
+This view is for reading; manual editing still happens in Leaf. Panel availability depends on the AI app. Ordinary file attachments and static previews do not update automatically when you edit in Leaf.
+
+## Connection troubleshooting
+
+| Situation | What to try first |
 | --- | --- |
-| 配置已保存 | 本机配置与凭据已保存；连接程序可以尚未运行 |
-| 连接程序运行中 | 进程已启动；本地服务和远端调用仍可能未就绪 |
-| 本地服务已就绪 | 本地就绪检查通过；仍须真实 ChatGPT 工具调用 |
-| 客户端已成功调用 | 应有当前构建、当前连接的实际客户端调用证据；本机检查不会自动填成此状态 |
+| AI cannot find the document | Check that Leaf is running, MCP and the relevant client are enabled, and the document is open. Then ask AI to read the current document list again. |
+| Settings are saved, but AI still cannot read | Check that Leaf is installed and enabled in the AI app. For ChatGPT, also check that you selected the same tunnel and that workspace links and permissions are correct. |
+| AI editing stops or the document is temporarily read-only | Check Leaf's notice and click End editing if needed. Review changes already made, then ask AI to read the current document again before continuing. |
+| Changes have not been saved | Check the save notice. Choose a location for a new document. If there is a file conflict, preserve the current content and follow the prompt or save a separate copy. |
+| Do connections need setting up again after an update? | An in-place update preserves persistent settings and app data when you use the same OS user account and installation location, without uninstalling Leaf or clearing its data folders. This does not cover changing users, migrating data, or moving the tunnel client directory. Temporary connections must be re-established, and external AI apps, including ChatGPT, may ask you to authorize MCP access again. |
 
-### Claude Desktop 与 WorkBuddy
+### Disable or clear a connection
 
-选择客户端后，按三步说明直接添加，无需复制或手工编辑配置。
+When you do not need AI assistance, turn off **Enable MCP connection**. The saved configuration remains. Any active editing task ends, and changes already made are kept.
 
-- **Claude Desktop**：点击“添加到 Claude”，Leaf 生成私有 `.mcpb` 扩展包并打开 Claude 安装界面；在 Claude 确认安装 Leaf。保持 Leaf 打开并开启 MCP，在对话中选择 Leaf。扩展使用 Claude 自带的 Node 启动随 Leaf 提供的 helper，无需用户安装 Node 或 Python，也无需选择连接文件。
-- **WorkBuddy**：点击“添加到 WorkBuddy”并确认。Leaf 备份已有配置，仅添加或更新 Leaf 连接，保留其他连接和设置。到 WorkBuddy 的“专家·技能·连接器 → 连接器 → 自定义连接器”启用 Leaf；未显示时重启 WorkBuddy。启用后可直接在对话中提出要求，无需从“+”选择 Leaf。无效配置或符号链接会拒绝写入。
+If you no longer use a client, clear its connection configuration in its settings. Check which app is selected first. Other clients' settings and your documents are not deleted. Manage the Leaf plugin in your AI app, and tunnels and keys on the OpenAI platform, separately in those services.
 
-生成的扩展与配置只有 helper 和连接描述文件路径，不含文档、连接令牌或 OpenAI 密钥。连接描述文件由 Leaf 更新；应用重启后保持固定路径，辅助程序重新连接当前 Leaf。实际安装与工具调用仍需在对应客户端版本分别验收。仓库中的通用 MCPB 模板供开发与打包检查；正常设置流程生成无需用户配置的本机扩展。
-
-## 已打开文档的访问
-
-开启 MCP、配置并启用客户端后，AI 可处理所有当前打开文档的全文，包括未保存文本，无需单独授权按钮。关闭 MCP、关闭文档或停用该客户端后禁止访问。客户端不能扫描文件夹、读取最近文件或自行打开路径。
-
-多个已启用客户端可以读取空闲文档；同一文档一次只允许一个 AI 编辑任务。人工修改、撤销、重做和重新载入使旧请求失效，保留已有修改与撤销记录。AI 应重新发现、读取当前文档，再继续处理，无需用户再次授权。内部仍校验文档身份、访问代际和版本。
-
-## 本机凭据
-
-OpenAI Runtime API key 仍由 Leaf 主程序保存在系统钥匙串中，读取后仅在本次主程序会话内复用；当前 helper 不读取该密钥。系统在首次访问、应用签名变化或钥匙串锁定时仍可能要求授权。
-
-Leaf 自动生成的本机连接令牌独立于 OpenAI 密钥，按运行会话与连接代际轮换，通过受保护的本机文件供 helper 读取。macOS 文件目录为 0700、令牌文件为 0600；旧 URI、实例或代际不匹配时拒绝连接。它们不导出到客户端配置或扩展包。旧版凭据迁移可能需要一次系统授权，不修改用户钥匙串全局安全设置。
-
-## 编辑、结束与保存
-
-先让 AI 调用 `list_documents`，使用返回的 `document_id`、`session_id` 和 `authorization_epoch`，再用 `read_document` 读取当前缓冲区和 revision。不要手写文档身份或把旧 revision 当作当前稿。
-
-可向 AI 提出这样的合成请求：“先读取我在 Leaf 打开的示例稿。把第二段写清楚，修改标题属性，补充脚注和表格，并给指定句子添加普通批注；保留其余原文。”AI 应先用 `begin_edit` 获得任务，再以 `apply_edit_batch` 提交有原文校验的批次，最后 `finish_edit`。正文、YAML 属性、脚注、表格和批注可进入同一任务；不能可靠处理的结构会明确拒绝，范围外内容保留。
-
-批注用 `list_comments`、`read_comment`、`locate_comment` 查询与定位。新增仅支持普通范围／位置批注；已支持的隐藏批注可以读取、改内容和删除，不新增隐藏批注。修改／删除使用同一 revision 返回的 ID、原文和指纹；删除范围批注保留被批注的正文。重试应查询原请求结果；未知写入结果不能重新播放修改。
-
-辅助编辑期间，文档提示条显示客户端、暂时只读和“结束编辑”。仍可浏览、滚动、查找；人工正文、属性、脚注、表格、批注、菜单和快捷键的写入入口受锁。同一文档只能有一个任务；其他未锁文档可继续编辑。
-
-点击“结束编辑”或让客户端调用 `stop_edit`，会保留已经应用的批次、使旧任务不能继续写入，并恢复人工编辑。整个任务结束后可一次撤销，再一次重做；零修改不会制造一条空撤销记录。停止不是回滚，也不等于撤销整个连接。长时间推理通过 adapter 的独立健康续期维持；断线、程序崩溃或续期失败会停止任务，停止后的旧批次不能复活任务。
-
-“修改已应用”表示当前编辑缓冲区已更新，“已保存”才表示相应内容已写到文件。看底栏和保存错误提示确认实际状态；无文件路径的新稿需选择保存位置。保存失败、外部程序改盘、文件身份变化或恢复冲突时，保留当前稿，按提示处理双方内容。结束编辑后仍未保存的修改不会被说成已保存。
-
-## 只读实时阅读与回退
-
-让客户端调用 `open_reader`，支持 MCP Apps 的宿主可在对话旁显示 Leaf 的只读实时视图。面板读取获准缓冲区，显示 revision、保存状态、属性、脚注、表格、批注和源码；可刷新、查看变化和结束任务，不提供手工写稿入口。
-
-特定宿主不能显示专用面板时，调用 `open_browser_reader` 获取明确标为“浏览器实时视图”的回退。返回链接为本机一次性入口，60 秒内打开；过期后重新调用。它读取同一获准稿件，但不是该宿主的专用面板。远端宿主所在机器不能访问本机 loopback 时，此回退不一定可用。
-
-关闭文档、撤权、停用或断线后，旧视图失效并停止展示缓存为当前稿。普通文件附件／预览是静态快照；即使能打开，也不能证明实时同步。专用 UI 通过须实际观察初始化、宿主工具 bridge 和至少两个 revision；文件预览、SDK 模拟宿主或浏览器回退均不能替代。
-
-## 清除与排错
-
-“清除 … 连接配置”先确认客户端与影响范围，再删除该客户端本机配置和凭据、结束其任务。其他客户端配置与文档保留。它不卸载宿主插件，也不删除 OpenAI 的隧道或远端密钥；这些在对应服务管理。取消确认后回到原控件。
-
-| 现象 | 下一步 |
-| --- | --- |
-| 只能看到已配置，工具读不到文档 | 先确认总开关、客户端启用，确认文档已打开，让 AI 重新调用 `list_documents` |
-| 本地就绪，ChatGPT 调用失败 | 核对同一 Tunnel、组织／工作区关联与权限；记录实际调用错误，不能用就绪状态代替通过 |
-| `helper_not_installed` | 使用含匹配 helper 的完整 Leaf 构建；不要改成 GUI、开发二进制或任意脚本 |
-| `tunnel_cli_contract_changed`／`tunnel_profile_changed` | 核对所选官方程序接口并在 Leaf 重新保存配置；不要跳过校验 |
-| `stale_revision`／`not_authorized`／范围错误 | 重新发现并读取当前稿；不要放大范围或重放旧补丁 |
-| Reader 已断开或链接过期 | 确认 MCP 已开启且文档仍打开后，打开新视图；旧缓存不能当作当前稿 |
-| 保存失败或外部冲突 | 保留当前稿，查看错误提示和实际文件；不要把应用成功写成保存成功 |
-
-验证时分别记录客户端版本、Leaf 构建标记、系统、界面语言和证据类型。简中、台湾繁中、English、macOS 与 Windows 分开记录；源码、浏览器、隔离原生、测试构建、日用安装版和明确用户验收不能互相代替。
+If the problem persists, report it through [GitHub Issues](https://github.com/CoozeeWang/leaf-markdown/issues). Include your operating system, Leaf and AI app versions, steps taken, and error messages. Remove private document content and keys from screenshots.
