@@ -149,7 +149,6 @@ export async function initDesktop(callbacks) {
   hooks = callbacks;
   // Reset a previously registered renderer before reading its durable file.
   // Native invalidates update authority first and waits for owned I/O to finish.
-  if(location.search.includes('document=1'))requireNativeStatus(await invoke('update_participant_status',{protocolReady:false}));
   globalThis.window.addEventListener('keydown', event => {
     if (!isWindowsNewShortcut(event)) return;
     event.preventDefault(); event.stopImmediatePropagation();
@@ -258,35 +257,7 @@ export async function initDesktop(callbacks) {
     const recovered = await invoke('recovery_initial');
     if (recovered !== null) await session.restore(recovered);
   }
-  if(session.ready){
-    prepareTest=await invoke('update_test_prepare_mode').catch(()=>false);
-    participantFactory=()=>createUpdateParticipant({session,invoke,listen:(name,handler)=>window.listen(name,handler),
-      editor:{settle:()=>hooks.settleUpdate(),
-        freeze:id=>{recordPrepare('before_freeze');hooks.freezeUpdate(id);recordPrepare('after_freeze');},
-        release:id=>{recordPrepare('before_release');hooks.releaseUpdate(id);recordPrepare('after_release');}},
-      pause:id=>{recordPrepare('begin');clearTimeout(draftTimer);hooks.pauseUpdate(id);},
-      resume:id=>hooks.resumeUpdate(id),
-      beforeSave:()=>window.setFocus(),
-      async drain(){
-        // Producers are paused before reading queues. Await the actual queue
-        // identities until no already admitted callback added more work.
-        for(;;){
-          const pending=session.idle(),restoring=restoreQueue;
-          await Promise.all([pending,restoring.catch(()=>{})]);
-          if(pending===session.idle()&&restoring===restoreQueue)return;
-        }
-      },
-      watch:callback=>{const timer=setInterval(callback,1000);return()=>clearInterval(timer);},
-      error:error=>{if(String(error?.message||error)!=='update_prepare_stale')console.warn('Document preparation did not complete');},
-    });
-    participant=participantFactory();
-    // Native snapshot requests need main's existing MCP listener/registration.
-    // Listeners attach now; ready() is called only after that bridge is ready.
-    await participant.start({protocolReady:false});
-    globalThis.addEventListener('focus',()=>{if(participantReady)void participant.reconcile().catch(()=>{});});
-    globalThis.addEventListener('pageshow',()=>{if(participantReady)void participant.reconcile().catch(()=>{});});
-    globalThis.addEventListener('pagehide',()=>participant.dispose(),{once:true});
-  }
+  // Checking releases never locks, saves or enlists document windows.
   let recoveryRequest = 0;
   async function refreshRecoveryNotice() {
     const token = ++recoveryRequest;

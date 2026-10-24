@@ -28,8 +28,9 @@ mod ai_client_install;
 mod updates;
 mod update_releases;
 mod update_package;
+#[cfg(any(test,feature="legacy-updater-tests"))]
 mod update_install;
-#[cfg(target_os="windows")]
+#[cfg(all(target_os="windows",any(test,feature="legacy-updater-tests")))]
 #[path="update_install_windows_gui.rs"]
 mod update_install_gui;
 #[cfg(all(target_os="macos",feature="native-smoke"))]
@@ -1555,18 +1556,18 @@ fn main() {
     let builder = builder.manage(OpenRequests::default());
     let update_trust=context.config().plugins.0.get("leafUpdater").cloned().unwrap_or(serde_json::Value::Null);
     let builder=builder.manage(updates::Updates::with_trust_config(update_trust)).manage(Mutex::new(window_role::OrdinaryQuit::default()));
-    #[cfg(any(target_os="macos",target_os="windows"))]
+    #[cfg(all(any(target_os="macos",target_os="windows"),feature="legacy-updater-tests"))]
     let builder=builder.manage(update_install_gui::Handoff::default());
     #[cfg(feature="native-smoke")]
     let builder=builder.manage(update_test_driver::Driver::default());
     builder.manage(update_coordinator::UpdateCoordinator::default()).manage(AdmissionRegistry::default()).manage(mcp::LeafMcpBroker::default()).manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler({
-            let production: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![update_coordinator::update_close_disposition,update_coordinator::update_close_complete,update_coordinator::update_participant_status,update_coordinator::update_participant_reply,ordinary_quit_cancelled,updates::update_status,updates::update_check,updates::update_start,updates::update_resume,updates::update_cancel_download,updates::update_close,updates::update_open_releases,i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, show_comment_context, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open]);
+            let production: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![update_coordinator::update_close_disposition,update_coordinator::update_close_complete,ordinary_quit_cancelled,updates::update_status,updates::update_check,updates::update_close,updates::update_open_releases,updates::update_open_download,i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, show_comment_context, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open]);
             move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
                 let role=verified_window_role(invoke.message.webview_ref().app_handle(),invoke.message.webview_ref().label());
                 let allowed=window_role::allows_command(role,invoke.message.command())
-                    || (role==WindowRole::Document&&matches!(invoke.message.command(),"update_participant_status"|"update_participant_reply"|"update_close_disposition"|"update_close_complete"));
+                    || (role==WindowRole::Document&&matches!(invoke.message.command(),"update_close_disposition"|"update_close_complete"));
                 #[cfg(feature="native-smoke")]
                 let allowed=allowed || (update_test_driver::enabled() && matches!(invoke.message.command(),"update_test_observe"|"update_test_role_report"|"update_test_prepare_mode"|"update_test_prepare_select"));
                 if !allowed {invoke.resolver.reject("window_role_denied");return true;}
@@ -1592,7 +1593,7 @@ fn main() {
             }
         })
         .setup(|app| {
-            # [cfg(any(target_os="macos",target_os="windows"))] update_install_gui::reconcile_launch(app.handle());
+            #[cfg(all(any(target_os="macos",target_os="windows"),feature="legacy-updater-tests"))] update_install_gui::reconcile_launch(app.handle());
             let handle=app.handle().clone();
             app.state::<AdmissionRegistry>().set_reopen_hook(std::sync::Arc::new(move||{resume_os_requests(handle.clone());refresh_document_menu_on_main(&handle);}));
             app.state::<mcp::LeafMcpBroker>().initialize(app.handle()).map_err(std::io::Error::other)?;
@@ -1672,7 +1673,7 @@ fn main() {
                 if let tauri::WindowEvent::CloseRequested {api,..}=event {
                     let app=window.app_handle();
                     let nonce=app.state::<AdmissionRegistry>().snapshot().instances.get(window.label()).copied();
-                    let action=nonce.and_then(|nonce|app.state::<update_coordinator::UpdateCoordinator>().begin_close(&app.state::<AdmissionRegistry>(),window.label(),nonce).ok());
+                    let action=nonce.and_then(|nonce|app.state::<update_coordinator::UpdateCoordinator>().begin_native_close(&app.state::<AdmissionRegistry>(),window.label(),nonce).ok());
                     let Some(action)=action else{api.prevent_close();return;};
                     update_coordinator::publish_close_action(app,&action);
                     let _=app.emit_to(window.label(),"leaf-update-close-action",&action);
@@ -1798,6 +1799,7 @@ fn main() {
             }
             tauri::RunEvent::ExitRequested { api, .. } if !app.webview_windows().is_empty() => {
                 let coordinator=app.state::<update_coordinator::UpdateCoordinator>();
+                #[cfg(feature="legacy-updater-tests")]
                 if coordinator.committed(){
                     let accepted=coordinator.take_update_exit();
                     #[cfg(feature="native-smoke")] update_test_driver::coordinator_exit_requested(app,accepted);
@@ -1812,7 +1814,7 @@ fn main() {
                 }
             }
             tauri::RunEvent::Exit => {
-                # [cfg(any(target_os="macos",target_os="windows"))] update_install_gui::application_exited(app);
+                #[cfg(all(any(target_os="macos",target_os="windows"),feature="legacy-updater-tests"))] update_install_gui::application_exited(app);
                 #[cfg(all(target_os="macos",feature="native-smoke"))] update_preservation_test_driver::exited(app);
                 #[cfg(feature="native-smoke")] update_test_driver::coordinator_exited(app);
                 let _=app.state::<mcp::LeafMcpBroker>().inner.tunnel.lock().unwrap().stop();
@@ -1821,7 +1823,7 @@ fn main() {
         });
 }
 
-#[cfg(target_os="macos")]
+#[cfg(all(target_os="macos",any(test,feature="legacy-updater-tests")))]
 mod update_install_gui {
     use super::*;
     use crate::update_install::macos::{self,BundleIdentity,MacInstallPlan,NativePlatform,InstallResult,InstallState,ChannelMessage};

@@ -225,10 +225,21 @@ pub async fn bounded_request(request: reqwest::RequestBuilder, limit: usize) -> 
     Ok((bytes,next))
 }
 pub async fn read_catalog(source: &str, installed: &str, target: &str, probe_token: Option<&str>) -> Result<ReleaseCatalog,String> {
-    tokio::time::timeout(Duration::from_secs(90),read_catalog_inner(source,installed,target,probe_token)).await
+    tokio::time::timeout(Duration::from_secs(90),read_catalog_inner(source,installed,target,probe_token,false)).await
         .map_err(|_|"update_timeout".to_owned())?
 }
-async fn read_catalog_inner(source: &str, installed: &str, target: &str, probe_token: Option<&str>) -> Result<ReleaseCatalog,String> {
+fn installer_names(version:&str,target:&str)->Vec<String>{
+    let suffixes:&[&str]=match target{
+        "darwin-aarch64"=>&["macOS-arm64.dmg","aarch64-apple-darwin.dmg"],
+        "darwin-x86_64"=>&["macOS-x64.dmg","x86_64-apple-darwin.dmg"],
+        "windows-x86_64"=>&["windows-x64-setup.exe","x86_64-pc-windows-msvc.exe"],_=>&[]};
+    suffixes.iter().map(|suffix|format!("Leaf-{version}-{suffix}")).collect()
+}
+/// Check-only clients read release metadata and never fetch update manifests or payloads.
+pub async fn read_manual_catalog(source:&str,installed:&str,target:&str)->Result<ReleaseCatalog,String>{
+    tokio::time::timeout(Duration::from_secs(90),read_catalog_inner(source,installed,target,None,true)).await.map_err(|_|"update_timeout".to_owned())?
+}
+async fn read_catalog_inner(source: &str, installed: &str, target: &str, probe_token: Option<&str>, manual:bool) -> Result<ReleaseCatalog,String> {
     let testing=fixture_source(source);
     if source!=CATALOG && !testing {return Err("update_source_rejected".into());}
     if probe_token.is_some() && source!=CATALOG {return Err("update_source_rejected".into());}
@@ -277,8 +288,16 @@ async fn read_catalog_inner(source: &str, installed: &str, target: &str, probe_t
     published.sort_by(|a,b| b.0.cmp_precedence(&a.0).then_with(||a.1.id.cmp(&b.1.id)).then_with(||a.1.tag_name.cmp(&b.1.tag_name)));
     let mut newer=false;
     for (version,release) in published {
-        if !version.cmp_precedence(&installed).is_gt() {continue;}
+        if !version.cmp_precedence(&installed).is_gt() || manual&&installed.pre.is_empty()&&!version.pre.is_empty() {continue;}
         newer=true;
+        if manual {
+            let names=installer_names(&version.to_string(),target);
+            let Some(asset)=release.assets.iter().find(|a|names.contains(&a.name)) else{continue;};
+            if !official_asset_named(&asset.browser_download_url,&release.tag_name,&asset.name){return Err("update_asset_rejected".into());}
+            return Ok(ReleaseCatalog{outcome:CatalogOutcome::Available,notes:release.body,
+                candidate:Some(CandidateIdentity{release_id:release.id,tag:release.tag_name,version:version.to_string(),platform:target.into(),
+                    arch:target.rsplit_once('-').ok_or("update_platform_invalid")?.1.into(),manifest_asset_id:0,asset_id:asset.id,asset_name:asset.name.clone(),url:asset.browser_download_url.clone(),signature:String::new()})});
+        }
         let Some(manifest_asset)=release.assets.iter().find(|a|a.name=="latest.json") else {continue;};
         if !official_asset_named(&manifest_asset.browser_download_url,&release.tag_name,"latest.json") {return Err("update_asset_rejected".into());}
         let url=if testing {format!("{source}/manifest/{}",manifest_asset.id)} else {manifest_asset.browser_download_url.clone()};
@@ -462,3 +481,60 @@ mod fixture {
 }
 #[cfg(feature="native-smoke")]
 pub async fn smoke() -> Result<(),String> {fixture::run().await}
+
+#[cfg(test)]
+mod manual_catalog_tests {
+    use super::*;
+    use serde_json::{json,Value};
+    use tokio::io::{AsyncReadExt,AsyncWriteExt};
+    fn release(version:&str,target:&str,id:u64)->Value{
+        let name=installer_names(version,target).into_iter().next().unwrap();
+        json!({"id":id,"tag_name":format!("v{version}"),"draft":false,"prerelease":version.contains("beta"),"published_at":"2026-10-01T00:00:00Z","body":"Synthetic release notes.",
+            "assets":[{"id":id*10,"name":name,"browser_download_url":format!("https://github.com/CoozeeWang/leaf-markdown/releases/download/v{version}/{name}")}]})
+    }
+    async fn check(entries:Value,installed:&str,target:&str,status:u16)->Result<ReleaseCatalog,String>{
+        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let source=format!("http://{}/releases",listener.local_addr().unwrap());
+        let server=tokio::spawn(async move{
+            let(mut stream,_)=listener.accept().await.unwrap();let mut request=vec![0u8;8192];let size=stream.read(&mut request).await.unwrap();
+            assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /releases?"));
+            let body=entries.to_string();stream.write_all(format!("HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).as_bytes()).await.unwrap();
+        });
+        let result=read_manual_catalog(&source,installed,target).await;server.await.unwrap();result
+    }
+    #[tokio::test]
+    async fn platform_installers_need_only_metadata_and_never_a_manifest_or_signature(){
+        for target in ["darwin-aarch64","darwin-x86_64","windows-x86_64"]{
+            let result=check(json!([release("1.0.3",target,3)]),"1.0.1",target,200).await.unwrap();
+            assert_eq!(result.outcome,CatalogOutcome::Available);let candidate=result.candidate.unwrap();
+            assert!(candidate.signature.is_empty());assert_eq!(candidate.manifest_asset_id,0);assert_eq!(candidate.platform,target);assert_eq!(candidate.version,"1.0.3");
+            assert!(official_asset_named(&candidate.url,&candidate.tag,&candidate.asset_name));
+        }
+    }
+    #[tokio::test]
+    async fn manual_checks_sort_versions_and_keep_stable_clients_off_beta_releases(){
+        let result=check(json!([release("1.0.2","darwin-aarch64",2),release("1.0.4-beta.1","darwin-aarch64",4),release("1.0.3","darwin-aarch64",3)]),"1.0.1","darwin-aarch64",200).await.unwrap();
+        assert_eq!(result.candidate.unwrap().version,"1.0.3");
+        assert_eq!(check(json!([release("1.0.3","darwin-aarch64",3)]),"1.0.3","darwin-aarch64",200).await.unwrap().outcome,CatalogOutcome::Current);
+    }
+    #[tokio::test]
+    async fn manual_checks_separate_missing_platform_empty_catalog_and_network_errors(){
+        assert_eq!(check(json!([release("1.0.3","windows-x86_64",3)]),"1.0.1","darwin-aarch64",200).await.unwrap().outcome,CatalogOutcome::NoPackage);
+        assert_eq!(check(json!([]),"1.0.1","darwin-aarch64",200).await.unwrap().outcome,CatalogOutcome::NoCatalog);
+        assert_eq!(check(json!([]),"1.0.1","darwin-aarch64",429).await.unwrap_err(),"update_rate_limited");
+        assert_eq!(check(json!({"invalid":true}),"1.0.1","darwin-aarch64",200).await.unwrap_err(),"update_catalog_invalid");
+    }
+    #[tokio::test]
+    async fn manual_checks_reject_relabelled_or_foreign_installer_urls(){
+        let mut entry=release("1.0.3","windows-x86_64",3);entry["assets"][0]["browser_download_url"]=json!("https://example.invalid/Leaf-1.0.3-windows-x64-setup.exe");
+        assert_eq!(check(json!([entry]),"1.0.1","windows-x86_64",200).await.unwrap_err(),"update_asset_rejected");
+    }
+    #[tokio::test]
+    #[ignore = "explicit read-only official network probe; no installer download or installation"]
+    async fn manual_official_metadata_probe(){
+        for target in ["darwin-aarch64","windows-x86_64"]{
+            let result=read_manual_catalog(CATALOG,"1.0.1",target).await.unwrap();assert_eq!(result.outcome,CatalogOutcome::Available);
+            let candidate=result.candidate.unwrap();println!("manual_metadata_probe={}",json!({"platform":target,"candidate":candidate.version,"installer":candidate.asset_name,"official_url":candidate.url,"payload_downloaded":false,"application_installed":false}));
+        }
+    }
+}

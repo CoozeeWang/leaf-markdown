@@ -56,7 +56,7 @@ console.log('PASS macOS package: Finder service declaration, three shared transl
 
 // Check the actual compiled executables: an embedded verifier must not add a
 // second, incomplete identity that the strict update package scanner rejects.
-for (const role of ['leaf','leaf-mcp-adapter','leaf-update-helper']) {
+for (const role of ['leaf','leaf-mcp-adapter']) {
   const bytes=await readFile(path.join(app,'Contents/MacOS',role));
   const prefix=Buffer.from('LEAF_UPDATE_BINARY_IDENTITY_V1\0');
   const expected=Buffer.from(['LEAF_UPDATE_BINARY_IDENTITY_V1','Leaf',config.identifier,config.version,role,''].join('\0'));
@@ -67,4 +67,4 @@ for (const role of ['leaf','leaf-mcp-adapter','leaf-update-helper']) {
   }
   assert.ok(count>0,'compiled update identity required: '+role);
 }
-console.log('PASS macOS package: all compiled GUI, MCP adapter and update helper identities match');
+console.log('PASS macOS package: compiled GUI and MCP adapter identities match');
