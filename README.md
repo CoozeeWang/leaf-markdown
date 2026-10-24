@@ -70,6 +70,8 @@ To connect AI, enable MCP under **Settings → AI-Assisted Editing** and follow 
 
 Leaf 1.0.3 checks for updates and shows release notes within the app, then opens the official download page in your browser. Save your documents and quit Leaf normally before installing the update manually: replace Leaf in Applications on Mac, or run the Windows installer over the existing installation. This version does not download or install updates within the app, or quit and restart automatically.
 
+**Windows updates:** Keep **Delete the application data** unchecked if an uninstall step appears. Selecting it during a normal uninstall deletes Leaf’s settings and MCP connection configuration. Replacing old program files is different and can proceed normally.
+
 For installation help, see [Installation and usage guide](docs/INSTALL.md).
 
 ## Help

@@ -17,6 +17,8 @@ The Mac package above is for Apple silicon, not Intel Macs. On Windows, the inst
 
 Before installing a new version, save your documents and quit the old version of Leaf. A normal update does not require uninstalling Leaf or clearing its settings.
 
+**Windows updates:** Keep **Delete the application data** unchecked if an uninstall step appears. Selecting it during a normal uninstall deletes Leaf’s settings and MCP connection configuration. Replacing old program files is different and can proceed normally.
+
 ### System and runtime requirements
 
 - **Mac**: An Apple silicon build only. The minimum deployment target is macOS 11.0; this does not mean every macOS version from 11 onward has been tested. Leaf uses the system WebKit, so rendering may differ on older systems.
@@ -235,6 +237,8 @@ Saving & Recovery also lets you set how long recovery records are kept and resto
 Leaf 1.0.3 checks for updates and shows release notes within the app, then opens the official download page in your browser. Save your documents and quit Leaf normally before installing the update manually: replace Leaf in Applications on Mac, or run the Windows installer over the existing installation. This version does not download or install updates within the app, or quit and restart automatically.
 
 An in-place update preserves persistent settings and app data when you use the same OS user account and installation location, without uninstalling Leaf or clearing its data folders. This does not cover changing users, migrating data, or moving the tunnel client directory. Temporary connections must be re-established, and external AI apps, including ChatGPT, may ask you to authorize MCP access again.
+
+**Windows updates:** Keep **Delete the application data** unchecked if an uninstall step appears. Selecting it during a normal uninstall deletes Leaf’s settings and MCP connection configuration. Replacing old program files is different and can proceed normally.
 
 If you use 1.0.1 or 1.0.2, install 1.0.3 manually from the release page first.
 
