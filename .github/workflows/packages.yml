@@ -127,6 +127,15 @@ jobs:
           if ($installers.Count -ne 1) { throw 'Expected exactly one installer for the current product version' }
           ./tests/windows-desktop-updates.ps1 -Mode InstalledFixture -Installer $installers[0].FullName
           ./tests/windows-desktop-updates.ps1 -Mode RecoveryAudit
+      - name: Verify Windows launcher close and document protection
+        if: inputs.platform == 'windows' && inputs.verification_scope == 'windows-updater'
+        shell: bash
+        env:
+          LEAF_NATIVE_SMOKE_EXE: test-results/windows-updater-payload/leaf.exe
+        run: |
+          node tests/windows-native-smoke.mjs --launcher-close-only
+          node tests/windows-native-smoke.mjs --launcher-close-only --system-close
+          node tests/windows-native-smoke.mjs --launcher-close-only --with-documents
       - uses: actions/upload-artifact@v4
         if: failure() && inputs.platform == 'windows' && steps.installer.outcome == 'success'
         with:

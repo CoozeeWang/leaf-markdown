@@ -198,8 +198,12 @@ export async function initDesktop(callbacks) {
     saved(content, path) { hooks.saved(content, fileNameFromPath(path), path); },
   });
   const window = getCurrentWindow();
-  await window.onCloseRequested(event => { event.preventDefault(); void closeDocument(); });
-  await window.listen('leaf-close', ({ payload }) => { void closeDocument(payload?.quit_id); });
+  // Only native document windows own save prompts and update close actions.
+  // The empty launcher keeps the OS close path and never requests document IPC.
+  if (window.label.startsWith('document-')) {
+    await window.onCloseRequested(event => { event.preventDefault(); void closeDocument(); });
+    await window.listen('leaf-close', ({ payload }) => { void closeDocument(payload?.quit_id); });
+  }
   await window.listen('leaf-native-rename',({payload})=>hooks.renameNative?.(payload));
   await window.listen('leaf-menu', async ({ payload }) => {
     const command=typeof payload==='string'?payload:payload.command;
