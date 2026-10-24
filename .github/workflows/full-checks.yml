@@ -15,7 +15,7 @@ on:
       suite:
         description: 'Test suites to run'
         type: choice
-        options: [all, browser, native, roles, update-unit, update-lock, update-prepare, update-coordinator, update-macos, update-preservation]
+        options: [all, browser, native, roles, launcher-close, update-unit, update-lock, update-prepare, update-coordinator, update-macos, update-preservation]
         default: all
       browser_suites:
         description: 'Optional space-separated browser suite filenames; empty runs every browser suite'
@@ -35,6 +35,34 @@ concurrency:
   group: full-tests-${{ inputs.source_ref }}-${{ inputs.platform }}-${{ inputs.suite }}-${{ inputs.update_test_filter }}-${{ inputs.update_test_exact }}
   cancel-in-progress: true
 jobs:
+  launcher-close:
+    if: inputs.suite == 'launcher-close' && inputs.platform == 'windows'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+      - run: npm ci
+      - name: Build native test executable without an installer
+        run: npm run desktop:build -- --no-bundle --features native-smoke --config src-tauri/tauri.windows.conf.json
+      - name: Native welcome close and document preservation
+        shell: bash
+        env:
+          LEAF_NATIVE_SMOKE_EXE: src-tauri/target/release/leaf.exe
+        run: |
+          node tests/windows-native-smoke.mjs --launcher-close-only --close-language=zh-Hans
+          node tests/windows-native-smoke.mjs --launcher-close-only --system-close --close-language=en
+          node tests/windows-native-smoke.mjs --launcher-close-only --with-documents --close-language=zh-Hans
   update-lock:
     if: inputs.suite == 'update-lock'
     runs-on: ubuntu-latest
