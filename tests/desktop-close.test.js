@@ -2,8 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
+import {languages} from '../src/i18n.js';
 
 const source=readFileSync(new URL('../src/desktop.js',import.meta.url),'utf8');
+test('native close CI uses language preferences accepted by the application',()=>{
+  const workflow=readFileSync(new URL('../.github/workflows/full-checks.yml',import.meta.url),'utf8');
+  const selected=[...workflow.matchAll(/--close-language=([A-Za-z-]+)/g)].map(match=>match[1]);
+  assert.ok(selected.length>=2);
+  for(const language of selected)assert.ok(languages.includes(language),language);
+  assert.ok(selected.includes('en'));assert.ok(selected.some(language=>language.startsWith('zh-')));
+});
 async function fixture(label,{dirty=false,choice='cancel',save=true,allowed=true,manualDriver=false}={}) {
   const calls=[],listeners=new Map();let handler,destroyed=0,prevented=false;
   const window={label,onCloseRequested:async callback=>{handler=callback;},listen:async(name,callback)=>{listeners.set(name,callback);},destroy:async()=>{calls.push('destroy');destroyed++;}};

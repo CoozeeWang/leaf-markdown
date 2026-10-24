@@ -60,9 +60,9 @@ jobs:
         env:
           LEAF_NATIVE_SMOKE_EXE: src-tauri/target/release/leaf.exe
         run: |
-          node tests/windows-native-smoke.mjs --launcher-close-only --close-language=zh-CN
+          node tests/windows-native-smoke.mjs --launcher-close-only --close-language=zh-Hans
           node tests/windows-native-smoke.mjs --launcher-close-only --system-close --close-language=en
-          node tests/windows-native-smoke.mjs --launcher-close-only --with-documents --close-language=zh-CN
+          node tests/windows-native-smoke.mjs --launcher-close-only --with-documents --close-language=zh-Hans
   update-lock:
     if: inputs.suite == 'update-lock'
     runs-on: ubuntu-latest
