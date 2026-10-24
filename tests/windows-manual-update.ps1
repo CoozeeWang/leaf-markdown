@@ -4,10 +4,12 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or !$env:RUNNER_TEMP) { throw 'Requires a disposable GitHub Actions runner' }
 $Installer = (Resolve-Path $Installer).Path
 $config = Get-Content "$PSScriptRoot/../src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+$manufacturer = if ($config.bundle.publisher) { $config.bundle.publisher } else { $config.identifier.Split('.')[1] }
+$installerKey = "HKCU:\Software\$manufacturer\$($config.productName)"
 $root = Join-Path $env:RUNNER_TEMP 'Leaf manual upgrade synthetic 中文'
 $data = Join-Path $env:APPDATA $config.identifier
 $local = Join-Path $env:LOCALAPPDATA $config.identifier
-if ((Test-Path $root) -or (Test-Path $data) -or (Test-Path $local)) { throw 'Existing data found; refusing to overwrite' }
+if ((Test-Path $root) -or (Test-Path $data) -or (Test-Path $local) -or (Test-Path $installerKey)) { throw 'Existing data found; refusing to overwrite' }
 $installed = Join-Path $root 'installed'
 New-Item $root,$data,$local -ItemType Directory | Out-Null
 function Install([string]$Path) {
@@ -56,5 +58,7 @@ try {
     if (!$p.WaitForExit(90000)) { $p.Kill(); throw 'Fixture uninstall timed out' }
   }
   # Only disposable data created after the existing-data refusal above.
+  # NSIS deliberately retains its language choice; do not contaminate the next test.
+  Remove-Item $installerKey -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item $data,$local,$root -Recurse -Force -ErrorAction SilentlyContinue
 }

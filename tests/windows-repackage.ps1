@@ -12,6 +12,10 @@ if ($LASTEXITCODE) { throw 'Existing installer retrieval failed' }
 $installers = @(Get-ChildItem $work -Filter '*.exe')
 if ($installers.Count -ne 1 -or (Get-FileHash $installers[0].FullName -Algorithm SHA256).Hash.ToLower() -ne $env:LEAF_REUSE_SHA256) { throw 'Existing installer hash mismatch' }
 $capture = Join-Path $work 'installed'
+$config = Get-Content "$PSScriptRoot/../src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+$manufacturer = if ($config.bundle.publisher) { $config.bundle.publisher } else { $config.identifier.Split('.')[1] }
+$installerKey = "HKCU:\Software\$manufacturer\$($config.productName)"
+if (Test-Path $installerKey) { throw 'Existing application registration; refusing payload capture' }
 $process = Start-Process $installers[0].FullName -ArgumentList @('/S','/NS',"/D=$capture") -PassThru
 if (!$process.WaitForExit(120000) -or $process.ExitCode) { throw 'Disposable payload capture failed' }
 try {
@@ -36,5 +40,7 @@ try {
     $process = Start-Process $uninstall -ArgumentList @('/S',"_?=$capture") -PassThru
     if (!$process.WaitForExit(90000)) { $process.Kill(); throw 'Capture cleanup timed out' }
   }
+  # NSIS retains the language preference; this key was absent before capture.
+  Remove-Item $installerKey -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }
