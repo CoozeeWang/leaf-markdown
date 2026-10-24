@@ -26,11 +26,10 @@ $Installer = (Resolve-Path $Installer).Path
 if (!$OldInstaller -or !(Test-Path $OldInstaller)) {
   $download = Join-Path $env:RUNNER_TEMP 'leaf-old-baseline-download'
   New-Item $download -ItemType Directory -Force | Out-Null
-  gh run download 40004360368 --repo CoozeeWang/leaf-markdown --name 'Leaf-x86_64-pc-windows-msvc-7594099a85e411f6c76f3c60faade146045176d8' --dir $download
-  if ($LASTEXITCODE) { throw 'Could not retrieve the already-built 1.0.0 baseline; do not rebuild it' }
-  $OldInstaller = (Get-ChildItem $download -Recurse -Filter '*.exe' | Select-Object -First 1).FullName
+  $OldInstaller = Join-Path $download 'Leaf-1.0.1-windows-x64-setup.exe'
+  Invoke-WebRequest -Uri 'https://github.com/CoozeeWang/leaf-markdown/releases/download/v1.0.1/Leaf-1.0.1-windows-x64-setup.exe' -OutFile $OldInstaller
 }
-if ((Get-FileHash $OldInstaller -Algorithm SHA256).Hash.ToLower() -ne '0a3e7d465842830de5667b0ad493c357babf1de67d5e7e0c0ec4973451a24176') { throw 'Old baseline does not match the verified 1.0.0 package' }
+if ((Get-FileHash $OldInstaller -Algorithm SHA256).Hash.ToLower() -ne '0d16018e1a853478d7c483dea9124a00a07912977a69b7cc836f3b176857a8a7') { throw 'Old baseline does not match the verified 1.0.1 package' }
 if (Test-Path $root) { throw 'Fixture root already exists; refusing to overwrite prior evidence' }
 $data = Join-Path $env:APPDATA 'studio.leaf.editor'
 if (Test-Path $data) { throw 'Existing Leaf profile found; refusing to touch it' }
@@ -183,7 +182,7 @@ SectionEnd
   $other = Join-Path $root 'leaf-mcp-adapter.exe'; $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
   & $csc /nologo /platform:x64 /target:exe "/out:$other" $source
   if ($LASTEXITCODE) { throw 'Synthetic occupancy executable did not compile' }
-  $bytes = [IO.File]::ReadAllBytes($other) + [Text.Encoding]::UTF8.GetBytes("LEAF_UPDATE_BINARY_IDENTITY_V1`0Leaf`0studio.leaf.editor`01.0.0`0leaf-mcp-adapter`0")
+  $bytes = [IO.File]::ReadAllBytes($other) + [Text.Encoding]::UTF8.GetBytes("LEAF_UPDATE_BINARY_IDENTITY_V1`0Leaf`0studio.leaf.editor`01.0.1`0leaf-mcp-adapter`0")
   [IO.File]::WriteAllBytes($other,$bytes)
   Copy-Item $other (Join-Path $target 'leaf-mcp-adapter.exe') -Force
   $external = Start-Process $other -PassThru; $owned = Start-Process (Join-Path $target 'leaf-mcp-adapter.exe') -PassThru

@@ -8,7 +8,7 @@ for(const [engine,platform] of engines.flatMap(engine=>(engine==='chrome'?['MacI
   const page=await browser.newPage({locale:'zh-CN',viewport:{width:1200,height:950}}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(platform=>{Object.defineProperty(navigator,'platform',{get:()=>platform});Object.defineProperty(navigator,'userAgentData',{get:()=>undefined});},platform);
-  await page.goto('http://127.0.0.1:41732/tests/native-footnote-region.html');
+  await page.goto(`${process.env.LEAF_TEST_BASE_URL||'http://127.0.0.1:41732'}/tests/native-footnote-region.html`);
   await page.waitForFunction(()=>window.testEditor);
   const source='正文[^a]。\n\n[^a]: **粗体**、*斜体*、`code`、==高亮==。\n\n尾段';
   await page.evaluate(source=>setTestDoc(source,0),source);
@@ -17,11 +17,9 @@ for(const [engine,platform] of engines.flatMap(engine=>(engine==='chrome'?['MacI
   assert.equal(await page.locator('.leaf-footnote-region').count(),1);
   const foot=page.locator('.leaf-footnote-region');
   assert.equal(await page.locator('.leaf-continue-body').count(),0);
-  assert.equal(await foot.locator('.leaf-footnote-region-hint').textContent(),'双击或按 Enter 编辑脚注');
-  const baselines=await foot.locator('.leaf-footnote-region-head').evaluate(head=>[...head.children].map(child=>{
-    const probe=document.createElement('span');Object.assign(probe.style,{display:'inline-block',width:'0',height:'0',verticalAlign:'baseline'});child.append(probe);const baseline=probe.getBoundingClientRect().top;probe.remove();return baseline;
-  }));
-  assert.ok(Math.abs(baselines[0]-baselines[1])<.5,'title and hint must share their text baseline');
+  assert.equal(await foot.locator('.leaf-footnote-region-hint').count(),0);
+  assert.equal(await foot.locator('.leaf-footnote-region-title').getAttribute('data-tooltip'),'双击或按 Enter 编辑脚注');
+  assert.equal(await foot.locator('.leaf-footnote-region-title').getAttribute('tabindex'),'0','keyboard users can discover the same hint');
   await page.evaluate(()=>v.focus());await page.keyboard.press('Escape');
   for(let n=0;n<8;n++){
     await page.keyboard.press('Tab');

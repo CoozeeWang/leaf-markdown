@@ -33,11 +33,18 @@ export function footnoteReader(state) {
 function newInlineCitations(tr) {
   const before = tr.startState.field(footnoteIndex, false);
   if (!before) return [];
-  const oldStarts = new Set(before.notes.flatMap(note => note.refs.map(ref => tr.changes.mapPos(ref.from, -1))));
+  const oldNotes = new Map(before.notes.flatMap(note => note.refs.map(ref => [tr.changes.mapPos(ref.from, -1), note])));
   const touched = [];
   tr.changes.iterChangedRanges((_fromA, _toA, from, to) => touched.push({from, to}));
   return indexFootnotes(tr.newDoc.toString()).notes.flatMap(note => note.refs)
-    .filter(ref => !oldStarts.has(ref.from) && touched.some(range => range.from < ref.to && range.to > ref.from));
+    .filter(ref => {
+      const old = oldNotes.get(ref.from);
+      // Editing a shared/undefined citation into a new label is an explicit new
+      // reference too. A sole defined citation keeps label-follow ownership of
+      // its existing body instead of creating an unrelated empty definition.
+      const edited = old && old.id !== ref.id && (!old.def || old.refs.length > 1);
+      return (!old || edited) && touched.some(range => range.from < ref.to && range.to > ref.from);
+    });
 }
 
 function editingCitation(tr, ref) {

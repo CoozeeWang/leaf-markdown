@@ -11,7 +11,7 @@ try {
  for (const locale of ['zh-CN','zh-TW','en-US']) {
   const page = await browser.newPage({locale, viewport:{width:1100,height:800}});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('http://127.0.0.1:41732');
+  await page.goto(process.env.LEAF_TEST_BASE_URL||'http://127.0.0.1:41732');
   await page.click('#welcomeNewButton');
   await page.evaluate(async source=>{
    const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');
@@ -58,11 +58,12 @@ try {
    }
    await page.evaluate(()=>{const scroller=document.querySelector('#editor .cm-scroller');scroller.scrollTop=scroller.scrollHeight;});
    await page.locator('.leaf-endnote-number').first().waitFor();
-   const hint=await page.locator('.leaf-footnote-region-hint').evaluate(el=>{const style=getComputedStyle(el),head=getComputedStyle(el.parentElement),region=getComputedStyle(el.closest('.leaf-footnote-region')),badge=getComputedStyle(el.closest('.leaf-footnote-region').querySelector('.leaf-endnote-number'));return {text:el.textContent,font:parseFloat(style.fontSize),regionFont:parseFloat(region.fontSize),badgeFont:parseFloat(badge.fontSize),color:style.color,headingColor:head.color};});
-   assert.ok(Math.abs(hint.font/hint.regionFont-.8)<.002);
-   assert.ok(Math.abs(hint.badgeFont/hint.regionFont-.75)<.002);
-   assert.notEqual(hint.color,hint.headingColor,'hint is secondary to the heading');
-   assert.ok(!/[()（）]/.test(hint.text),'the approved hint has no parentheses');
+   assert.equal(await page.locator('.leaf-footnote-region-hint').count(),0);
+   const title=page.locator('.leaf-footnote-region-title');
+   assert.ok(await title.getAttribute('data-tooltip'),'guidance is available from the title');
+   assert.equal(await title.getAttribute('tabindex'),'0');
+   const ratio=await title.evaluate(el=>parseFloat(getComputedStyle(el.closest('.leaf-footnote-region').querySelector('.leaf-endnote-number')).fontSize)/parseFloat(getComputedStyle(el.closest('.leaf-footnote-region')).fontSize));
+   assert.ok(Math.abs(ratio-.75)<.002);
    const numbers=await page.locator('.leaf-endnote-number').evaluateAll(nodes=>nodes.map(node=>{
     const r=node.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node);const t=range.getBoundingClientRect();
     return {label:node.textContent,w:r.width,h:r.height,dx:(t.left+t.right-r.left-r.right)/2,textWidth:t.width};

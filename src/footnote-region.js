@@ -23,10 +23,12 @@ class FootnoteRegion extends WidgetType {
     const root=document.createElement('section');root.className='leaf-footnote-region';
     root.setAttribute('contenteditable','false');setAttr(root,'aria-label',()=>t('print_document.footnotes'));
     const head=document.createElement('div');head.className='leaf-footnote-region-head';
-    const title=document.createElement('span');setText(title,()=>t('print_document.footnotes'));
-    const hint=document.createElement('span');hint.className='leaf-footnote-region-hint';
-    setText(hint,()=>t('editor.edit_footnote_hint'));
-    head.append(title,hint);root.append(head);root._notes=new Map();
+    const title=document.createElement('span');title.className='leaf-footnote-region-title';
+    title.setAttribute('role','heading');title.setAttribute('aria-level','2');title.tabIndex=0;
+    setText(title,()=>t('print_document.footnotes'));
+    setAttr(title,'data-tooltip',()=>t('editor.edit_footnote_hint'));
+    setAttr(title,'aria-description',()=>t('editor.edit_footnote_hint'));
+    head.append(title);root.append(head);root._notes=new Map();
     root._lockNotes=except=>{for(const card of root._notes.values())if(card!==except&&!card._editor.view.state.readOnly&&!card._editor.view.compositionStarted)card._editor.setEditing(false);};
     root._outside=event=>{if(view.contentDOM.contains(event.target))root._lockNotes(event.target.closest('.leaf-endnote'));};
     view.dom.addEventListener('pointerdown',root._outside,true);root._parentView=view;
