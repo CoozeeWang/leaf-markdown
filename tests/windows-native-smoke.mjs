@@ -92,12 +92,14 @@ try {
   const launcher = await until(async () => pages().find(p => p.url().includes('tauri.localhost')), 'launcher');
   await launcher.locator('#welcomeNewButton').waitFor();
   if (process.argv.includes('--launcher-close-only')) {
-    // This runs the actual installer-captured release binary, not a mock or a
-    // build with security-disabling browser arguments. SC_CLOSE is the native
+    // This runs a source-built, production-feature executable without making an
+    // installer or disabling browser security features. SC_CLOSE is the native
     // system-command route used by Alt+F4; physical keyboard acceptance is separate.
     assert.equal(await launcher.evaluate(()=>window.__TAURI_INTERNALS__.metadata.currentWindow.label),'main');
     await launcher.waitForLoadState('load');
     await launcher.waitForFunction(()=>document.querySelector('.shell')?.style.pointerEvents!=='none');
+    const language=process.argv.find(arg=>arg.startsWith('--close-language='))?.split('=')[1];
+    if(language)await invoke(launcher,'language_set',{preference:language});
     for(const command of ['update_close_disposition','update_close_complete','update_participant_status']) {
       await assert.rejects(invoke(launcher,command),/window_role_denied/);
     }
