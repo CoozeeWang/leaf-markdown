@@ -29,13 +29,12 @@
   <a href="https://github.com/CoozeeWang/leaf-markdown/issues">Feedback</a>
 </p>
 
-<p align="center">If Leaf helps you, consider supporting its continued development.</p>
+<p align="center">If Leaf helps you, consider supporting its continued development. What would you like to see in Leaf next? More interface languages, more Markdown extensions, or features that make writing and reviewing easier? Share your wishlist in <a href="https://github.com/CoozeeWang/leaf-markdown/issues">Issues</a>.</p>
 
 <p align="center">
   <a href="docs/SUPPORT.md"><img src="docs/assets/readme/sponsor-leaf-en.svg" width="150" height="34" alt="♥ Support Leaf"></a>
 </p>
 
-<p align="center">What would you like to see in Leaf next? More interface languages, more Markdown extensions, or features that make writing and reviewing easier? Share your wishlist in <a href="https://github.com/CoozeeWang/leaf-markdown/issues">Issues</a>.</p>
 
 ![Light theme: date and tag properties, text formatting, outline, and footnote sidebar](docs/assets/readme/footnotes-light.en.png)
 

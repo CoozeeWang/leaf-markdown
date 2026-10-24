@@ -29,13 +29,11 @@
   <a href="https://github.com/CoozeeWang/leaf-markdown/issues">问题反馈</a>
 </p>
 
-<p align="center">如果 Leaf 对你有所帮助，欢迎赞助，支持它的持续开发。</p>
+<p align="center">如果 Leaf 对你有所帮助，欢迎赞助，支持它的持续开发。也欢迎告诉我们，你希望 Leaf 接下来支持什么：更多界面语言、更多 Markdown 扩展语法，或其他让写作与审阅更顺手的功能。欢迎在 <a href="https://github.com/CoozeeWang/leaf-markdown/issues">Issues</a> 中留下你的愿望清单。</p>
 
 <p align="center">
   <a href="docs/SUPPORT.md"><img src="docs/assets/readme/sponsor-leaf-apricot.svg" width="132" height="34" alt="♥ 赞助 Leaf"></a>
 </p>
-
-<p align="center">也欢迎告诉我们，你希望 Leaf 接下来支持什么：更多界面语言、更多 Markdown 扩展语法，或其他让写作与审阅更顺手的功能。欢迎在 <a href="https://github.com/CoozeeWang/leaf-markdown/issues">Issues</a> 中留下你的愿望清单。</p>
 
 
 ![浅色主题：日期与标签属性、文字排版、大纲与脚注边栏](docs/assets/readme/脚注-浅色-100.png)
