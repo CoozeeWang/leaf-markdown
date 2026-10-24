@@ -16,7 +16,7 @@ await new Promise(r => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 await new Promise(r => server.close(r));
 const child = spawn(resolve(process.env.LEAF_NATIVE_SMOKE_EXE || 'src-tauri/target/release/leaf.exe'), [], {
-  env: { ...process.env, LEAF_NATIVE_SMOKE_PORT: String(port), LEAF_NATIVE_SMOKE_PDF_DIR: scratch, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: join(scratch, 'webview') },
+  env: { ...process.env, ...(process.argv.includes('--launcher-close-only') ? {APPDATA:join(scratch,'profile'),LEAF_NATIVE_SMOKE_SAFE_BROWSER:'1'} : {}), LEAF_NATIVE_SMOKE_PORT: String(port), LEAF_NATIVE_SMOKE_PDF_DIR: scratch, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: join(scratch, 'webview') },
   stdio: 'inherit',
 });
 let browser;
@@ -60,7 +60,7 @@ public class LeafCloseProbe {
       uint pid; GetWindowThreadProcessId(hwnd, out pid);
       var text = new StringBuilder(1024); GetWindowText(hwnd, text, 1024);
       if (pid == targetPid && text.ToString() == title) {
-        found = PostMessage(hwnd, 0x0010, IntPtr.Zero, IntPtr.Zero);
+        found = ${process.argv.includes('--system-close') ? 'PostMessage(hwnd, 0x0112, new IntPtr(0xF060), IntPtr.Zero)' : 'PostMessage(hwnd, 0x0010, IntPtr.Zero, IntPtr.Zero)'};
         return false;
       }
       return true;
@@ -91,7 +91,39 @@ try {
   }, 'WebView2 debugging endpoint');
   const launcher = await until(async () => pages().find(p => p.url().includes('tauri.localhost')), 'launcher');
   await launcher.locator('#welcomeNewButton').waitFor();
-  if (process.argv.includes('--pdf-only')) {
+  if (process.argv.includes('--launcher-close-only')) {
+    // This runs the real close handler in an isolated native test executable
+    // without an installer or legacy browser overrides. SC_CLOSE is the native
+    // system-command route used by Alt+F4; physical keyboard acceptance is separate.
+    assert.equal(await launcher.evaluate(()=>window.__TAURI_INTERNALS__.metadata.currentWindow.label),'main');
+    await launcher.waitForLoadState('load');
+    await launcher.waitForFunction(()=>document.querySelector('.shell')?.style.pointerEvents!=='none');
+    const language=process.argv.find(arg=>arg.startsWith('--close-language='))?.split('=')[1];
+    if(language)await invoke(launcher,'language_set',{preference:language});
+    for(const command of ['update_close_disposition','update_close_complete','update_participant_status']) {
+      await assert.rejects(invoke(launcher,command),/window_role_denied/);
+    }
+    if(process.argv.includes('--with-documents')) {
+      let before=pages();await invoke(launcher,'open_document',{path:fixture});
+      const existing=await nextDocument(before);
+      before=pages();await invoke(existing,'open_document',{path:null});
+      const dirty=await nextDocument(before);
+      await dirty.locator('.cm-content').fill('Synthetic unsaved close protection.');
+      await closeNative(launcher);
+      await until(()=>launcher.isClosed(),'launcher closed without closing documents');
+      assert.equal(existing.isClosed(),false);assert.equal(dirty.isClosed(),false);assert.equal(child.exitCode,null);
+      await closeNative(dirty);await dirty.locator('[data-choice="cancel"]').click();
+      assert.match(await dirty.locator('.cm-content').innerText(),/Synthetic unsaved close protection/);
+      assert.equal(existing.isClosed(),false);
+      assert.equal(await readFile(fixture,'utf8'),'# Windows native smoke\n\nExisting document body.\n');
+      await closeNative(dirty);await dirty.locator('[data-choice="discard"]').click();
+      await until(()=>dirty.isClosed(),'synthetic discarded window closed');
+      await closeNative(existing);
+    } else await closeNative(launcher);
+    await until(()=>child.exitCode!==null,'normal launcher/process exit');
+    assert.equal(child.exitCode,0);
+    console.log(`PASS: production Windows launcher ${process.argv.includes('--system-close')?'SC_CLOSE':'WM_CLOSE'}, updater permissions denied, ${process.argv.includes('--with-documents')?'other document and unsaved cancellation preserved':'empty welcome exited normally'}.`);
+  } else if (process.argv.includes('--pdf-only')) {
     await mkdir('test-results/windows-pdf', { recursive: true });
     for (const [name, source] of [
       ['short', 'One synthetic line.'],

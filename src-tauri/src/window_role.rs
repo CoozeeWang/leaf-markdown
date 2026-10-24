@@ -77,6 +77,9 @@ mod tests {
         assert!(allows_command(WindowRole::Export,"read_resource"));
         assert!(!allows_command(WindowRole::Export,"write_document"));
         assert!(!allows_command(WindowRole::Document,"update_status"));
+        for command in ["update_close_disposition","update_close_complete","update_participant_status","update_start"] {
+            assert!(!allows_command(WindowRole::Launcher,command),"{command}");
+        }
     }
     #[test]
     fn document_menus_never_target_auxiliary_or_unknown_windows() {
