@@ -1,30 +1,24 @@
-# 0.4.0-beta.4
+# Leaf 1.0.3
 
-本轮安装与验收构建；GitHub Release 尚未发布。
+[简体中文](RELEASE-NOTES.zh-CN.md) · **English**
 
-- 增加正文缩放、东亚与西文字体独立选择，改进脚注侧栏、文末编辑和长文输入。
-- 增加可随 Markdown 文件保存的批注，支持侧栏、定位、编辑、删除与共享撤销。
-- 增加 AI 辅助编辑：连接 ChatGPT、Claude Desktop、WorkBuddy；开启 MCP 后处理已打开文档，编辑期间独占锁定，并支持正文、属性、脚注、表格和批注。
-- Windows PDF 预览窗口正常显示，保存 PDF 使用 WebView2 保留中文、重音与 emoji 标题，并保护已有文件免受失败导出覆盖。
+Leaf 1.0.3 checks for a new version, shows its notes, and opens the official platform installer in your browser. It no longer downloads or installs updates, prepares documents, quits, or restarts the application.
 
-Windows 新增功能及相关保存、恢复、系统集成和显示组合等待当前安装包验收；macOS 与自动检查结果不代替 Windows 实测。
+This release preserves unsaved-document protection, fixes a cancelled close blocking later close/quit attempts, follows Stylebook typography, and adds a conventional drag-to-Applications Mac DMG. The Windows installer removes only the retired helper in the registered installation folder while preserving persistent data.
 
----
+Save your work and quit Leaf normally before installing. On Apple Silicon Macs, drag Leaf from the DMG into Applications and choose Replace. On Windows x64, run the installer at the existing location. Users on 1.0.1 or 1.0.2 should install this baseline manually once. Persistent settings and MCP/tunnel configuration retain their existing locations; temporary sessions reconnect, and external authorization may still need confirmation.
 
-# 0.4.0-beta.3
+SHA-256 checksums, detached Minisign signatures and the existing public key are included. These do not provide Apple notarization or Windows Authenticode signing. User installation and external MCP authorization acceptance remain pending.
 
-这一轮 Beta 统一了简体中文、繁体中文与 English 界面，并改善跨平台文档使用流程。
 
-## 主要变化
+Provenance: both production applications were built from `22c540e4915ad61354c9747551da5728ceeabce4` (displayed build `22c540e4`). Packaging and isolated test fixes are included through `4893d0520bd43eaaf94e703da7199e040d423d96`, merged in [PR #106](https://github.com/CoozeeWang/leaf-markdown/pull/106). Release source: `9c4588adc3a55efd467279bf71d4574c51161e34`. The reused GUI and MCP executable hashes were verified, including after Windows installation.
 
-- 三语覆盖应用界面、原生菜单、Mac Finder 新建服务及 Windows 安装器/文件夹新建入口。
-- 删除有序列表首项后保留列表并正确编号；阅读和 PDF 中保留缩进代码的完整内容，引用不再多出标记。
-- 属性编辑支持 Enter 提交、Esc 取消，数字空值保留正确值；错误提示靠近字段并及时清除。
-- 保存状态移入底栏，编辑区不再随保存提示跳动；查找替换的文本框和按钮排列更整齐，深色控件更清楚。
-- 修正 Windows 文档冷启动欢迎页闪现、新建快捷键、关于入口、改名后的文件读取与图片定位。
-- 调整应用和安装器图标的可见大小；缺图文档可保留提示并导出 PDF。
-- 富文本复制的纯文本回退采用可读正文，避免出现原始 Markdown 标记。
+Validation: [Windows manual install, configuration preservation, adapter replacement and close protection](https://github.com/CoozeeWang/leaf-markdown/actions/runs/40084739161); [native MCP protocol and lifecycle](https://github.com/CoozeeWang/leaf-markdown/actions/runs/40084190674). User daily installations have not been replaced by this release task.
 
-## 兼容性与验证
+Main verification: [source tests and frontend build](https://github.com/CoozeeWang/leaf-markdown/actions/runs/40085232516); [native renderer, protocol and lifecycle gates](https://github.com/CoozeeWang/leaf-markdown/actions/runs/40085232551).
 
-Mac Apple Silicon 与 Windows x64 的本轮日常主要功能和修复由使用者确认通过。发布包另做版本一致性、自动检查和打包资源检查。具体安装范围及发行签名、下载拦截、PDF 元数据等限制见[安装说明](INSTALL.md)。这不是对所有硬件、辅助技术或所有系统缩放组合的兼容承诺。
+## Documentation
+
+- [Installation and usage guide](INSTALL.md), including [first-launch security prompts](INSTALL.md#first-launch-security-prompts)
+- [AI-assisted editing and MCP connections](AI_CONNECTIONS.md)
+- [Support Leaf](SUPPORT.md)
