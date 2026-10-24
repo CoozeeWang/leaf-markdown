@@ -193,6 +193,11 @@ const LAUNCHER: &str = "main";
 #[cfg(all(target_os = "windows", feature = "native-smoke"))]
 fn native_smoke_browser_args() -> String {
     let port: u16 = std::env::var("LEAF_NATIVE_SMOKE_PORT").expect("native smoke port").parse().expect("valid native smoke port");
+    // The close-only probe needs an explicit Wry port but no PDF/legacy browser
+    // overrides. This branch is absent from all production builds.
+    if std::env::var_os("LEAF_NATIVE_SMOKE_SAFE_BROWSER").is_some() {
+        return format!("--remote-debugging-address=127.0.0.1 --remote-debugging-port={port}");
+    }
     format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={port}")
 }
 

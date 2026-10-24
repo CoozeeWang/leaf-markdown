@@ -54,7 +54,7 @@ jobs:
           cache-on-failure: true
       - run: npm ci
       - name: Build native test executable without an installer
-        run: npm run desktop:build -- --no-bundle --config src-tauri/tauri.windows.conf.json
+        run: npm run desktop:build -- --no-bundle --features native-smoke --config src-tauri/tauri.windows.conf.json
       - name: Native welcome close and document preservation
         shell: bash
         env:

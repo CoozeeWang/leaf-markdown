@@ -16,7 +16,7 @@ await new Promise(r => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 await new Promise(r => server.close(r));
 const child = spawn(resolve(process.env.LEAF_NATIVE_SMOKE_EXE || 'src-tauri/target/release/leaf.exe'), [], {
-  env: { ...process.env, ...(process.argv.includes('--launcher-close-only') ? {APPDATA:join(scratch,'profile')} : {}), LEAF_NATIVE_SMOKE_PORT: String(port), LEAF_NATIVE_SMOKE_PDF_DIR: scratch, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: join(scratch, 'webview') },
+  env: { ...process.env, ...(process.argv.includes('--launcher-close-only') ? {APPDATA:join(scratch,'profile'),LEAF_NATIVE_SMOKE_SAFE_BROWSER:'1'} : {}), LEAF_NATIVE_SMOKE_PORT: String(port), LEAF_NATIVE_SMOKE_PDF_DIR: scratch, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: join(scratch, 'webview') },
   stdio: 'inherit',
 });
 let browser;
@@ -92,8 +92,8 @@ try {
   const launcher = await until(async () => pages().find(p => p.url().includes('tauri.localhost')), 'launcher');
   await launcher.locator('#welcomeNewButton').waitFor();
   if (process.argv.includes('--launcher-close-only')) {
-    // This runs a source-built, production-feature executable without making an
-    // installer or disabling browser security features. SC_CLOSE is the native
+    // This runs the real close handler in an isolated native test executable
+    // without an installer or legacy browser overrides. SC_CLOSE is the native
     // system-command route used by Alt+F4; physical keyboard acceptance is separate.
     assert.equal(await launcher.evaluate(()=>window.__TAURI_INTERNALS__.metadata.currentWindow.label),'main');
     await launcher.waitForLoadState('load');
