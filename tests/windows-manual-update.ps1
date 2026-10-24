@@ -43,8 +43,11 @@ try {
   foreach ($entry in $localBefore.GetEnumerator()) { if ((Get-FileHash ($local + $entry.Key) -Algorithm SHA256).Hash -ne $entry.Value) { throw 'Local preferences changed' } }
   if (!(Test-Path (Join-Path $installed 'leaf-mcp-adapter.exe'))) { throw 'MCP adapter missing' }
   if (Test-Path (Join-Path $installed 'leaf-update-helper.exe')) { throw 'Retired automatic installer helper remains installed' }
+  $guiHash = (Get-FileHash (Join-Path $installed 'leaf.exe') -Algorithm SHA256).Hash
+  $adapterHash = (Get-FileHash (Join-Path $installed 'leaf-mcp-adapter.exe') -Algorithm SHA256).Hash
+  if ($env:LEAF_REUSED_GUI_SHA256 -and ($guiHash -ne $env:LEAF_REUSED_GUI_SHA256 -or $adapterHash -ne $env:LEAF_REUSED_ADAPTER_SHA256)) { throw 'Installed application differs from verified reusable payload' }
   New-Item (Join-Path $PWD 'test-results') -ItemType Directory -Force | Out-Null
-  @{source=$env:GITHUB_SHA;from_version='1.0.2';to_version=$config.version;data_files=$before.Count;local_files=$localBefore.Count;manual_install_pass=$true;persisted_bytes_preserved=$true;automatic_helper_absent=$true;external_mcp_authorization_tested=$false} | ConvertTo-Json | Set-Content (Join-Path $PWD 'test-results/windows-manual-update.json') -Encoding UTF8
+  @{source=$env:GITHUB_SHA;from_version='1.0.2';to_version=$config.version;data_files=$before.Count;local_files=$localBefore.Count;manual_install_pass=$true;persisted_bytes_preserved=$true;automatic_helper_absent=$true;gui_sha256=$guiHash;adapter_sha256=$adapterHash;external_mcp_authorization_tested=$false} | ConvertTo-Json | Set-Content (Join-Path $PWD 'test-results/windows-manual-update.json') -Encoding UTF8
   Write-Output 'PASS manual 1.0.2 upgrade: version, MCP adapter, exact persisted synthetic data and preferences; retired installer helper absent'
 } finally {
   $uninstaller = Join-Path $installed 'uninstall.exe'

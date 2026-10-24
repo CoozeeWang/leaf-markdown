@@ -68,7 +68,7 @@ try {
   let serving=false;
   for(let i=0;i<100;i++){
     assert.equal(server.exitCode,null,'owned native-test server exited: '+serverOutput);
-    try{if(serverOutput.includes('Local:')&&(await fetch('http://127.0.0.1:41731')).ok){serving=true;break;}}catch{}
+    try{if(serverOutput.replace(/\x1b\[[0-9;]*m/g,'').includes('Local:')&&(await fetch('http://127.0.0.1:41731')).ok){serving=true;break;}}catch{}
     await new Promise(r=>setTimeout(r,100));
   }
   assert.ok(serving,'owned native-test server never became ready: '+serverOutput);

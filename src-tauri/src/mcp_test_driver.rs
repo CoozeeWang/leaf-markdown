@@ -893,7 +893,9 @@ async fn file_identity_gate(app:&tauri::AppHandle,broker:&super::mcp::LeafMcpBro
         let reopened=wait_document(app,broker,&previous).await?;
         ensure(broker.window_binding(&reopened).unwrap().session_id!=d.session_id,"actual close/reopen retires session")?;
         ensure(tool(client,"apply_edit_batch",batch).await.is_err(),"old session cannot target reopened file")?;
-        ensure(broker.bridge(app,&reopened,"snapshot",json!({})).await?["content"]==external,"reopen reads surviving external disk")?;
+        let reopened_snapshot=broker.bridge(app,&reopened,"snapshot",json!({})).await?;
+        let surviving=std::fs::read_to_string(&path).map_err(|_|"reopened disk read")?;
+        ensure(reopened_snapshot["content"]==external,&format!("reopen reads surviving external disk: atomic={atomic}, expected={external:?}, renderer={:?}, disk={surviving:?}",reopened_snapshot["content"]))?;
     }
     file_transition_gate(app,broker,client,&root).await?;
     Ok(())

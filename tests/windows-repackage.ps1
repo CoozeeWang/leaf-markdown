@@ -21,11 +21,14 @@ try {
   $guiHash = (Get-FileHash (Join-Path $capture 'leaf.exe') -Algorithm SHA256).Hash
   $adapterHash = (Get-FileHash (Join-Path $capture 'leaf-mcp-adapter.exe') -Algorithm SHA256).Hash
   Copy-Item (Join-Path $capture 'leaf.exe') (Join-Path $release 'leaf.exe')
+  Copy-Item (Join-Path $capture 'leaf-mcp-adapter.exe') (Join-Path $release 'leaf-mcp-adapter.exe')
   Copy-Item (Join-Path $capture 'leaf-mcp-adapter.exe') "src-tauri/binaries/leaf-mcp-adapter-$env:LEAF_BUILD_TARGET.exe"
   node node_modules/@tauri-apps/cli/tauri.js bundle --bundles nsis --target $env:LEAF_BUILD_TARGET --config src-tauri/tauri.windows.conf.json --ci
   if ($LASTEXITCODE) { throw 'Wrapper-only bundle failed' }
-  if ((Get-FileHash (Join-Path $release 'leaf.exe') -Algorithm SHA256).Hash -ne $guiHash -or (Get-FileHash "src-tauri/binaries/leaf-mcp-adapter-$env:LEAF_BUILD_TARGET.exe" -Algorithm SHA256).Hash -ne $adapterHash) { throw 'Repackaging changed application bytes' }
+  if ((Get-FileHash (Join-Path $release 'leaf.exe') -Algorithm SHA256).Hash -ne $guiHash -or (Get-FileHash (Join-Path $release 'leaf-mcp-adapter.exe') -Algorithm SHA256).Hash -ne $adapterHash -or (Get-FileHash "src-tauri/binaries/leaf-mcp-adapter-$env:LEAF_BUILD_TARGET.exe" -Algorithm SHA256).Hash -ne $adapterHash) { throw 'Repackaging changed application bytes' }
   "LEAF_REUSED_APPLICATION_SOURCE=$env:LEAF_REUSE_SOURCE" >> $env:GITHUB_ENV
+  "LEAF_REUSED_GUI_SHA256=$guiHash" >> $env:GITHUB_ENV
+  "LEAF_REUSED_ADAPTER_SHA256=$adapterHash" >> $env:GITHUB_ENV
   Write-Output 'PASS wrapper-only NSIS bundling; GUI and MCP executable hashes unchanged'
 } finally {
   $uninstall = Join-Path $capture 'uninstall.exe'
