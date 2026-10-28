@@ -16,7 +16,7 @@ export function setupStatusNotices({ container, text, recovery, actions, dismiss
     if(taskContainer){
       taskContainer.hidden=!task;
       if(task){
-        if(!taskText){taskText=document.createElement('span');taskStop=document.createElement('button');taskStop.type='button';taskStop.addEventListener('click',()=>{void task?.stop();});taskContainer.replaceChildren(taskText,taskStop);}
+        if(!taskText){taskText=document.createElement('span');taskText.className='ai-task-copy';taskStop=document.createElement('button');taskStop.type='button';taskStop.addEventListener('click',()=>{void task?.stop();});taskContainer.replaceChildren(taskText,taskStop);}
         taskText.textContent=resolveMessage(typeof task.text==='function'?task.text():task.text);
         taskStop.textContent=resolveMessage(typeof task.stopLabel==='function'?task.stopLabel():task.stopLabel);
       }

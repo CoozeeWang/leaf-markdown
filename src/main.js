@@ -995,7 +995,6 @@ const editor = createLeafEditor({
       statusNotices.announce(translatedMessage(pending?'ai.task_pending_save':'ai.task_ended'));
     }
     if(task){
-      const text=notice.querySelector('span');text.className='ai-task-copy';
       if(!notice.querySelector('.ai-task-lock')){const lock=document.createElement('span');lock.className='ai-task-lock';lock.setAttribute('aria-hidden','true');lock.innerHTML=icon('lock',16);notice.prepend(lock);}
       notice.querySelector('button').disabled=false;
     }
