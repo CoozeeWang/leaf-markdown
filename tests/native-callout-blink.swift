@@ -26,7 +26,7 @@ while Date()<deadline && frame<100 {
  if pending || Date().timeIntervalSince(last)<0.1 {continue}
  pending=true;last=Date()
  if frame==25 || frame==50 || frame==75 {web.evaluateJavaScript("blinkStep(\(frame/25))",completionHandler:nil)}
- web.evaluateJavaScript("blinkState()") {value,error in
+ web.evaluateJavaScript("blinkProgress(\(frame)); blinkState()") {value,error in
   if let value=value as? String {rows.append(value)} else {rows.append("{\"error\":\"state unavailable\"}")}
   let settings=WKSnapshotConfiguration();settings.afterScreenUpdates=true
   web.takeSnapshot(with:settings) {image,error in

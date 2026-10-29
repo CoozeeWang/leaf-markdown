@@ -74,7 +74,13 @@ export function textareaCaret(input) {
     mirror.textContent = ''; hide();
   };
   const startComposition = () => { composing = true; hide(); };
-  const endComposition = () => { composing = false; schedule(); };
+  const endComposition = () => {
+    composing = false;
+    // Do not leave the native caret visible until the next animation frame.
+    // Its independent blink can otherwise flash once after composition ends.
+    if (frame) win.cancelAnimationFrame(frame);
+    update();
+  };
   const events = {focus, blur, input:schedule, select:schedule, selectionchange:schedule,
     keyup:schedule, pointerup:schedule, scroll:schedule,
     compositionstart:startComposition, compositionupdate:startComposition, compositionend:endComposition};

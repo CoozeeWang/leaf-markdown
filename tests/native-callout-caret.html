@@ -38,7 +38,8 @@ window.runTest=async()=>{
   input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'拼'}));
   check(!input.classList.contains('leaf-measured-caret'),'IME must retain native caret');
   input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true,cancelable:true}));check(editor.getValue()===originalValue,'IME Enter changed structure');
-  input.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'拼'}));await until(()=>input.classList.contains('leaf-measured-caret'));
+  input.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'拼'}));
+  check(input.classList.contains('leaf-measured-caret')&&getComputedStyle(input).caretColor==='rgba(0, 0, 0, 0)','composition end left a native-caret frame');
   window.dispatchEvent(new Event('blur'));check(input.parentElement.querySelector('.leaf-callout-caret').hidden,'inactive window retained visual caret');
   window.dispatchEvent(new Event('focus'));await until(()=>input.classList.contains('leaf-measured-caret'));
   input.blur();await until(()=>input.parentElement.querySelector('.leaf-callout-caret').hidden);
