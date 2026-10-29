@@ -15,9 +15,14 @@ let output=URL(fileURLWithPath:CommandLine.arguments[2]);try FileManager.default
 var started=false;var pending=false;var frame=0;var last=Date.distantPast;var rows:[String]=[]
 let deadline=Date().addingTimeInterval(55)
 while Date()<deadline && frame<100 {
+ if foreground {
+  if let event=app.nextEvent(matching:.any,until:Date().addingTimeInterval(0.01),inMode:.default,dequeue:true) {app.sendEvent(event)}
+  app.updateWindows()
+ }
  RunLoop.current.run(until:Date().addingTimeInterval(0.02))
  if foreground && !window.isVisible {break}
  if !started {if web.title == "LeafBlink READY" {started=true};continue}
+ if foreground && frame>0 && (!window.isKeyWindow || !app.isActive) {print("focus lost; capture stopped");break}
  if pending || Date().timeIntervalSince(last)<0.1 {continue}
  pending=true;last=Date()
  if frame==25 || frame==50 || frame==75 {web.evaluateJavaScript("blinkStep(\(frame/25))",completionHandler:nil)}
