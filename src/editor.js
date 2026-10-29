@@ -474,6 +474,12 @@ function livePreviewDecorations(view) {
         return false;
       }
 
+      // A parsed Markdown escape is source syntax, not a visible backslash.
+      // Keep it editable at the caret and untouched in code/source mode.
+      if (node.name === 'Escape' && !caretInRange(view.state, node.from, node.to)) {
+        ranges.push(Decoration.replace({}).range(node.from, node.from + 1));
+      }
+
       // Delimiters stay hidden unless the caret is inside the construct they
       // belong to, so the rest of the line keeps its styling while you type.
       if (['HeaderMark', 'EmphasisMark', 'StrikethroughMark', 'CodeMark', 'LeafHighlightMark'].includes(node.name) && !caretInParent(view.state, node)) {

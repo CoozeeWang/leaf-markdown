@@ -1,9 +1,11 @@
-// Only the verified Ripple Segment Dev v2 contract is supported. Production
-// schemes require their own reviewed contract; never treat arbitrary schemes as files.
+// Verified Ripple production and development v2 contracts only.
+const prefixes = ['ripple-transcript://open/v2?', 'ripple-segment-dev://open/v2?'];
 const fields = ['project', 'recording', 'model', 'version', 'segment', 'identity'];
 export function safeAppLink(value) {
-  if (typeof value !== 'string' || value.length > 2048 || /[^\x21-\x7e]/.test(value) || !value.startsWith('ripple-segment-dev://open/v2?')) return null;
-  const pairs = value.slice('ripple-segment-dev://open/v2?'.length).split('&');
+  if (typeof value !== 'string' || value.length > 2048 || /[^\x21-\x7e]/.test(value)) return null;
+  const prefix = prefixes.find(prefix => value.startsWith(prefix));
+  if (!prefix) return null;
+  const pairs = value.slice(prefix.length).split('&');
   if (pairs.length !== fields.length) return null;
   const seen = new Set();
   for (const pair of pairs) {
