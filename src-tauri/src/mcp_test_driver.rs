@@ -317,10 +317,20 @@ async fn connection_restart(app:&tauri::AppHandle,label:&str,broker:&super::mcp:
         std::fs::write(directory.join("old-instance.json"),broker.tunnel_status()?["diagnostics"]["instance_id"].to_string()).map_err(|_|"instance evidence")?;
     }else if mode=="connection-restart-on" {
         ensure(*broker.inner.enabled.lock().unwrap(),"enabled consent survives actual process restart")?;
+        // Enabled intent is persisted before asynchronous descriptor publication.
+        // Wait for the current process token, not an old on-disk descriptor or
+        // the transient interval between credential and descriptor replacement.
+        let descriptors_ready=|| ["claude-desktop","workbuddy"].iter().all(|client| {
+            let current=broker.inner.credentials.lock().unwrap().get(*client).cloned();
+            let descriptor=std::fs::read(directory.join(format!("mcp/{client}.json"))).ok()
+                .and_then(|bytes|serde_json::from_slice::<super::mcp::ai_credentials::BrokerDescriptor>(&bytes).ok());
+            descriptor.and_then(|d|d.load_token().ok()).is_some_and(|token|!token.is_empty()&&current.as_ref()==Some(&token))
+        });
         for _ in 0..100 {
-            if broker.client_profiles()?.iter().filter(|p|p.client!="chatgpt").all(|p|p.enabled){break;}
+            if broker.client_profiles()?.iter().filter(|p|p.client!="chatgpt").all(|p|p.enabled)&&descriptors_ready(){break;}
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
+        ensure(descriptors_ready(),"current process descriptors published before restart assertions")?;
         for client in ["claude-desktop","workbuddy"] {
             ensure(broker.client_profiles()?.iter().any(|p|p.client==client&&p.enabled),"local client restored despite ChatGPT failure")?;
             let path=directory.join(format!("mcp/{client}.json"));

@@ -29,10 +29,10 @@ for(const engine of [chromium,webkit]) {
     await load('> [!note]\n> Before replace after\n\n');
     await page.locator('.leaf-callout-body .leaf-callout-preview').click();
     await body.evaluate(n=>n.setSelectionRange(7,14));
-    assert.equal(await paste(`<div>合成说话人 [00:10–00:20] (2)</div><p>合成正文</p><a href="${url}">合成访谈</a>`),true);
+    assert.equal(await paste(`<div>合成说话人 [00:10–00:20] (2)</div><p>合成正文</p><a href="${url}">合成访谈, 00:00, (5)</a>`),true);
     const value=await body.inputValue();
     assert.ok(value.startsWith('Before ') && value.endsWith(' after'));
-    assert.ok(value.includes(`[合成访谈](${url})`));
+    assert.ok(value.includes(`[合成访谈, 00:00, (5)](${url})`));
     assert.ok(value.includes('\\[00:10–00:20\\] (2)'));
     const saved=await source();
     await body.press('ControlOrMeta+z');
@@ -42,7 +42,7 @@ for(const engine of [chromium,webkit]) {
     await load(await readFile(file,'utf8'));await body.blur();
     const link=page.locator('.leaf-callout-body [data-leaf-link]');
     assert.equal(await link.getAttribute('data-leaf-link'),url);
-    assert.equal(await link.innerText(),'合成访谈');
+    assert.equal(await link.innerText(),'合成访谈, 00:00, (5)');
     assert.deepEqual(await page.evaluate(()=>openedLinks),[],'paste/reload must not open apps');
     await link.click();assert.deepEqual(await page.evaluate(()=>openedLinks),[],'plain edit click must not open apps');
     await link.click({modifiers:[os==='macos'?'Meta':'Control']});
