@@ -17,7 +17,7 @@ for (const [engineName, engine] of Object.entries({chromium, webkit})) {
     for (const locale of ['zh-CN','en-US']) {
       const page = await browser.newPage({locale, viewport:{width:1100,height:800}}), errors=[];
       page.on('pageerror',error => errors.push(error.message));
-      await page.goto('http://127.0.0.1:41732');
+      await page.goto((process.env.LEAF_TEST_BASE_URL || 'http://127.0.0.1:41732'));
       await page.waitForSelector('.shell[data-body-fonts=ready]');
       await page.click('#welcomeNewButton');
       await page.evaluate(async source => {
