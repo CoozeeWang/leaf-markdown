@@ -32,3 +32,12 @@ test('masked hidden comments retain correct ranges through incremental edits and
   assert.deepEqual(shape(parseMarkdown(text)),shape(grammar.parse(maskHiddenComments(text))));
  }
 });
+test('short nested editor parses do not displace the long-document fragments',()=>{
+ let reused=false;
+ const grammar=parser.configure(leafMarkdownExtensions);
+ const parse=incrementalParser({parse(source,fragments=[]){if(fragments.length)reused=true;return grammar.parse(source,fragments);}});
+ const source='Paragraph **text**.\n\n'.repeat(500);
+ parse(source);parse('short note');parse('another excerpt');
+ assert.deepEqual(shape(parse(source+'x')),shape(grammar.parse(source+'x')));
+ assert.ok(reused);
+});

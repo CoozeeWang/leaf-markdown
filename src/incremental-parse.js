@@ -6,6 +6,8 @@ export function incrementalParser(parser) {
   const recent = new Map();
   let previous = '', tree = null;
   return source => {
+    // Rendering a short note or excerpt must not displace the long document.
+    if (source.length < 4096) return parser.parse(source);
     if (recent.has(source)) { previous = source; tree = recent.get(source); return tree; }
     let fragments = [];
     if (tree && source.length >= 4096 && previous.length >= 4096) {
