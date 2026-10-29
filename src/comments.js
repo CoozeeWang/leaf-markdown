@@ -1,11 +1,13 @@
 import { parser, GFM } from '@lezer/markdown';
 import { commentMarkdownExtension, commentToken } from './comment-syntax.js';
+import {incrementalParser} from './incremental-parse.js';
 
 const markdown = parser.configure([GFM, commentMarkdownExtension]);
+const parse = incrementalParser(markdown);
 let recentSource, recentIndex;
 export function indexComments(source) {
   if (source === recentSource) return recentIndex;
-  const tree = markdown.parse(source), tokens = [], protectedRanges = [], paragraphs = [], formats = [], unsafePoints=[];
+  const tree = parse(source), tokens = [], protectedRanges = [], paragraphs = [], formats = [], unsafePoints=[];
   const yaml = /^(?:\uFEFF)?---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)(?=\r?\n|$)/.exec(source);
   if (yaml) { const first=yaml[0].split(/\r?\n/).slice(1,-1).find(line=>line.trim()&&!/^\s*#/.test(line))?.trim()??''; if(!first||/^(?:[^\s:#][^\n]*?:(?:\s|$)|\{)/.test(first))protectedRanges.push({from:0,to:yaml[0].length}); }
   tree.iterate({enter(node) {
@@ -77,6 +79,7 @@ export function stripComments(source) {
   return result;
 }
 export function maskHiddenComments(source) {
+  if (!source.includes('%%')) return source;
   let result=source;
   for(const note of [...indexComments(source).hidden].reverse())result=result.slice(0,note.from)+source.slice(note.from,note.to).replace(/[^\r\n]/g,' ')+result.slice(note.to);
   return result;

@@ -1297,6 +1297,7 @@ export function createLeafEditor(options) {
       bracketMatching(),
       markdown({ extensions: leafMarkdownExtensions, addKeymap: false }),
       sourceMode,
+      noteFocus,
       commentIndex,
       commentDecorations,
       commentLocation,
@@ -1322,6 +1323,8 @@ export function createLeafEditor(options) {
       // macOS Option+number produces symbols (e.g. ¡), not event.key "1".
       // Match the physical number row, without intercepting IME composition.
       EditorView.domEventHandlers({
+        focus(_event, view) { view.dispatch({effects:setNoteFocus.of(true)}); return false; },
+        blur(_event, view) { view.dispatch({effects:setNoteFocus.of(false)}); return false; },
         compositionstart(_event, view) { prepareBodyLine(view); return false; },
         paste(_event, view) { prepareBodyLine(view); return false; },
         copy(event, view) {
