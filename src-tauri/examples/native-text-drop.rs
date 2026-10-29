@@ -16,12 +16,11 @@ fn main() {
         window.with_webview(move|platform|unsafe {
             let view=&*(platform.inner() as *const objc2::runtime::AnyObject);
             let original=view.class();
-            native_text_drop::install(view);
-            assert!(view.class().name().to_bytes().starts_with(b"LeafTextDrop_"), "unexpected native class: {:?}",view.class().name());
-            assert_eq!(view.class().instance_size(),original.instance_size());
-            let installed=view.class();native_text_drop::install(view);
-            assert_eq!(view.class(),installed);
-            println!("PASS real hidden Wry WebView: selective text-drop subclass installed idempotently");
+            assert!(native_text_drop::install(view));
+            assert_eq!(view.class(),original);
+            assert!(native_text_drop::install(view));
+            assert_eq!(view.class(),original);
+            println!("PASS real hidden Wry WebView: text-drop hooks preserve native class identity");
             handle.exit(0);
         })?;
         Ok(())
