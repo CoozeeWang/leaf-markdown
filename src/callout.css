@@ -16,7 +16,9 @@
 .leaf-callout-preview { cursor: text; min-height: 1.6em; }
 .leaf-callout-edit textarea:focus { outline: none; box-shadow: none; }
 .leaf-callout-edit { position: relative; }
-.leaf-callout-edit textarea.leaf-measured-caret { caret-color: transparent !important; }
+/* Outrank CodeMirror's generated .theme .cm-content :focus !important rule,
+   otherwise the native and measured carets blink independently. */
+.cm-editor .cm-content .leaf-callout-edit textarea.leaf-measured-caret { caret-color: transparent !important; }
 .leaf-callout-caret-mirror { position: absolute; top: 0; left: 0; box-sizing: border-box; white-space: pre-wrap; visibility: hidden; pointer-events: none; }
 .leaf-callout-caret { position: absolute; width: 0; border-left: 1px solid var(--accent, currentColor); pointer-events: none; animation: leaf-callout-caret-blink 1.2s step-end infinite; }
 .leaf-callout-caret[hidden] { display: none; }

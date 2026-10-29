@@ -28,7 +28,7 @@ See the [installation guide](INSTALL.md) for system requirements and security pr
 
 ## Verification and publication boundary
 
-- This branch also contains a callout-caret follow-up candidate. It retains text spacing and uses a measured visual caret outside native composition. It has not replaced the daily app; the installed-app acceptance below applies only to `49841a3c`, not to this follow-up.
+- The previous caret candidate `fc33d316` failed user acceptance because native and measured carets blinked independently. This branch corrects the CodeMirror focus-rule override and adds continuous-frame verification. It remains a callout-caret follow-up candidate. It retains text spacing and uses a measured visual caret outside native composition. It has not replaced the daily app; the installed-app acceptance below applies only to `49841a3c`, not to this follow-up.
 - Previous Mac/Windows candidates from `e92db721` exclude PRs #112/#115 and the callout paste follow-up. They are superseded and retained only as historical evidence.
 - Final application source: `49841a3c1aba0e3ab59ddb1368b96918506afd37`. Source/native CI and local Chromium/WebKit regressions passed. PRs #112/#115 are merged; the callout paste follow-up is included in this preparation branch.
 - Mac 1.0.4 / `49841a3c` was rebuilt, signature-verified, installed with application/state backups and explicitly accepted by the user. Windows standard packaging and automated verification [passed](https://github.com/CoozeeWang/leaf-markdown/actions/runs/40893319389). Both installers passed checksum and detached-signature verification with the existing release public key. Windows user installation remains deferred.

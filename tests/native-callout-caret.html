@@ -14,6 +14,7 @@ window.runTest=async()=>{
   await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   const caret=input.parentElement.querySelector('.leaf-callout-caret'),style=getComputedStyle(input);
   check(!caret.hidden&&input.classList.contains('leaf-measured-caret'),'measured caret missing at '+pos);
+  check(getComputedStyle(input).caretColor==='rgba(0, 0, 0, 0)','native caret still visible beside measured caret');
   return {pos,height:caret.getBoundingClientRect().height,left:parseFloat(caret.style.left),top:parseFloat(caret.style.top),fontSize:parseFloat(style.fontSize),lineHeight:parseFloat(style.lineHeight)};
  };
  const results=[];

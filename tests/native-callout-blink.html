@@ -1,0 +1,12 @@
+<!doctype html><html><meta charset="utf-8"><title>Loading</title><body><div id="fixture" style="position:fixed;inset:20px;overflow:auto;--editor-font-size:18px;--accent:rgb(255,0,0)"></div><script type="module">
+import '/src/style.css';
+import {createLeafEditor} from '/src/editor.js';
+window.e=createLeafEditor({parent:document.querySelector('#fixture'),doc:'> [!note] Title\n> Alpha\n> \n> Bravo中文\n> \n> Charlie\n\n'});
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+while(!document.querySelector('.leaf-callout-body textarea'))await wait(20);
+document.querySelector('.leaf-callout-body .leaf-callout-preview').click();
+const input=document.querySelector('.leaf-callout-body textarea');input.setSelectionRange(6,6);
+window.blinkState=()=>{const c=input.parentElement.querySelector('.leaf-callout-caret');return JSON.stringify({time:performance.now(),focus:document.activeElement===input,windowFocus:document.hasFocus(),nativeColor:getComputedStyle(input).caretColor,hidden:c.hidden,opacity:getComputedStyle(c).opacity,caret:c.getBoundingClientRect().toJSON(),input:input.getBoundingClientRect().toJSON(),selection:[input.selectionStart,input.selectionEnd]});};
+window.blinkStep=step=>{if(step===1)input.setSelectionRange(10,10);if(step===2){input.setRangeText('字',input.selectionStart,input.selectionEnd,'end');input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));}if(step===3){input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'拼'}));input.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'拼'}));}};
+document.title='LeafBlink READY';
+</script></body></html>

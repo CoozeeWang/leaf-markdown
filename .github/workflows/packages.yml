@@ -76,7 +76,7 @@ jobs:
         shell: bash
         run: |
           npx playwright install chromium webkit
-          npm run test:browser -- i18n-browser.mjs ai-connections-browser.mjs rich-drop-browser.mjs app-links-browser.mjs callout-input-browser.mjs callout-caret-browser.mjs callout-toolbar-persistence-browser.mjs callout-links-browser.mjs ai-notice-lock-browser.mjs
+          npm run test:browser -- i18n-browser.mjs ai-connections-browser.mjs rich-drop-browser.mjs app-links-browser.mjs callout-input-browser.mjs callout-caret-browser.mjs callout-caret-blink-browser.mjs callout-toolbar-persistence-browser.mjs callout-links-browser.mjs ai-notice-lock-browser.mjs
       - name: Native unit tests
         if: inputs.verification_scope == 'standard'
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
