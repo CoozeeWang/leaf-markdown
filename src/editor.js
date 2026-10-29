@@ -1031,7 +1031,7 @@ function formatEditor(view, type) {
     const first=doc.lineAt(range.from),last=doc.lineAt(range.to>range.from&&doc.lineAt(range.to).from===range.to?range.to-1:range.to);
     const from=range.empty?first.to:first.from,to=range.empty?from:last.to;
     // Whole selected lines retain their Markdown (including nested lists/code).
-    const content=range.empty?t("editor.content"):doc.sliceString(from,to);
+    const content=range.empty?'':doc.sliceString(from,to);
     const prefix=from>0?'\n\n':'';
     const header=`> [!${kind}]`,insert=prefix+header+'\n'+content.split('\n').map(line=>'> '+line).join('\n')+'\n\n';
     const start=from+prefix.length;

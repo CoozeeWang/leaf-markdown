@@ -16,6 +16,7 @@ import { renderProperties } from './properties-ui.js';
 import { shortcutText } from './platform-shortcuts.js';
 import { tableOperation, tableShortcut } from './table-operations.js';
 import { tableEdgeControls } from './table-edge-controls.js';
+import { calloutEnter } from './callout-enter.js';
 
 export const toggleFileNameTitle = StateEffect.define();
 export const fileNameTitle = StateField.define({create:()=>true,update:(value,tr)=>tr.effects.reduce((v,e)=>e.is(toggleFileNameTitle)?e.value:v,value)});
@@ -268,8 +269,36 @@ class StructuredBlock extends WidgetType {
       input.addEventListener('focus', resize);
       input.addEventListener('blur', () => { wrap.classList.remove('is-editing'); view.requestMeasure(); });
       input.addEventListener('keydown', event => {
-        if (event.isComposing) return;
+        if (event.isComposing || event.keyCode === 229) return;
         const b = root._widget.block;
+        if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          if (view.assertDocumentMutationAllowed?.() === false) return;
+          if (field === 'title') {
+            event.preventDefault(); event.stopPropagation();
+            const body = controls.find(control => control.field === 'body')?.input;
+            if (body) { body.parentElement.classList.add('is-editing'); body.focus(); body.setSelectionRange(0,0); }
+            return;
+          }
+          const action = calloutEnter(input.value, input.selectionStart, input.selectionEnd, event.shiftKey);
+          if (action) {
+            event.preventDefault(); event.stopPropagation();
+            if (action.exit) {
+              const newline = b.raw.includes('\r\n') ? '\r\n' : '\n';
+              const header = b.raw.split(/\r?\n/)[0];
+              const raw = header + newline + action.value.split('\n').map(line => '> ' + line).join(newline);
+              const insert = raw + newline + newline;
+              const suffix = view.state.doc.sliceString(b.to);
+              const blanks = /^(?:\r?\n){1,2}/.exec(suffix)?.[0].length ?? 0;
+              view.dispatch({changes:{from:b.from,to:b.to+blanks,insert},selection:{anchor:b.from+insert.length},
+                userEvent:'input',annotations:isolateHistory.of('full'),scrollIntoView:true});
+              view.focus();
+            } else {
+              input.value = action.value; input.setSelectionRange(action.caret, action.caret);
+              input.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:event.shiftKey?'insertLineBreak':'insertParagraph'}));
+            }
+            return;
+          }
+        }
         if ((event.key === 'Backspace' || event.key === 'Delete') && !input.value && !b.customTitle.trim() && !b.body.trim()) {
           event.preventDefault(); event.stopPropagation(); deleteBlock();
         }
@@ -303,6 +332,7 @@ class StructuredBlock extends WidgetType {
         const value = field === 'title' ? b.customTitle : b.body;
         if (input.value !== value) input.value = value;
         if (field === 'title') setAttr(input, 'placeholder', () => calloutLabels[root._widget.block.type]);
+        else setAttr(input, 'placeholder', () => t('structured_preview.enter_content'));
         if (field === 'title') renderInline(preview, b.title, notes);
         else renderPrintDocument(preview, b.body, {fallbackTitle:false, expandCallouts:false, footnotes: notes});
         if (!preview.textContent) setText(preview, () => field === 'title' ? t("structured_preview.title") : t("structured_preview.enter_content"));
