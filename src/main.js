@@ -547,8 +547,8 @@ window.addEventListener('keydown', event => {
 }, true);
 
 
-const outlineDrag = setupOutlineDrag(outlineList, {editor:()=>editor, reading:()=>state.reading});
-const collapsedOutline = new Set();
+const outlineDrag = setupOutlineDrag(outlineList, {editor:()=>editor, reading:()=>state.reading,hideTooltip});
+
 let outlineCursorLine = 1;
 let outlineFrame = 0;
 function scheduleOutlineCurrent() {
@@ -567,7 +567,8 @@ function scheduleOutlineCurrent() {
     for (const button of outlineList.querySelectorAll('.outline-item')) {
       if (Number(button.dataset.line) === current?.line) button.setAttribute('aria-current', 'location');
       else button.removeAttribute('aria-current');
-      setAttr(button, 'title', () => t(state.reading ? 'UI0147' : 'UI0148', { heading: button.textContent }));
+      button.removeAttribute('title');
+      setAttr(button,'data-tooltip',()=>t('main.outline_drag_hint',{shortcut:/mac|iphone|ipad/i.test(navigator.userAgentData?.platform||navigator.platform)?'⌘':'Ctrl'}));
     }
   });
 }
@@ -586,14 +587,10 @@ function renderOutline(markdown = state.content) {
   const root = document.createElement('ul');
   root.className = 'outline-tree';
   outlineList.append(root);
-  const stack = [{level: 0, children: root, key: '', counts: new Map()}];
+  const stack = [{level: 0, children: root}];
   for (const [index, item] of state.outline.entries()) {
     while (stack.at(-1).level >= item.level) stack.pop();
     const parent = stack.at(-1);
-    const identity = JSON.stringify([item.level, item.text]);
-    const occurrence = parent.counts.get(identity) || 0;
-    parent.counts.set(identity, occurrence + 1);
-    const key = `${parent.key}/${identity}:${occurrence}`;
     const node = document.createElement('li');
     const row = document.createElement('div');
     row.className = 'outline-row';
@@ -609,14 +606,13 @@ function renderOutline(markdown = state.content) {
       toggle.innerHTML = icon('chevron', 13);
       toggle.setAttribute('aria-controls', children.id);
       const update = () => {
-        const open = !collapsedOutline.has(key);
+        const open = !editor.isOutlineCollapsed(item.from);
         children.hidden = !open;
         toggle.setAttribute('aria-expanded', String(open));
-        setAttr(toggle, 'aria-label', () => t(!collapsedOutline.has(key) ? 'UI0150' : 'UI0151', { heading: item.text }));
+        setAttr(toggle, 'aria-label', () => t(!editor.isOutlineCollapsed(item.from) ? 'UI0150' : 'UI0151', { heading: item.text }));
       };
       toggle.addEventListener('click', () => {
-        if (collapsedOutline.has(key)) collapsedOutline.delete(key);
-        else collapsedOutline.add(key);
+        editor.toggleOutlineCollapsed(item.from);
         update();
       });
       update();
@@ -628,16 +624,17 @@ function renderOutline(markdown = state.content) {
       spacer.setAttribute('aria-hidden', 'true');
       row.append(spacer);
     }
-    stack.push({level: item.level, children, key, counts: new Map()});
+    stack.push({level: item.level, children});
     const button = document.createElement('button');
     button.className = 'outline-item';
+    button.dataset.tooltipKind = 'outline';
     button.dataset.line = item.line;
     button.dataset.from = item.from;
-    button.draggable = true;
+    button.draggable = false;
     button.dataset.level = item.level;
     button.style.setProperty('--level', item.level);
     button.textContent = item.text;
-    setAttr(button, 'title', () => t("main.click_to_jump_double_click_to_rename_ui0152"));
+    setAttr(button,'data-tooltip',()=>t('main.outline_drag_hint',{shortcut:/mac|iphone|ipad/i.test(navigator.userAgentData?.platform||navigator.platform)?'⌘':'Ctrl'}));
     button.addEventListener('click', () => {
       if(outlineDrag.suppressClick()) return;
       if(state.reading) reader.querySelector(`[data-source-line="${item.line}"]`)?.scrollIntoView({block:'start'});
@@ -1375,7 +1372,6 @@ async function setDocument(content, name, handle = null, file = null) {
   browserDocumentGeneration++;
   setMovedMissingImages();
   statusNotices.reset();
-  collapsedOutline.clear();
   state.outline = [];
   outlineList.replaceChildren();
   clearTimeout(state.saveTimer);
@@ -2423,7 +2419,7 @@ function hideTooltip() {
 }
 
 function showTooltip(target) {
-  if (!target?.isConnected || !target.dataset.tooltip) return;
+  if (!target?.isConnected || !target.dataset.tooltip || outlineDrag.active()) return;
   tooltipTarget = target;
   tooltip.dataset.kind = target.dataset.tooltipKind || 'default';
   tooltip.dataset.placement = target.dataset.tooltipPlacement || 'default';
@@ -2435,7 +2431,8 @@ function showTooltip(target) {
     if (imageRect.width <= 38) { hideTooltip(); return; }
     tooltip.style.maxWidth = `${Math.min(window.innerWidth - 16, imageRect.width - 34)}px`;
   }
-  renderTooltipText(tooltip, target.dataset.tooltip);
+  if(target.classList.contains('outline-item'))renderShortcutText(tooltip,target.dataset.tooltip,true);
+  else renderTooltipText(tooltip, target.dataset.tooltip);
   tooltip.hidden = false;
   const targetRect = target.getBoundingClientRect();
   const tooltipRect = tooltip.getBoundingClientRect();

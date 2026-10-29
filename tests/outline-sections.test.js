@@ -21,7 +21,7 @@ test('whole subtree moves verbatim including callouts, comments, links and blank
 });
 test('same parent and exact level, skipped levels do not imply siblinghood',()=>{
  const s='# A\n\n### X\n\n#### child\n\n### Y\n\n## Z\n\n# B\n\n### Other\n';
- assert.ok(move(s,1,3,'after'));
+ assert.equal(move(s,1,3,'after'),null,'skipped-level document is conservatively protected');
  for(const [a,b] of [[1,4],[1,6],[0,1],[0,0]])assert.equal(move(s,a,b,'after'),null);
  assert.equal(move(s,1,3,'before'),null,'already adjacent');
 });

@@ -1301,12 +1301,11 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 #aiLocalResult:empty { display: none; }
 #aiLocalResult { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 
-.outline-item[draggable=true] { cursor: grab; }
-.outline-item.outline-dragging { opacity: .45; cursor: grabbing; }
-.outline-row, .outline-tree li { position: relative; }
-.outline-drop-before::before, .outline-drop-after::after {
-  content: ''; position: absolute; left: 0; right: 0; height: 2px;
-  background: var(--accent); pointer-events: none; z-index: 1;
-}
-.outline-drop-before::before { top: 0; }
-.outline-drop-after::after { bottom: 0; }
+/* Pointer-based section moves use one fixed, depth-aligned insertion line. */
+.outline-item {touch-action:none;}
+.outline-dragging, .outline-dragging * {cursor:grabbing!important;user-select:none;}
+.outline-dragging .outline-item:hover, .outline-dragging .outline-item[aria-current] {background:transparent;}
+.outline-dragging .outline-item:focus {outline:none;}
+.outline-drop-line {position:fixed;height:2px;background:var(--accent);pointer-events:none;z-index:1200;}
+
+.ui-tooltip[data-kind="outline"] {background:var(--surface-strong);color:var(--muted);font-weight:400;box-shadow:0 2px 8px #0000000a;}

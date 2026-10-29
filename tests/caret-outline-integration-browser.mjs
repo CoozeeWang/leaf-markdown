@@ -11,7 +11,7 @@ for(const engine of [chromium,webkit]) {
   const body=page.locator('#integration .leaf-callout-body textarea');
   const open=async()=>{if(await body.isVisible()) await body.focus(); else await page.locator('#integration .leaf-callout-body .leaf-callout-preview').click();await body.evaluate(n=>n.setSelectionRange(2,2));await page.waitForFunction(()=>{const n=document.querySelector('#integration .leaf-callout-body textarea');return n.classList.contains('leaf-measured-caret')&&getComputedStyle(n).caretColor==='rgba(0, 0, 0, 0)';});};
   await open();
-  assert.equal(await page.evaluate(()=>{const h=parseOutline(e.getValue());return e.moveSection(e.view.state.doc,e.mutationDocumentGeneration(),h[0].from,h[1].from,'after');}),true);
+  assert.equal(await page.evaluate(()=>{const h=parseOutline(e.getValue());return e.moveOutlineSection(e.view.state.doc,e.mutationDocumentGeneration(),h[0].from,null,1);}),true);
   assert.equal(await page.evaluate(()=>e.getValue()),b+a);
   await open();assert.ok(await body.inputValue().then(v=>v.includes(url)));
   await page.keyboard.type('x');assert.ok((await body.inputValue()).startsWith('Fixrst'));

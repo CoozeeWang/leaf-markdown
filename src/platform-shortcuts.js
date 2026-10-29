@@ -21,22 +21,23 @@ const modifierNames = {'⇧':'Shift','⌥':'Option','⌃':'Control','⌘':'Comma
 
 // Draw modifiers with consistent geometry instead of relying on font fallback.
 // Input is UI copy only; use text nodes for all ordinary text.
-export function renderShortcutText(container, text) {
+export function renderShortcutText(container, text, standalone = false) {
   container.replaceChildren();
   let from = 0;
-  for (const match of text.matchAll(/([⌃⌥⇧⌘]+)([A-Za-z0-9\\.,=−-])/g)) {
+  const modifiers = standalone ? /([⌃⌥⇧⌘]+)([A-Za-z0-9\\.,=−-])?/g : /([⌃⌥⇧⌘]+)([A-Za-z0-9\\.,=−-])/g;
+  for (const match of text.matchAll(modifiers)) {
     container.append(document.createTextNode(text.slice(from, match.index)));
     const group = document.createElement('span'); group.className = 'shortcut-keys';
     const keys = [...'⌃⌥⇧⌘'].filter(key=>match[1].includes(key));
     group.setAttribute('role','img');
-    group.setAttribute('aria-label',[...keys.map(key=>modifierNames[key]),match[2]].join('+'));
+    group.setAttribute('aria-label',[...keys.map(key=>modifierNames[key]),...(match[2]?[match[2]]:[])].join('+'));
     for (const key of keys) {
       const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
       svg.dataset.modifier = modifierNames[key];
       for (const [name,value] of Object.entries({viewBox:'0 0 24 24',width:'14',height:'14',fill:'none',stroke:'currentColor','stroke-width':'1.8','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true'})) svg.setAttribute(name,value);
       const path=document.createElementNS('http://www.w3.org/2000/svg','path'); path.setAttribute('d',modifierPaths[key]);svg.append(path);group.append(svg);
     }
-    const key=document.createElement('span');key.textContent=match[2];key.setAttribute('aria-hidden','true');group.append(key);
+    if(match[2]){const key=document.createElement('span');key.textContent=match[2];key.setAttribute('aria-hidden','true');group.append(key);}
     container.append(group);from=match.index+match[0].length;
   }
   container.append(document.createTextNode(text.slice(from)));

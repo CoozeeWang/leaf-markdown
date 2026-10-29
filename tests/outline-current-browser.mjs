@@ -19,10 +19,10 @@ try {
  await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();
  await page.locator('.reading-document h2').nth(1).evaluate(e=>e.scrollIntoView({block:'start'}));
  await page.waitForFunction(()=>document.querySelector('.outline-item[aria-current]')?.textContent==='章节7');
- assert.ok(!(await current.getAttribute('title')).includes('双击'));
+ assert.equal(await current.getAttribute('title'),null);assert.equal(await current.getAttribute('data-tooltip'),'按住 ⌘ 调整位置');
  await page.locator('#readingToggle').click();await page.locator('.mode-popover [data-mode='+((await page.locator('#readingPane').isVisible())?'edit':'reading')+']').click();
  await page.waitForFunction(()=>document.querySelector('.outline-item[aria-current]')?.textContent==='章节3');
- assert.ok((await current.getAttribute('title')).includes('章节3\n单击跳转'));
+ assert.equal(await current.getAttribute('title'),null);assert.equal(await current.getAttribute('data-tooltip'),'按住 ⌘ 调整位置');
  await page.click('#notesButton');await page.mouse.move(600,30);await page.locator('#outlineList').evaluate(e=>e.scrollTop=0);
  for(const theme of ['light','dark']) {
   await page.click('#appearanceButton');await page.click('#settingsTab-appearance');await page.selectOption('#themeSelect',theme);await page.click('#appearanceButton');await page.mouse.move(600,30);

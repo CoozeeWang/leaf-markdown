@@ -126,7 +126,7 @@ The Mac daily fix build has user acceptance. Windows build checks and automated 
 
 The outline shows the document's heading hierarchy. Click a heading to jump to that section. If a section is missing, check that its title uses heading formatting.
 
-In Edit or Source view, drag an outline heading before or after a heading at the same level under the same parent. The entire section, including child sections, moves with it; one undo restores the previous order. Reading view does not allow reordering.
+In Edit or Source view, hold ⌘ on Mac or Ctrl on Windows to start dragging an outline heading. Move vertically to choose a position and horizontally to choose a heading level; the indented line previews the drop. You can release the modifier after starting. The entire section and its children move together, and their Markdown heading levels change by the same amount. One undo restores the move. Escape or leaving the outline cancels. Reading view and protected documents do not allow moves; skipped levels and unsafe drops are rejected.
 
 ### Footnote sidebar
 
