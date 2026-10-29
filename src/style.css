@@ -1300,3 +1300,13 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .ai-local-steps > li { margin: 8px 0; line-height: 1.7; }
 #aiLocalResult:empty { display: none; }
 #aiLocalResult { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+
+.outline-item[draggable=true] { cursor: grab; }
+.outline-item.outline-dragging { opacity: .45; cursor: grabbing; }
+.outline-row, .outline-tree li { position: relative; }
+.outline-drop-before::before, .outline-drop-after::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 2px;
+  background: var(--accent); pointer-events: none; z-index: 1;
+}
+.outline-drop-before::before { top: 0; }
+.outline-drop-after::after { bottom: 0; }

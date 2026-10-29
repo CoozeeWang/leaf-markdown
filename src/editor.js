@@ -1,3 +1,4 @@
+import {planSectionMove} from './outline-sections.js';
 import { referenceLinks } from './reference-links.js';
 import { t, h, onLanguageChange, setAttr } from './i18n.js';
 import { createCompositionGuard, isCommittedCompositionInput } from './composition-state.js';
@@ -1659,6 +1660,23 @@ export function createLeafEditor(options) {
       });
     },
     focus: () => view.focus(),
+    sectionMoveAllowed() {
+      return !reading && !view.state.readOnly && assertDocumentMutationAllowed(view) && !composition.status().pending;
+    },
+    moveSection(snapshot, generation, from, target, side) {
+      if (!this.sectionMoveAllowed() || snapshot !== view.state.doc || generation !== mutationDocumentGeneration) return false;
+      const plan = planSectionMove(snapshot.toString(), from, target, side);
+      if (!plan) return false;
+      const selection = view.state.selection;
+      const ranges = selection.ranges.map(r=>EditorSelection.range(plan.mapPosition(r.anchor,r.anchor>r.head?-1:1),plan.mapPosition(r.head,r.head>r.anchor?-1:1)));
+      const before = view.state.doc;
+      view.dispatch({changes:plan.changes, selection:EditorSelection.create(ranges,selection.mainIndex),
+        effects:EditorView.scrollIntoView(plan.heading,{y:'center'}),
+        userEvent:'move.section', annotations:isolateHistory.of('full')});
+      if (before === view.state.doc) return false;
+      view.focus();
+      return true;
+    },
     renameHeading(number, original, title) {
       if(!assertDocumentMutationAllowed(view))return false;
       if(number<1||number>view.state.doc.lines||!title.trim()||/[\r\n]/.test(title))return false;

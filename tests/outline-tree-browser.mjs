@@ -4,7 +4,7 @@ const browser=await chromium.launch(launchOptions);
 try {
  const page=await browser.newPage({viewport:{width:1100,height:800}}),errors=[];
  page.on('pageerror',e=>errors.push(e.message));
- await page.goto('http://127.0.0.1:41732');await page.click('#welcomeNewButton');
+ await page.goto((process.env.LEAF_TEST_BASE_URL || 'http://127.0.0.1:41732'));await page.click('#welcomeNewButton');
  const source='# 第一章\n\n正文不会折叠\n\n## 小节\n\n### 细节\n\n###### 跳级标题\n\n## 另一小节\n\n# 第二章\n\n## 小节\n\n尾段';
  await page.evaluate(async source=>{const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');window.v=EditorView.findFromDOM(document.querySelector('.cm-content'));v.dispatch({changes:{from:0,to:v.state.doc.length,insert:source},selection:{anchor:0}});},source);
  await page.click('#outlineButton');

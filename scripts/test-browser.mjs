@@ -11,7 +11,7 @@ const core = [
   'footnote-callout', 'callout-input', 'callout-caret', 'callout-caret-blink', 'callout-toolbar-persistence', 'callout-links', 'ai-notice-lock', 'footnote-rename', 'footnote-regressions', 'footnotes-print',
   'version-display', 'properties-insert-guard', 'image-drop', 'image-insertion', 'image-reveal', 'image-tooltips', 'image-drag',
   'paragraph-blank-lines', 'paragraph-input',
-  'body-fonts', 'outline-navigation', 'property-note-geometry',
+  'body-fonts', 'outline-navigation', 'outline-reorder', 'property-note-geometry',
   'comments', 'annotation-tabs', 'composition-state', 'desktop-updates',
   'ai-edit-lock', 'mcp-file-identity', 'mcp-comments', 'mcp-footnotes-tables', 'mcp-properties-markdown', 'mcp-panel',
   'list-images', 'clipboard-images',

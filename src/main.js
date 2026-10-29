@@ -1,3 +1,5 @@
+import {parseOutline} from './outline-sections.js';
+import {setupOutlineDrag} from './outline-drag.js';
 import {createDocumentReveal} from './document-reveal.js';
 import { t, h, aliases, currentLanguage, languagePreference, setLanguagePreference, onLanguageChange, refreshTranslations, setText, setAttr, message as translatedMessage } from './i18n.js';
 import { calloutBadge } from './callout-icons.js';
@@ -544,18 +546,8 @@ window.addEventListener('keydown', event => {
   runBodyZoom(action);
 }, true);
 
-function parseOutline(markdown) {
-  const result = [];
-  let fenced = false;
-  markdown.split('\n').forEach((line, index) => {
-    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
-    if (fenced) return;
-    const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
-    if (heading) result.push({ level: heading[1].length, text: heading[2], line: index + 1 });
-  });
-  return result;
-}
 
+const outlineDrag = setupOutlineDrag(outlineList, {editor:()=>editor, reading:()=>state.reading});
 const collapsedOutline = new Set();
 let outlineCursorLine = 1;
 let outlineFrame = 0;
@@ -640,11 +632,14 @@ function renderOutline(markdown = state.content) {
     const button = document.createElement('button');
     button.className = 'outline-item';
     button.dataset.line = item.line;
+    button.dataset.from = item.from;
+    button.draggable = true;
     button.dataset.level = item.level;
     button.style.setProperty('--level', item.level);
     button.textContent = item.text;
     setAttr(button, 'title', () => t("main.click_to_jump_double_click_to_rename_ui0152"));
     button.addEventListener('click', () => {
+      if(outlineDrag.suppressClick()) return;
       if(state.reading) reader.querySelector(`[data-source-line="${item.line}"]`)?.scrollIntoView({block:'start'});
       else editor.goToLine(item.line, { headingContent: true });
     });

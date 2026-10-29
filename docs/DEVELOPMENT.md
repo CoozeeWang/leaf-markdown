@@ -266,3 +266,5 @@ See [Desktop updates](DESKTOP_UPDATES.md) for the one-confirmation flow, multi-d
 光标闪烁回归 `callout-caret-blink-browser.mjs` 在真实获焦 Chromium/WebKit 中逐帧检查计算后的原生 caret-color 与深色／自绘光标像素，跨多个闪烁周期。保留 screenshot 的 `caret: initial`，否则测试框架会隐藏原生光标，掩盖双光标问题。后台 WKWebView 不具有真实窗口焦点，不能以其通过代替 `:focus` 级联或前台系统光标验证。CodeMirror 的生成主题会用 `.theme .cm-content :focus` 和 `!important` 恢复原生 caret-color；提示块自绘光标必须以更具体、仅限提示块的规则覆盖它。
 
 前台原生复验：Vite 服务启动后，使用 `swiftc tests/native-callout-blink.swift -o /tmp/leaf-wk-blink` 编译，再以测试页面 URL、截图输出目录及 `--foreground` 运行。该模式会短暂激活独立合成窗口，需先获用户同意；结束后关闭并恢复原应用焦点。随后 `node tests/check-callout-blink-frames.mjs <输出目录>` 核对 100 帧。工具仅调用 WKWebView 自身快照，不读取系统屏幕；后台、未完成、失焦或像素不符的记录不能算通过。实际中文输入法候选仍需人工验收。
+
+大纲章节排序由 `outline-sections.test.js` 与 `outline-reorder-browser.mjs` 覆盖：真实解析、重复／跳级标题、同父同级边界、原文与空行、无末尾换行、长大纲、选区、折叠、取消、过期拖动、一次撤销／重做和连续编辑。浏览器专项同时运行 Chromium／WebKit、中英文与真实鼠标拖动，编辑锁及 IME 使用合成事件；不代替安装版或真实输入法人工验收。排序、导航与树形专项支持 `LEAF_TEST_BASE_URL` 连接独立 Vite 服务，便于并行开发。
