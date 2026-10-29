@@ -49,3 +49,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Application-link policy and persistence
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf app_links::tests
+      - name: Resource path confinement
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf resources::tests
