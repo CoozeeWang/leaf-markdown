@@ -2,7 +2,7 @@ import { referenceTarget } from './reference-links.js';
 import { parser } from '@lezer/markdown';
 import { leafMarkdownExtensions } from './markdown-extensions.js';
 import { inlineTagSpans, isVoidInlineTag } from './inline-html.js';
-import { imageNode, safeTarget } from './resources.js';
+import { imageNode, safeLinkTarget } from './resources.js';
 import './writing.css';
 import {indexComments} from './comments.js';
 import {commentBubble} from './comment-view.js';
@@ -135,7 +135,7 @@ export function renderInline(target, text, footnotes, comments = {}) {
         container.className = 'leaf-inline-link';
         const url = node.getChild('URL');
         container.title = url ? text.slice(url.from, url.to) : referenceTarget(node, text, footnotes?.references) || '';
-        const target = safeTarget(container.title); if (target) container.dataset.leafLink = target;
+        const target = safeLinkTarget(container.title); if (target) container.dataset.leafLink = target;
       }
     }
     let position = node.from;

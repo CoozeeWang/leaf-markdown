@@ -252,3 +252,9 @@ src-tauri/target/debug/leaf --update-tracer-role-matrix
 ## Desktop update verification
 
 See [Desktop updates](DESKTOP_UPDATES.md) for the one-confirmation flow, multi-document preparation, trust and data-preservation boundaries, Mac helper fault matrix, and separate source, UI, native, installed, human and online evidence requirements. Full checks and packaging use the established complete environment or CI.
+
+### Application-link paste regression
+
+`app-links.test.js` and the native `app_links::tests` share synthetic URL fixtures: the verified Ripple Segment Dev v2 contract is accepted only as a link, never as an image/resource path. Unknown schemes, encoded payloads, credentials, extra fields and control characters remain rejected. Run `cargo test --locked --bin leaf app_links::tests` from `src-tauri`.
+
+`npm run test:browser -- app-links-browser.mjs writing-browser.mjs reference-links-browser.mjs` checks HTML paste in edit/source modes, named-link rendering, timestamp escaping and existing links. The app-link suite defaults to Chromium; use `LEAF_APP_LINK_ENGINE=webkit` for WebKit. Installed Chrome is available through `LEAF_BROWSER_CHANNEL=chrome`; `LEAF_REFERENCE_ENGINE=chromium` selects that engine for the reference suite when WebKit is unavailable. Report the engines actually tested. Routing tests mock native opening and never launch an application protocol; actual installed Leaf → Ripple navigation requires manual acceptance.
