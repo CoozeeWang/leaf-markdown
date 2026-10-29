@@ -1,4 +1,4 @@
-<!doctype html><html><meta charset="utf-8"><title>Loading</title><body><div id="fixture" style="position:fixed;inset:20px;overflow:auto;--editor-font-size:18px;--accent:rgb(255,0,0)"></div><script type="module">
+<!doctype html><html><meta charset="utf-8"><title>Loading</title><body><div role="status" style="position:fixed;top:0;left:0;right:0;z-index:100000;background:#fff8dc;color:#222;padding:8px;text-align:center;font:14px sans-serif">自动光标测试（约 20 秒）：请勿点击、输入或切换窗口。关闭窗口可取消。</div><div id="fixture" style="position:fixed;inset:48px 20px 20px;overflow:auto;--editor-font-size:18px;--accent:rgb(255,0,0)"></div><script type="module">
 import '/src/style.css';
 import {createLeafEditor} from '/src/editor.js';
 window.e=createLeafEditor({parent:document.querySelector('#fixture'),doc:'> [!note] Title\n> Alpha\n> \n> Bravo中文\n> \n> Charlie\n\n'});
