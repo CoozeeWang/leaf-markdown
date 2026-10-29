@@ -164,6 +164,22 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     event.clipboardData.setData(IMAGE_CLIPBOARD_TYPE,JSON.stringify({sourceLabel:getCurrentWindow().label,content}));
     event.preventDefault();event.stopImmediatePropagation();
   },true);
+  let internalTextDrag=false;
+  view.dom.addEventListener('dragstart',()=>{internalTextDrag=true;},true);
+  document.addEventListener('dragend',()=>{internalTextDrag=false;},true);
+  view.dispatch({effects:StateEffect.appendConfig.of(EditorView.domEventHandlers({drop(event){
+    // CodeMirror/imageDrag own internal moves and their source deletion/undo.
+    if(internalTextDrag || event.target.closest('input,textarea') || !canWrite())return;
+    const data=event.dataTransfer;
+    if(!data || data.files.length || [...data.types].includes('Files'))return;
+    const html=data.getData('text/html');
+    if(!html)return; // Plain text keeps CodeMirror's standard drop semantics.
+    const target=fileDropTarget(view,{x:event.clientX,y:event.clientY});
+    if(!target)return;
+    const b=remember({from:target.pos,to:target.pos});
+    try {insert(htmlToMarkdown(html),b,undefined,true);}finally{bookmarks.delete(b);}
+    return true;
+  }}))});
   view.dom.addEventListener('paste',event=>{
     if(event.target.closest('input,textarea')||!canWrite())return;
     let copied=null;

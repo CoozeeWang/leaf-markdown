@@ -2532,6 +2532,7 @@ window.addEventListener('beforeunload', (event) => {
 
 for (const eventName of ['dragenter', 'dragover']) {
   window.addEventListener(eventName, (event) => {
+    if(![...event.dataTransfer.types].includes('Files'))return;
     event.preventDefault();
     if(desktop)return; // Tauri supplies native paths and drag coordinates below.
     dropOverlay.classList.add('visible');
@@ -2541,6 +2542,7 @@ window.addEventListener('dragleave', (event) => {
   if (!event.relatedTarget) dropOverlay.classList.remove('visible');
 });
 window.addEventListener('drop', async (event) => {
+  if(![...event.dataTransfer.types].includes('Files'))return;
   event.preventDefault();
   if (desktop) return;
   dropOverlay.classList.remove('visible');

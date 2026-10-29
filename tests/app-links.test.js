@@ -12,10 +12,12 @@ test('verified application links remain links but never become resource paths or
 });
 test('explicit desktop opening uses native command with original URL; browser cannot navigate app protocols',async()=>{
  const calls=[];const invoke=async(...args)=>calls.push(args);const openWeb=(...args)=>calls.push(args);
- await openResourceLink(cases.valid[0],{desktop:true,invoke,openWeb});
- assert.deepEqual(calls,[['open_link',{target:cases.valid[0]}]]);
+ for(const url of cases.valid){
+ await openResourceLink(url,{desktop:true,invoke,openWeb});
+ assert.deepEqual(calls,[['open_link',{target:url}]]);
  calls.length=0;
- await assert.rejects(openResourceLink(cases.valid[0],{desktop:false,invoke,openWeb}));
+ await assert.rejects(openResourceLink(url,{desktop:false,invoke,openWeb}));
+ }
  for(const url of cases.invalid)await assert.rejects(openResourceLink(url,{desktop:true,invoke,openWeb}));
  assert.deepEqual(calls,[]);
 });

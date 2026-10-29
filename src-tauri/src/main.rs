@@ -15,6 +15,8 @@ mod pdf_output;
 #[cfg(target_os = "macos")]
 mod native_shortcuts;
 #[cfg(target_os = "macos")]
+mod native_text_drop;
+#[cfg(target_os = "macos")]
 mod native_title;
 mod atomic_file;
 mod recovery;
@@ -1563,6 +1565,14 @@ fn main() {
     let builder=builder.manage(update_test_driver::Driver::default());
     builder.manage(update_coordinator::UpdateCoordinator::default()).manage(AdmissionRegistry::default()).manage(mcp::LeafMcpBroker::default()).manage(OpenBuffers::default()).manage(Documents::default()).manage(DocumentAnchors::default()).manage(Exports::default()).manage(RecoveryState::default()).manage(MenuFocus::default())
         .plugin(tauri_plugin_dialog::init())
+        .on_page_load(|webview, _| {
+            #[cfg(target_os = "macos")]
+            let _ = webview.with_webview(|platform| unsafe {
+                native_text_drop::install(&*(platform.inner() as *const objc2::runtime::AnyObject));
+            });
+            #[cfg(not(target_os = "macos"))]
+            let _ = webview;
+        })
         .invoke_handler({
             let production: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> = Box::new(tauri::generate_handler![update_coordinator::update_close_disposition,update_coordinator::update_close_complete,ordinary_quit_cancelled,updates::update_status,updates::update_check,updates::update_close,updates::update_open_releases,updates::update_open_download,i18n::language_get, i18n::language_set, recovery_retention, recovery_expire, import_attachment, reveal_document, reveal_resource, export_bundle, read_resource, observe_document, relocate_document, copy_pasted_images, open_link, initial_path, new_document, open_document, read_document, write_document, rename_document, finish_title_rename, open_export, export_snapshot, print_export, show_comment_context, recovery_initial, recovery_checkpoint, recovery_list, recovery_read, recovery_delete, recovery_open, recent::recent_list, recent::recent_import, recent::recent_clear_missing, recent::recent_open]);
             move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
