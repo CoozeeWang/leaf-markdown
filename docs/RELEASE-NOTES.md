@@ -29,8 +29,8 @@ See the [installation guide](INSTALL.md) for system requirements and security pr
 ## Verification and publication boundary
 
 - Previous Mac/Windows candidates from `e92db721` exclude PRs #112/#115 and the callout paste follow-up. They are superseded and retained only as historical evidence.
-- Combined source and local Chromium/WebKit regressions passed; both platform candidates must be rebuilt from the final commit and signed again.
-- Acceptance of the previous Mac daily build `0d516f12` does not establish acceptance of this new code. Windows user installation remains deferred.
+- Final application source: `49841a3c1aba0e3ab59ddb1368b96918506afd37`. Source/native CI and local Chromium/WebKit regressions passed. PRs #112/#115 are merged; the callout paste follow-up is included in this preparation branch.
+- Mac 1.0.4 / `49841a3c` was rebuilt, signature-verified, installed with application/state backups and explicitly accepted by the user. Windows standard packaging and automated verification [passed](https://github.com/CoozeeWang/leaf-markdown/actions/runs/40893319389). Both installers passed checksum and detached-signature verification with the existing release public key. Windows user installation remains deferred.
 - No 1.0.4 tag, Release or public release assets have been created.
 
 [User guide](INSTALL.md) · [AI / MCP connections](AI_CONNECTIONS.md) · [Support Leaf](SUPPORT.md)

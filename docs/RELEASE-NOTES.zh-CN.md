@@ -29,8 +29,8 @@ Leaf 将 HTML 转为 Markdown，不承诺复制原软件的完整页面排版。
 ## 验证与发布边界
 
 - 旧源码 `e92db721` 的 Mac/Windows 候选包不含 #112/#115 及提示块粘贴补充修复，现已过时；保留为历史证据，不作为本轮交付。
-- 新组合代码的本地源码与 Chromium/WebKit 回归通过；需要基于最终提交重建双平台候选并重新签名。
-- 旧 Mac 日用 `0d516f12` 的用户验收不代表本轮新代码验收；Windows 用户实装继续延期。
+- 最终应用源码为 `49841a3c1aba0e3ab59ddb1368b96918506afd37`；源码／原生 CI 和本地 Chromium/WebKit 回归通过。PR #112/#115 已合并，提示块粘贴补充修复包含在本准备分支中。
+- Mac 1.0.4 / `49841a3c` 已重建、验签、备份应用及状态后安装，并获得用户明确验收通过。Windows 标准打包与自动验证[已通过](https://github.com/CoozeeWang/leaf-markdown/actions/runs/40893319389)。两平台安装包均已核对摘要并用既有发布公钥独立验签；Windows 用户实装继续延期。
 - 尚未创建 1.0.4 标签、Release 或公开发行附件。
 
 [使用说明](INSTALL.zh-CN.md) · [AI / MCP 连接](AI_CONNECTIONS.zh-CN.md) · [支持 Leaf](SUPPORT.md)

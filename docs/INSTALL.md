@@ -112,6 +112,8 @@ This section describes the upcoming 1.0.4. Download links above still point to r
 
 Use Copy as rich text (`⌘⇧C` on Mac, `Ctrl+Shift+C` on Windows) to supply formatted content and a readable plain-text fallback; the receiving application chooses a format. Ordinary copy is a separate action. Leaf converts incoming HTML to Markdown in both Edit and Source views, rather than preserving the original webpage layout. A plain-text-only source cannot supply a missing link target.
 
+A newly inserted callout has an empty body: title/body hints are placeholders, and existing words such as “Content” remain real text. Enter in the title moves into the body; Enter on its final empty ordinary paragraph exits the callout. Rich-text paste into a callout body also preserves validated named links, including a complete label such as “Filename, 00:00, (5)”, with one undo.
+
 Drop external rich text at a position in the body and undo the insertion in one step. Internal text moves, image imports and opening dropped Markdown files retain their existing behavior. Live preview hides valid escape markers away from the caret. Source view retains escapes such as `\[` to preserve literal brackets; the underlying file is unchanged.
 
 Valid Ripple v2 source links retain their named labels for production `ripple-transcript` and development `ripple-segment-dev`. Use Command-click on Mac or Ctrl-click on Windows in Edit view, or click in Reading view. Saving, pasting and dropping never launch another application. The matching Ripple application must be installed and its protocol registered. Other editors choose whether to retain or open these links. Existing web, email, anchor and relative-file links retain their behavior; arbitrary application schemes are not supported.
