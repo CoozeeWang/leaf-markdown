@@ -2,7 +2,7 @@
   "name": "leaf",
   "description": "一个轻量的 Markdown 编辑器",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "author": "CoozeeWang",
   "license": "MIT",
   "repository": {
