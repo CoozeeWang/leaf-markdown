@@ -8,7 +8,7 @@ const core = [
   'welcome', 'reading', 'app-links', 'rich-drop', 'reference-links', 'sidebars', 'platform-shortcuts', 'body-zoom', 'inline-format-shortcuts', 'table-edges', 'recovery', 'long-document', 'editor-focus-selection', 'editor-input-performance', 'writing', 'attachments', 'writing-structure-regressions',
   'highlight-band', 'inline-format', 'selection-compositing', 'selection-edges', 'quote-selection',
   'footnote-region', 'footnote-insert', 'footnote-history', 'footnote-live-preview', 'footnote-definition-format', 'footnote-panel', 'footnote-sidebar-modes', 'footnote-input-performance', 'footnote-auto-delete', 'footnote-completion',
-  'footnote-callout', 'callout-input', 'callout-toolbar-persistence', 'callout-links', 'ai-notice-lock', 'footnote-rename', 'footnote-regressions', 'footnotes-print',
+  'footnote-callout', 'callout-input', 'callout-caret', 'callout-toolbar-persistence', 'callout-links', 'ai-notice-lock', 'footnote-rename', 'footnote-regressions', 'footnotes-print',
   'version-display', 'properties-insert-guard', 'image-drop', 'image-insertion', 'image-reveal', 'image-tooltips', 'image-drag',
   'paragraph-blank-lines', 'paragraph-input',
   'body-fonts', 'outline-navigation', 'property-note-geometry',

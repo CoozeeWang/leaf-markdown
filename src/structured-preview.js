@@ -18,6 +18,7 @@ import { tableOperation, tableShortcut } from './table-operations.js';
 import { tableEdgeControls } from './table-edge-controls.js';
 import { calloutEnter } from './callout-enter.js';
 import { htmlToMarkdown } from './html-markdown.js';
+import { textareaCaret } from './textarea-caret.js';
 
 export const toggleFileNameTitle = StateEffect.define();
 export const fileNameTitle = StateField.define({create:()=>true,update:(value,tr)=>tr.effects.reduce((v,e)=>e.is(toggleFileNameTitle)?e.value:v,value)});
@@ -328,8 +329,10 @@ class StructuredBlock extends WidgetType {
       });
       if (field === 'title') wrap.append(typeControl);
       wrap.append(preview, input); box.append(wrap);
-      controls.push({field, preview, input});
+      const caret = textareaCaret(input);
+      controls.push({field, preview, input, caret});
     }
+    root._destroyCalloutCarets = () => controls.forEach(control => control.caret.destroy());
     root._syncCallout = () => {
       const b = root._widget.block; box.dataset.type = b.type;
       // A callout's words are drawn from a text area, so the citation pass never
@@ -339,7 +342,7 @@ class StructuredBlock extends WidgetType {
       const notes = { ...footnoteReader(view.state), references: root._widget.references };
       typeMenu.value = b.type;
       typeIcon.innerHTML = calloutBadge(b.type);
-      for (const {field, preview, input} of controls) {
+      for (const {field, preview, input, caret} of controls) {
         const value = field === 'title' ? b.customTitle : b.body;
         if (input.value !== value) input.value = value;
         if (field === 'title') setAttr(input, 'placeholder', () => calloutLabels[root._widget.block.type]);
@@ -347,6 +350,7 @@ class StructuredBlock extends WidgetType {
         if (field === 'title') renderInline(preview, b.title, notes);
         else renderPrintDocument(preview, b.body, {fallbackTitle:false, expandCallouts:false, footnotes: notes});
         if (!preview.textContent) setText(preview, () => field === 'title' ? t("structured_preview.title") : t("structured_preview.enter_content"));
+        caret.update();
       }
     };
     root._syncCallout();
@@ -495,7 +499,7 @@ class StructuredBlock extends WidgetType {
     root.append(after);
   }
   ignoreEvent() { return true; }
-  destroy(dom) { const root=dom.firstElementChild; root?._resizeObserver?.disconnect(); root?._heightObserver?.disconnect(); }
+  destroy(dom) { const root=dom.firstElementChild; root?._resizeObserver?.disconnect(); root?._heightObserver?.disconnect(); root?._destroyCalloutCarets?.(); }
 }
 
 function leaveTable(root, view, before = false) {

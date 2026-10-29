@@ -23,6 +23,8 @@ macOS 原生字体检查使用独立 WKWebView：在 `src-tauri` 运行 `cargo r
 
 `npm run test:browser:all` 运行全部浏览器回归，包含公开合成的长表格样例。`npm run test:browser -- footnote-regressions-browser.mjs` 运行指定用例。入口自行管理 Vite，截图存放在忽略提交的 `test-results/`。可设置 `LEAF_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，默认使用锁定的 Chromium。不能将浏览器平台模拟算作原生 Windows 验收。
 
+`callout-caret-browser.mjs` 检查提示块原生输入框的视觉光标：三档字号、中文混排、空行、自动折行、选区、滚动、正文缩放、输入撤销、组合输入生命周期及销毁清理。配套 `native-callout-caret.html` 可由现有 `native-table-keys` 示例在独立后台 WKWebView 中运行；不需要 `--foreground`。这些合成组合输入检查不替代真实中文输入法候选窗口验收。正文仍由原生 textarea 接收输入；视觉测量失败、选区或组合输入期间使用原生光标，不改字号、行距或保存数据。
+
 The runner owns its Vite server on port 41732 and fails if that port is occupied. It runs pinned Chromium by default. Screenshots are written to ignored `test-results/`. Browser platform emulation does not replace native Windows testing.
 
 `editor-focus-selection-browser.mjs` checks both engines for source-marker focus transfer and real cross-callout selection pixels, copy boundaries, folded blocks, deletion and undo in light/dark themes and multiple font scales. `editor-input-performance-browser.mjs` compares cold versus incremental parsing on 16k/64k/128k synthetic mixed documents, verifies exact ordinary and callout-body input, and writes `test-results/editor-input-performance.json`. Its timing comparisons are diagnostics, not machine-independent thresholds or installed-app key-to-paint acceptance. `incremental-parse.test.js` compares edited trees against cold parses, including comments, fences, references, Unicode and CRLF.
