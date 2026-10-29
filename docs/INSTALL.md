@@ -126,6 +126,8 @@ The Mac daily fix build has user acceptance. Windows build checks and automated 
 
 The outline shows the document's heading hierarchy. Click a heading to jump to that section. If a section is missing, check that its title uses heading formatting.
 
+In Edit or Source view, drag an outline heading before or after a heading at the same level under the same parent. The entire section, including child sections, moves with it; one undo restores the previous order. Reading view does not allow reordering.
+
 ### Footnote sidebar
 
 Place the cursor where you want a reference, use **Insert Footnote** or its shortcut, and enter the note. A marker in the body points to the footnote; the sidebar lets you review and edit notes beside the text. All footnotes are also available at the end of the document.
