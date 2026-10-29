@@ -1,6 +1,8 @@
 import { parser } from '@lezer/markdown';
 import { leafMarkdownExtensions } from './markdown-extensions.js';
+import {incrementalParser} from './incremental-parse.js';
 const markdown = parser.configure(leafMarkdownExtensions);
+const parse = incrementalParser(markdown);
 const cache = new WeakMap();
 export const normalizeReferenceLabel = label => label.trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -8,7 +10,7 @@ export const normalizeReferenceLabel = label => label.trim().replace(/\s+/g, ' '
 export function referenceLinks(document) {
   if (typeof document === 'object' && cache.has(document)) return cache.get(document);
   const source = String(document), map = new Map();
-  markdown.parse(source).iterate({ enter(node) {
+  if (source.includes(']:')) parse(source).iterate({ enter(node) {
     if (node.name !== 'LinkReference') return;
     const label = node.node.getChild('LinkLabel'), url = node.node.getChild('URL');
     if (!label || !url) return;

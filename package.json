@@ -31,6 +31,7 @@
     "@codemirror/search": "^6.5.10",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.5",
+    "@lezer/common": "1.5.2",
     "@lezer/highlight": "^1.2.1",
     "@lezer/markdown": "^1.7.2",
     "@modelcontextprotocol/client": "2.3.1",
