@@ -25,7 +25,8 @@ Leaf 将 HTML 转为 Markdown，不承诺复制原软件的完整页面排版。
 ## 验证与发布边界
 
 - 本轮修复已合入 main（PR #120、#121）；用户确认 Mac 日用修复构建 `0d516f12` 验收通过。该构建的产品版本为 1.0.3，不冒充已发布的 1.0.4 安装包。
-- 1.0.4 Windows 安装包与自动验证正在准备。Windows 用户安装、真实跨应用拖放与回跳仍待验收；没有从 Mac 结果推断 Windows 或全部语言／系统版本通过。
+- Windows x64 候选包已由提交 `e92db721ca87dbc22442b5e55d215d1c03363576` 构建；[完整 Windows 作业](https://github.com/CoozeeWang/leaf-markdown/actions/runs/40879620840)通过源码、浏览器、原生、MCP、实际安装集成与 PDF 检查。下载归档和安装器 SHA-256 已核对，安装器版本为 1.0.4.0。Actions 产物保留至 2026-11-05 13:29 UTC，不是公开 Release 附件。
+- Windows 用户安装、真实跨应用拖放与回跳仍待验收；不从 Mac 或自动检查结果推断全部语言／系统版本通过。1.0.4 Mac 发布 DMG 尚待制作和核对，现有日用包不能直接冒充新版本发布包。
 - 发布前核对最终提交、双平台产物身份、SHA-256、现有发布密钥签名和下载名称；当前没有创建 1.0.4 tag、Release 或公开附件。
 
 [使用说明](INSTALL.zh-CN.md) · [AI / MCP 连接](AI_CONNECTIONS.zh-CN.md) · [支持 Leaf](SUPPORT.md)

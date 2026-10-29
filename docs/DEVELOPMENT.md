@@ -255,7 +255,7 @@ See [Desktop updates](DESKTOP_UPDATES.md) for the one-confirmation flow, multi-d
 
 ### Application-link paste regression
 
-`app-links.test.js` and the native `app_links::tests` share synthetic URL fixtures: the verified Ripple Segment Dev v2 contract is accepted only as a link, never as an image/resource path. Unknown schemes, encoded payloads, credentials, extra fields and control characters remain rejected. Run `cargo test --locked --bin leaf app_links::tests` from `src-tauri`.
+`app-links.test.js` and the native `app_links::tests` share synthetic URL fixtures: the verified Ripple production (`ripple-transcript`) and development (`ripple-segment-dev`) v2 contracts are accepted only as links, never as image/resource paths. Unknown schemes, encoded payloads, credentials, extra fields and control characters remain rejected. Run `cargo test --locked --bin leaf app_links::tests` from `src-tauri`.
 
 `npm run test:browser -- app-links-browser.mjs writing-browser.mjs reference-links-browser.mjs` checks HTML paste in edit/source modes, named-link rendering, timestamp escaping and existing links. The app-link suite defaults to Chromium; use `LEAF_APP_LINK_ENGINE=webkit` for WebKit. Installed Chrome is available through `LEAF_BROWSER_CHANNEL=chrome`; `LEAF_REFERENCE_ENGINE=chromium` selects that engine for the reference suite when WebKit is unavailable. Report the engines actually tested. Routing tests mock native opening and never launch an application protocol; actual installed Leaf → Ripple navigation requires manual acceptance.
 

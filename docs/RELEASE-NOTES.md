@@ -25,7 +25,8 @@ See the [installation guide](INSTALL.md) for system requirements and security pr
 ## Verification and publication boundary
 
 - The fixes are merged in main through PRs #120 and #121. The user accepted Mac daily fix build `0d516f12`, whose product version is 1.0.3; this does not represent acceptance of a published 1.0.4 package.
-- Windows 1.0.4 packaging and automated verification are being prepared. User installation and actual Windows cross-application drag/link opening remain pending. Mac results do not establish Windows or all language/OS combinations.
+- The Windows x64 candidate was built from `e92db721ca87dbc22442b5e55d215d1c03363576`. The [full Windows workflow](https://github.com/CoozeeWang/leaf-markdown/actions/runs/40879620840) passed source, browser, native, MCP, actual installer integration and PDF checks. Download/archive checksums match; installer file/product version is 1.0.4.0. Actions artifacts expire on 2026-11-05 at 13:29 UTC and are not Release assets.
+- Windows user installation and actual cross-application drag/link opening remain pending. Automated checks do not establish all language/OS combinations. A 1.0.4 Mac release DMG still needs to be built and verified; the accepted daily build is not a substitute for that new-version package.
 - Before publication, verify the final source, both platform artifacts, SHA-256, signatures using the existing release key, and final asset names. No 1.0.4 tag, Release or public release assets have been created.
 
 [User guide](INSTALL.md) · [AI / MCP connections](AI_CONNECTIONS.md) · [Support Leaf](SUPPORT.md)
