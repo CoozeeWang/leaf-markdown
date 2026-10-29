@@ -17,6 +17,7 @@ import { shortcutText } from './platform-shortcuts.js';
 import { tableOperation, tableShortcut } from './table-operations.js';
 import { tableEdgeControls } from './table-edge-controls.js';
 import { calloutEnter } from './callout-enter.js';
+import { htmlToMarkdown } from './html-markdown.js';
 
 export const toggleFileNameTitle = StateEffect.define();
 export const fileNameTitle = StateField.define({create:()=>true,update:(value,tr)=>tr.effects.reduce((v,e)=>e.is(toggleFileNameTitle)?e.value:v,value)});
@@ -268,6 +269,16 @@ class StructuredBlock extends WidgetType {
       });
       input.addEventListener('focus', resize);
       input.addEventListener('blur', () => { wrap.classList.remove('is-editing'); view.requestMeasure(); });
+      if (field === 'body') input.addEventListener('paste', event => {
+        const html = event.clipboardData?.getData('text/html');
+        if (!html || event.clipboardData.files.length) return;
+        event.preventDefault(); event.stopPropagation();
+        if (view.assertDocumentMutationAllowed?.() === false) return;
+        // The body is Markdown, even though its editor is a native textarea.
+        // Use the same safe HTML conversion as ordinary document paste.
+        input.setRangeText(htmlToMarkdown(html), input.selectionStart, input.selectionEnd, 'end');
+        input.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertFromPaste'}));
+      });
       input.addEventListener('keydown', event => {
         if (event.isComposing || event.keyCode === 229) return;
         const b = root._widget.block;
@@ -312,7 +323,7 @@ class StructuredBlock extends WidgetType {
           lines[0] = lines[0].replace(/(\[![\w-]+\][+-]?)[^\r\n]*$/, (_, marker) => marker + ' ' + input.value.replace(/\r?\n/g, ' '));
           insert = lines.join(newline);
         } else insert = lines[0] + newline + input.value.split(/\r?\n/).map(line => '> ' + line).join(newline);
-        edit(view, {from:b.from, to:b.to, insert}, event.inputType === 'deleteByCut' ? 'delete.cut' : 'input');
+        edit(view, {from:b.from, to:b.to, insert}, event.inputType === 'deleteByCut' ? 'delete.cut' : event.inputType === 'insertFromPaste' ? 'input.paste' : 'input');
         if (input.isConnected) { input.setSelectionRange(...caret); resize(); }
       });
       if (field === 'title') wrap.append(typeControl);
