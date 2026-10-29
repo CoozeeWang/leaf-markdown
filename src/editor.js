@@ -474,6 +474,12 @@ function livePreviewDecorations(view) {
         return false;
       }
 
+      // A parsed Markdown escape is source syntax, not a visible backslash.
+      // Keep it editable at the caret and untouched in code/source mode.
+      if (node.name === 'Escape' && !caretInRange(view.state, node.from, node.to)) {
+        ranges.push(Decoration.replace({}).range(node.from, node.from + 1));
+      }
+
       // Delimiters stay hidden unless the caret is inside the construct they
       // belong to, so the rest of the line keeps its styling while you type.
       if (['HeaderMark', 'EmphasisMark', 'StrikethroughMark', 'CodeMark', 'LeafHighlightMark'].includes(node.name) && !caretInParent(view.state, node)) {
@@ -1297,6 +1303,7 @@ export function createLeafEditor(options) {
       bracketMatching(),
       markdown({ extensions: leafMarkdownExtensions, addKeymap: false }),
       sourceMode,
+      noteFocus,
       commentIndex,
       commentDecorations,
       commentLocation,
@@ -1322,6 +1329,8 @@ export function createLeafEditor(options) {
       // macOS Option+number produces symbols (e.g. ¡), not event.key "1".
       // Match the physical number row, without intercepting IME composition.
       EditorView.domEventHandlers({
+        focus(_event, view) { view.dispatch({effects:setNoteFocus.of(true)}); return false; },
+        blur(_event, view) { view.dispatch({effects:setNoteFocus.of(false)}); return false; },
         compositionstart(_event, view) { prepareBodyLine(view); return false; },
         paste(_event, view) { prepareBodyLine(view); return false; },
         copy(event, view) {

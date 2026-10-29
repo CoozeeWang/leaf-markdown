@@ -1,7 +1,9 @@
 .leaf-callout { --callout-ink: #16634b; --callout-fill: #eef5f0; border-left: 3px solid var(--callout-ink); border-radius: 7px; background: var(--callout-fill); margin: 1em 0; padding: 12px 16px; color: var(--text, #353b38); overflow-wrap: anywhere; }
 .leaf-callout-widget { font-size: var(--editor-font-size); }
 .leaf-callout-widget > .leaf-callout { margin: 0; }
-.leaf-callout-widget.leaf-block-selected > .leaf-callout { outline: 2px solid var(--accent, #16634b); outline-offset: 2px; }
+.leaf-callout-widget.leaf-block-selected > .leaf-callout { position: relative; }
+.leaf-callout-widget.leaf-block-selected > .leaf-callout::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--accent, #16634b); opacity: .28; pointer-events: none; }
+.leaf-callout-widget.leaf-block-selected:has(textarea:focus) > .leaf-callout::after { display: none; }
 .leaf-callout-widget .leaf-callout-title { position: relative; display: flex; align-items: center; gap: 8px; min-height: 1.6em; margin: -12px -16px 10px; padding: 10px 16px 9px; background: color-mix(in srgb, var(--callout-ink) 10%, var(--callout-fill)); }
 .leaf-callout-type-control { position: relative; flex: 0 0 22px; width: 22px; height: 1.6em; display: inline-flex; align-items: center; justify-content: center; }
 .leaf-callout-type-control select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }

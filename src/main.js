@@ -995,7 +995,6 @@ const editor = createLeafEditor({
       statusNotices.announce(translatedMessage(pending?'ai.task_pending_save':'ai.task_ended'));
     }
     if(task){
-      const text=notice.querySelector('span');text.className='ai-task-copy';
       if(!notice.querySelector('.ai-task-lock')){const lock=document.createElement('span');lock.className='ai-task-lock';lock.setAttribute('aria-hidden','true');lock.innerHTML=icon('lock',16);notice.prepend(lock);}
       notice.querySelector('button').disabled=false;
     }
@@ -2532,6 +2531,7 @@ window.addEventListener('beforeunload', (event) => {
 
 for (const eventName of ['dragenter', 'dragover']) {
   window.addEventListener(eventName, (event) => {
+    if(![...event.dataTransfer.types].includes('Files'))return;
     event.preventDefault();
     if(desktop)return; // Tauri supplies native paths and drag coordinates below.
     dropOverlay.classList.add('visible');
@@ -2541,6 +2541,7 @@ window.addEventListener('dragleave', (event) => {
   if (!event.relatedTarget) dropOverlay.classList.remove('visible');
 });
 window.addEventListener('drop', async (event) => {
+  if(![...event.dataTransfer.types].includes('Files'))return;
   event.preventDefault();
   if (desktop) return;
   dropOverlay.classList.remove('visible');

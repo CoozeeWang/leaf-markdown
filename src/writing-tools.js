@@ -1,9 +1,10 @@
+import { openResourceLink } from './link-opening.js';
 import { t, setAttr, message as translatedMessage } from './i18n.js';
 import { StateEffect } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import { isolateHistory } from '@codemirror/commands';
-import { safeTarget, markdownLink, setResourceReader, setResourceRevealer, refreshImages } from './resources.js';
+import { safeLinkTarget, markdownLink, setResourceReader, setResourceRevealer, refreshImages } from './resources.js';
 import { bodyStart } from './markdown-model.js';
 import { fileDropTarget } from './file-drop.js';
 import { attachmentInsertion } from './attachment-insertion.js';
@@ -163,6 +164,22 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     event.clipboardData.setData(IMAGE_CLIPBOARD_TYPE,JSON.stringify({sourceLabel:getCurrentWindow().label,content}));
     event.preventDefault();event.stopImmediatePropagation();
   },true);
+  let internalTextDrag=false;
+  view.dom.addEventListener('dragstart',()=>{internalTextDrag=true;},true);
+  document.addEventListener('dragend',()=>{internalTextDrag=false;},true);
+  view.dispatch({effects:StateEffect.appendConfig.of(EditorView.domEventHandlers({drop(event){
+    // CodeMirror/imageDrag own internal moves and their source deletion/undo.
+    if(internalTextDrag || event.target.closest('input,textarea') || !canWrite())return;
+    const data=event.dataTransfer;
+    if(!data || data.files.length || [...data.types].includes('Files'))return;
+    const html=data.getData('text/html');
+    if(!html)return; // Plain text keeps CodeMirror's standard drop semantics.
+    const target=fileDropTarget(view,{x:event.clientX,y:event.clientY});
+    if(!target)return;
+    const b=remember({from:target.pos,to:target.pos});
+    try {insert(htmlToMarkdown(html),b,undefined,true);}finally{bookmarks.delete(b);}
+    return true;
+  }}))});
   view.dom.addEventListener('paste',event=>{
     if(event.target.closest('input,textarea')||!canWrite())return;
     let copied=null;
@@ -232,9 +249,9 @@ export function setupWriting({ editor, desktop, invoke, save, choose, serialized
     if(link.closest('.reading-document'))void openTarget(link.dataset.leafLink);
   });
   async function openTarget(raw){
-    try{const target=safeTarget(raw);if(!target)throw new Error(t("writing_tools.this_link_is_not_supported"));
+    try{const target=safeLinkTarget(raw);if(!target)throw new Error(t("writing_tools.this_link_is_not_supported"));
       if(target.startsWith('#')){const name=decodeURIComponent(target.slice(1));const headings=editor.view.state.doc.toString().split('\n');const slug=s=>s.toLowerCase().replace(/[^\p{L}\p{N}_ -]/gu,'').trim().replace(/ +/g,'-');const line=headings.findIndex(l=>/^#{1,6}\s/.test(l)&&(slug(l.replace(/^#+\s*/,''))===name||l.replace(/^#+\s*/,'')===name));if(line>=0){document.dispatchEvent(new CustomEvent('leaf-heading-link',{detail:line+1}));}else throw new Error(t("writing_tools.heading_not_found_in_this_document"));return;}
-      if(desktop)await invoke('open_link',{target:/^https?:|^mailto:/i.test(target)?target:decodeURIComponent(target)});else if(/^https?:|^mailto:/i.test(target))window.open(target,'_blank','noopener,noreferrer');else throw new Error(t("writing_tools.open_relative_file_links_in_the_desktop"));
+      try { await openResourceLink(target,{desktop,invoke,openWeb:(...args)=>window.open(...args)}); } catch(error) { throw new Error(t(error.message)); }
     }catch(error){status(translatedMessage("writing_tools.could_not_open_the_link", {"error": error.message||error}),'error');}
   }
   return {attachments,editLink,copyRich,pastePlain};

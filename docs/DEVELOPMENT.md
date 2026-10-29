@@ -25,6 +25,8 @@ macOS 原生字体检查使用独立 WKWebView：在 `src-tauri` 运行 `cargo r
 
 The runner owns its Vite server on port 41732 and fails if that port is occupied. It runs pinned Chromium by default. Screenshots are written to ignored `test-results/`. Browser platform emulation does not replace native Windows testing.
 
+`editor-focus-selection-browser.mjs` checks both engines for source-marker focus transfer and real cross-callout selection pixels, copy boundaries, folded blocks, deletion and undo in light/dark themes and multiple font scales. `editor-input-performance-browser.mjs` compares cold versus incremental parsing on 16k/64k/128k synthetic mixed documents, verifies exact ordinary and callout-body input, and writes `test-results/editor-input-performance.json`. Its timing comparisons are diagnostics, not machine-independent thresholds or installed-app key-to-paint acceptance. `incremental-parse.test.js` compares edited trees against cold parses, including comments, fences, references, Unicode and CRLF.
+
 浏览器与原生异步回归应等待实际字体加载、布局稳定、编辑区可编辑及原生窗口可见等所需状态，不用固定延时代替就绪判断。平台按键使用运行系统的真实 OS 语义；修改平台标识不能改变宿主的按键行为。字体的本机 face 能力须独立探测：Chromium／macOS WebKit 可用时要求真实粗体、斜体字形；Windows Cairo 不支持相应 face 时仍检查实际字形回退，不跳过该回归。脚注搜索与浮框选择须核对文档身份、选区和历史保护；延迟附件回调须重新核对目标文档与授权，关闭、切换文档或撤权后不得写入错误文档或越过授权边界。
 
 Async browser and native regressions wait for actual font, layout, editability and native visibility readiness instead of fixed delays. Use the host OS keyboard semantics and probe local font-face capabilities independently. Require real bold/italic faces when available in Chromium and macOS WebKit; when Windows Cairo lacks a face, verify the actual glyph fallback without skipping the regression. Footnote search and popover selection must preserve document identity, selection and history; delayed attachment callbacks must recheck the target document and authorization before writing.
@@ -250,3 +252,11 @@ src-tauri/target/debug/leaf --update-tracer-role-matrix
 ## Desktop update verification
 
 See [Desktop updates](DESKTOP_UPDATES.md) for the one-confirmation flow, multi-document preparation, trust and data-preservation boundaries, Mac helper fault matrix, and separate source, UI, native, installed, human and online evidence requirements. Full checks and packaging use the established complete environment or CI.
+
+### Application-link paste regression
+
+`app-links.test.js` and the native `app_links::tests` share synthetic URL fixtures: the verified Ripple Segment Dev v2 contract is accepted only as a link, never as an image/resource path. Unknown schemes, encoded payloads, credentials, extra fields and control characters remain rejected. Run `cargo test --locked --bin leaf app_links::tests` from `src-tauri`.
+
+`npm run test:browser -- app-links-browser.mjs writing-browser.mjs reference-links-browser.mjs` checks HTML paste in edit/source modes, named-link rendering, timestamp escaping and existing links. The app-link suite defaults to Chromium; use `LEAF_APP_LINK_ENGINE=webkit` for WebKit. Installed Chrome is available through `LEAF_BROWSER_CHANNEL=chrome`; `LEAF_REFERENCE_ENGINE=chromium` selects that engine for the reference suite when WebKit is unavailable. Report the engines actually tested. Routing tests mock native opening and never launch an application protocol; actual installed Leaf → Ripple navigation requires manual acceptance.
+
+富文本拖放回归：`npm run test:browser -- rich-drop-browser.mjs` 在 Chromium/WebKit 检查落点、一次撤销、源码模式、内部移动及转义字符显示。macOS 使用 `cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf native_text_drop::tests -- --test-threads=1` 验证文本与文件路由，再运行 `cargo run --locked --manifest-path src-tauri/Cargo.toml --example native-text-drop` 检查隐藏非持久真实 WebView。测试不读取系统剪贴板内容、不打开应用协议，也不替代安装版真实跨应用拖放验收。升级 Wry 时需重新核对其 Objective-C 视图层级。

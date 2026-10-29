@@ -34,6 +34,7 @@ const recentIndexes = new Map();
 export function indexFootnotes(text, tree) {
   const reusable = tree === undefined;
   if (reusable && recentIndexes.has(text)) return recentIndexes.get(text);
+  if (!text.includes('[^')) return {notes:[], warnings:[], definitions:[]};
   tree ??= parseMarkdown(text);
   const lines = linesOf(text);
   // Definitions are scanned against fences only. An indented continuation line

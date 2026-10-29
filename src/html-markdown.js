@@ -1,4 +1,4 @@
-import { markdownLink, safeTarget } from './resources.js';
+import { markdownLink, safeLinkTarget } from './resources.js';
 const escape = text => text.replace(/([\\`*_\[\]])/g, '\\$1');
 export function htmlToMarkdown(html) {
   const blocks = [];
@@ -36,7 +36,7 @@ export function htmlToMarkdown(html) {
     if (tag === 'strong' || tag === 'b') return `**${text.trim()}**`;
     if (tag === 'em' || tag === 'i') return `*${text.trim()}*`;
     if (tag === 'del' || tag === 's') return `~~${text.trim()}~~`;
-    if (tag === 'a') { const url=safeTarget(node.getAttribute('href')); return url ? markdownLink(node.textContent,url) : text; }
+    if (tag === 'a') { const url=safeLinkTarget(node.getAttribute('href')); return url ? markdownLink(node.textContent,url) : text; }
     if (tag === 'img') return escape(node.getAttribute('alt') || '');
     if (tag === 'blockquote') return '\n\n' + text.trim().split('\n').map(l=>'> '+l).join('\n') + '\n\n';
     if (tag === 'hr') return '\n\n---\n\n';
