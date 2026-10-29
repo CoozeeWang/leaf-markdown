@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile,writeFile,mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {chromium,webkit} from 'playwright';
 import {nativePage} from './ai-browser-fixture.mjs';
 const cases=JSON.parse(await readFile(new URL('./app-link-cases.json',import.meta.url)));
+const directory=await mkdtemp(join(tmpdir(),'leaf-callout-links-'));
+try {
 for(const engine of [chromium,webkit]) {
  const browser=await engine.launch({headless:true});
  try {
@@ -33,7 +37,9 @@ for(const engine of [chromium,webkit]) {
     const saved=await source();
     await body.press('ControlOrMeta+z');
     assert.equal(await body.inputValue(),'Before replace after','one undo restores body');
-    await load(saved);await body.blur();
+    const file=join(directory,`${engine.name()}-${os}.md`);
+    await writeFile(file,saved,'utf8');
+    await load(await readFile(file,'utf8'));await body.blur();
     const link=page.locator('.leaf-callout-body [data-leaf-link]');
     assert.equal(await link.getAttribute('data-leaf-link'),url);
     assert.equal(await link.innerText(),'合成访谈');
@@ -63,3 +69,4 @@ for(const engine of [chromium,webkit]) {
   }
  } finally {await browser.close();}
 }
+} finally {await rm(directory,{recursive:true,force:true});}
