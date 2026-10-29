@@ -19,6 +19,7 @@ mod native_title;
 mod atomic_file;
 mod recovery;
 mod resources;
+mod app_links;
 mod document_location;
 mod recent;
 mod new_markdown;
@@ -578,7 +579,7 @@ fn copy_pasted_images(window: tauri::WebviewWindow, docs: tauri::State<Documents
 #[tauri::command(async)]
 fn open_link(app: tauri::AppHandle, window: tauri::WebviewWindow, target: String) -> Result<(), String> {
     let lower = target.to_ascii_lowercase();
-    let external = lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:");
+    let external = app_links::is_supported(&target) || lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:");
     let destination = if external {
         if target.chars().any(|c| c.is_control()) { return Err(crate::i18n::error("main.invalid_link", serde_json::json!({})).into()); }
         target

@@ -1,3 +1,4 @@
+import { safeAppLink } from './app-links.js';
 import { t, setText, setAttr, formatError } from './i18n.js';
 import { uiIcon } from './ui-icons.js';
 import { positionMenu } from './menu-position.js';
@@ -17,6 +18,9 @@ export function loadedLocalImagePaths(root = document) {
     .map(decodeURIComponent))];
 }
 export function setMovedMissingImages(paths = []) { movedMissing = new Set(paths); }
+export function safeLinkTarget(value) {
+  return safeAppLink(value) || safeTarget(value);
+}
 export function safeTarget(value, image = false) {
   let target = String(value || '').trim().replace(/^<|>$/g, '');
   if (/[\u0000-\u001f\u007f]/.test(target)) return null;
@@ -271,6 +275,6 @@ export async function waitForImages(root, { allowPlaceholders = false } = {}) {
   if (!allowPlaceholders && root.querySelector('img[data-failure="missing"], img[data-failure="broken"]')) throw new Error(t("resources.some_images_could_not_be_loaded_check"));
 }
 export function markdownLink(label, path, image = false) {
-  const url = safeTarget(path, image); if (!url) throw new Error(t("resources.enter_a_web_address_email_address_heading"));
+  const url = image ? safeTarget(path, true) : safeLinkTarget(path); if (!url) throw new Error(t("resources.enter_a_web_address_email_address_heading"));
   return `${image ? '!' : ''}[${label.replace(/[\\\[\]]/g, '\\$&').replace(/\r?\n/g, ' ')}](${url.replace(/[()]/g, c => c === '(' ? '%28' : '%29')})`;
 }

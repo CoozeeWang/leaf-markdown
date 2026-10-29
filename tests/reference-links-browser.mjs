@@ -1,7 +1,7 @@
 import { chromium, webkit } from 'playwright';
 import assert from 'node:assert/strict';
-for (const engine of [chromium, webkit]) {
-  const browser = await engine.launch({headless:true});
+for (const engine of [chromium, webkit].filter(engine => !process.env.LEAF_REFERENCE_ENGINE || engine.name() === process.env.LEAF_REFERENCE_ENGINE)) {
+  const browser = await engine.launch({headless:true,...(engine === chromium && process.env.LEAF_BROWSER_CHANNEL ? {channel:process.env.LEAF_BROWSER_CHANNEL} : {})});
   try {
     const page = await browser.newPage({locale:'zh-CN'}), errors=[];
     page.on('pageerror', error=>errors.push(error.message));

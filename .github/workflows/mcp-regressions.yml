@@ -14,6 +14,8 @@ on:
       - 'src-tauri/src/mcp*.rs'
       - 'src-tauri/src/ai_credentials.rs'
       - 'src-tauri/src/main.rs'
+      - 'src-tauri/src/app_links.rs'
+      - 'tests/app-link-cases.json'
       - 'src-tauri/src/bin/leaf-mcp-adapter.rs'
       - 'scripts/test-mcp*.mjs'
       - 'tests/ai-task-lifecycle.test.js'
