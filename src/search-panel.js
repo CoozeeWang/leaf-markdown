@@ -90,6 +90,7 @@ export class LeafSearchPanel {
     if (result.textContent !== message) result.textContent = message;
     this.field('search').setAttribute('aria-invalid', String(!!query.search && !query.valid));
     for (const name of ['prev', 'next', 'select', 'replace', 'replaceAll']) this.button(name).disabled = !total || (name.startsWith('replace') && state.readOnly) || (name === 'select' && total > 1000);
+    this.button('select').dataset.tooltipKind=total>1000?'operation':'control';
     setAttr(this.button('select'), 'data-tooltip', () => total > 1000 ? t("search_panel.more_than_1_000_matches_cannot_select") : t("search_panel.select_all_matches"));
     this.button('toggleReplace').hidden = state.readOnly;
   }

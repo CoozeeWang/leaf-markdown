@@ -25,17 +25,17 @@ for(const [engine,options] of targets) {
    await image.hover();
    await page.waitForFunction(()=>!document.querySelector('#tooltip').hidden&&document.querySelector('#tooltip').textContent.includes('拖动图片'));
    assert.equal(await image.evaluate(el=>el.closest('[title]')),null,'image instructions must not also trigger a native tooltip');
-   assert.equal((await tip.textContent()).replace(/\s/g,''),'按住(⌘)拖动图片');
-   const imageBox=await image.boundingBox(),tipBox=await tip.boundingBox(),actionBox=await action.boundingBox();
-   assert.ok(Math.abs(tipBox.y-actionBox.y)<1,'drag hint aligns with reveal button');
-   assert.ok(Math.abs(tipBox.x+tipBox.width-(imageBox.x+imageBox.width-4))<1,'drag hint anchors to image right inset');
-   assert.ok(tipBox.x>=actionBox.x+actionBox.width,'small image hint does not cover reveal control');
+   assert.equal((await tip.textContent()).replace(/\s/g,''),'按住拖动图片');
+   const imageBox=await image.boundingBox(),tipBox=await tip.boundingBox();
+   assert.equal(await tip.locator('svg[data-modifier=Command]').count(),1);
+   assert.ok(tipBox.x+tipBox.width<=imageBox.x || tipBox.x>=imageBox.x+imageBox.width,'operation hint stays beside the image');
+   assert.ok(tipBox.y>=0&&tipBox.y+tipBox.height<=700,'hint stays in the viewport');
    await page.screenshot({path:artifactPath(`image-drag-hint-${engine.name()}-${theme}.png`)});
    const imageLook=await look();
    assert.equal(imageLook.font,'12px');assert.equal(imageLook.weight,'400');assert.equal(imageLook.inBounds,true);
    await action.hover();
    await page.waitForFunction(()=>document.querySelector('#tooltip').textContent==='在 Finder 中显示');
-   assert.deepEqual(await look(),imageLook,'both explanations share one visual style');
+   assert.equal(await tip.getAttribute('data-kind'),'control');assert.equal((await look()).weight,'400');assert.notEqual((await look()).background,imageLook.background,'control and operation hints have distinct backgrounds');
    assert.equal(await page.locator('#tooltip:not([hidden])').count(),1);
    await page.screenshot({path:artifactPath(`image-tooltip-${engine.name()}-${theme}.png`)});
   }
@@ -45,8 +45,8 @@ for(const [engine,options] of targets) {
   await page.waitForFunction(()=>!document.querySelector('#tooltip').hidden);
   assert.equal(await tip.textContent(),'在 Finder 中显示');
   await page.locator('#commandsButton').hover();
-  await page.waitForFunction(()=>document.querySelector('#tooltip').dataset.kind==='default');
-  assert.equal(await tip.evaluate(el=>getComputedStyle(el).fontWeight),'500','image styling does not leak to unrelated controls');
+  await page.waitForFunction(()=>document.querySelector('#tooltip').dataset.kind==='control');
+  assert.equal(await tip.evaluate(el=>getComputedStyle(el).fontWeight),'400','control tooltip also uses normal weight');
   // Use a stable viewport for language changes; narrow scrolling is covered above.
   await page.setViewportSize({width:1100,height:900});
   // Existing images must update without switching view modes or changing Markdown.
@@ -62,7 +62,7 @@ for(const [engine,options] of targets) {
     await page.waitForFunction(({selector,label})=>document.querySelector(selector)?.getAttribute('aria-label')===label,{selector,label});
     assert.equal(await existingAction.getAttribute('data-tooltip'),label);
     if(mode==='reading') assert.equal(await existingAction.evaluate(el=>el===window.originalImageAction),true,'reading mode updates the existing image action');
-    await page.locator('#editorLanguageSelect').focus();
+    await page.keyboard.press('Tab'); // establish keyboard modality and leave the previous action
     await existingAction.focus();
     await page.waitForFunction(label=>!document.querySelector('#tooltip').hidden&&document.querySelector('#tooltip').textContent===label,label,{timeout:5000}).catch(async error=>{throw new Error(JSON.stringify({mode,language,tooltip:await tip.textContent(),hidden:await tip.getAttribute('hidden')}),{cause:error});});
    }

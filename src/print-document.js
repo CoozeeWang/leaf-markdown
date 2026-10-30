@@ -160,7 +160,7 @@ export function renderPrintDocument(target, source, {
       renderBlocks(entry, note.body);
       const back = document.createElement('a');
       back.className = 'footnote-backref'; back.textContent = '↩';
-      back.href = `#fnref-${note.number}`; setAttr(back, 'title', () => t("print_document.back_to_text"));
+      back.href = `#fnref-${note.number}`; setAttr(back, 'data-tooltip', () => t("print_document.back_to_text"));
       setAttr(back, 'aria-label', () => t("print_document.back_to_text"));
       // Drop the arrow inside the last block of the note: appending it to the
       // entry itself puts it after that block, so a note ending in a paragraph

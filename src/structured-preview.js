@@ -41,7 +41,7 @@ const el = (tag, className, text) => {
 function button(label, text, action) {
   const b = el('button', 'leaf-block-button');
   if (text !== null) setText(b,()=>resolveMessage(text));
-  b.type = 'button';setAttr(b,'title',()=>shortcutText(resolveMessage(label)));setAttr(b,'aria-label',()=>shortcutText(resolveMessage(label)));
+  b.type = 'button';setAttr(b,'data-tooltip',()=>shortcutText(resolveMessage(label)));setAttr(b,'aria-label',()=>shortcutText(resolveMessage(label)));
   b.addEventListener('click', action);
   return b;
 }
@@ -59,7 +59,7 @@ class DefaultTitle extends WidgetType {
     box._heightObserver = new ResizeObserver(() => { this.layout.height = box.getBoundingClientRect().height; });
     box._heightObserver.observe(box);
     const title=el('h1','',this.name.replace(/\.(md|markdown|mdown)$/i,''));
-    title.tabIndex=0;setAttr(title, 'title', () => t("structured_preview.double_click_to_rename_the_file"));setAttr(title, 'aria-label', () => t("structured_preview.double_click_or_press_enter_to_rename", {"name": this.name}));
+    title.tabIndex=0;title.dataset.tooltipKind='operation';setAttr(title, 'data-tooltip', () => t("structured_preview.double_click_to_rename_the_file"));setAttr(title, 'aria-label', () => t("structured_preview.double_click_or_press_enter_to_rename", {"name": this.name}));
     const rename=()=>document.dispatchEvent(new CustomEvent('leaf-rename-document'));
     title.ondblclick=rename;title.onkeydown=e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();e.stopPropagation();rename();}};
     box.append(title);
@@ -242,7 +242,7 @@ class StructuredBlock extends WidgetType {
     box.addEventListener('toggle', () => view.requestMeasure());
     const typeControl = el('span', 'leaf-callout-type-control');
     const typeIcon = el('span', 'leaf-callout-type-icon'); typeIcon.setAttribute('aria-hidden', 'true');
-    const typeMenu = el('select'); setAttr(typeMenu, 'aria-label', () => t("structured_preview.callout_type")); setAttr(typeMenu, 'title', () => t("structured_preview.change_callout_type_or_edit_source"));
+    const typeMenu = el('select');typeMenu.dataset.tooltipKind='operation'; setAttr(typeMenu, 'aria-label', () => t("structured_preview.callout_type")); setAttr(typeMenu, 'data-tooltip', () => t("structured_preview.change_callout_type_or_edit_source"));
     for (const [value, label] of Object.entries(calloutLabels)) {
       const option = localizedElement('option', '', () => calloutLabels[value]); option.value = value; typeMenu.append(option);
     }

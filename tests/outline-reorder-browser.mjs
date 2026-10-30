@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {chromium,webkit} from 'playwright';
 import {launchOptions,artifactPath} from './browser-runtime.mjs';
 const source='# Root\n\nIntro\n\n## One\n\nA {>>synthetic note<<}\n\n### Same\n\n> [!note]\n> detail [safe](https://example.com)\n\n#### Detail\n\nD\n\n### Other\n\nO\n\n## Two\n\nB\n\n### Same\n\nC\n\n## Three\n\nT\n\n# End\n\nE\n\n';
-for(const [name,engine] of Object.entries({chromium,webkit})) {
+for(const [name,engine] of Object.entries({chromium,webkit}).filter(([name])=>!process.env.LEAF_OUTLINE_ENGINE||process.env.LEAF_OUTLINE_ENGINE===name)) {
  const browser=await engine.launch(name==='chromium'?launchOptions:{headless:true});
  try {for(const locale of ['zh-CN','zh-TW','en-US']) {
  const page=await browser.newPage({locale,viewport:{width:1100,height:800}}),errors=[];page.on('pageerror',e=>errors.push(e.message));

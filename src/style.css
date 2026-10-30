@@ -282,7 +282,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .cm-editor .cm-line.cm-leaf-blank-line { position: relative; line-height: 1.25em; }
 .cm-editor .cm-line.cm-leaf-paragraph-line { padding-top: .3em; }
 .cm-editor .cm-line.cm-leaf-blank-line.cm-leaf-paragraph-line { line-height: 1.85; }
-.outline-rename { display: block; width: calc(100% - 12px); margin: 3px 6px; padding: 6px 8px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--accent); border-radius: 5px; }
+.outline-rename { display:block; box-sizing:border-box; margin:0; border:0; border-radius:0; background:transparent; box-shadow:inset 0 -1px var(--accent); }
 /* The marker only dots the middle of a blank row, so switching it on cannot
    change the height of the document. */
 .leaf-editing-marker { display: inline-block; width: 0; height: 0; position: relative; vertical-align: baseline; pointer-events: none; user-select: none; }
@@ -785,40 +785,6 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
 .shortcut-keys svg[data-modifier="Command"] { width: 12px; height: 12px; }
 .shortcut-keys > span { min-width: 9px; text-align: center; font: 500 12px/16px var(--ui-font); }
 
-.ui-tooltip {
-  position: fixed;
-  z-index: 200;
-  max-width: min(320px, calc(100vw - 16px));
-  padding: 6px 9px;
-  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  border-radius: 6px;
-  background: #2b302d;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, .16);
-  color: #ffffff;
-  font-size: var(--ui-caption);
-  font-weight: 500;
-  line-height: 1.4;
-  letter-spacing: .01em;
-  pointer-events: none;
-  white-space: normal;
-}
-.ui-tooltip[data-kind="image"] {
-  padding:4px 7px;
-  border-radius:4px;
-  background:var(--surface-strong);
-  color:var(--muted);
-  box-shadow:0 2px 6px rgba(0,0,0,.06);
-  font-size:12px;
-  font-weight:400;
-  letter-spacing:normal;
-}
-.ui-tooltip[data-kind="image"] .shortcut-keys > span { font-weight:400; }
-.ui-tooltip[data-placement="image-top-right"] {
-  box-sizing:border-box; height:22px; padding:2px 6px; line-height:16px;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-}
-
-
 .drop-overlay { display: none; position: absolute; inset: 14px; z-index: 120; align-items: center; justify-content: center; border: 2px dashed var(--accent); border-radius: 15px; background: color-mix(in srgb, var(--surface) 94%, transparent); color: var(--accent); font-size: 18px; font-weight: 650; }
 .drop-overlay.visible { display: flex; }
 
@@ -899,7 +865,7 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
 .outline-disclosure { display: inline-flex; align-items: center; justify-content: center; padding: 0; color: var(--muted); }
 .outline-disclosure:hover { color: var(--text); background: var(--accent-soft); }
 .outline-disclosure[aria-expanded="false"] .ui-icon { transform: rotate(-90deg); }
-.outline-row .outline-rename { flex: 1; min-width: 0; width: auto; margin: 3px 4px; }
+.outline-row .outline-rename { flex:1; min-width:0; width:auto; margin:0; }
 
 /* Sidebars share quiet boundaries and content-aware navigation feedback. */
 .outline-item { font-size: 13px; }
@@ -1015,8 +981,7 @@ kbd { color: var(--muted); font: 400 var(--ui-caption)/1.4 var(--ui-font); flex-
 
 /* Search and rename fields use a single border; content editing uses an inset marker. */
 .cm-search input[name="search"]:focus,
-.cm-search input[name="replace"]:focus,
-.outline-rename:focus {
+.cm-search input[name="replace"]:focus {
   border-color: var(--accent);
   outline: none;
   box-shadow: none;
@@ -1308,4 +1273,5 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .outline-dragging .outline-item:focus {outline:none;}
 .outline-drop-line {position:fixed;height:2px;background:var(--accent);pointer-events:none;z-index:1200;}
 
-.ui-tooltip[data-kind="outline"] {background:var(--surface-strong);color:var(--muted);font-weight:400;box-shadow:0 2px 8px #0000000a;}
+
+.outline-rename:focus, .outline-rename:focus-visible { outline:none; box-shadow:inset 0 -1px var(--accent); }

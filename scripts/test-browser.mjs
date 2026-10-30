@@ -9,7 +9,7 @@ const core = [
   'highlight-band', 'inline-format', 'selection-compositing', 'selection-edges', 'quote-selection',
   'footnote-region', 'footnote-insert', 'footnote-history', 'footnote-live-preview', 'footnote-definition-format', 'footnote-panel', 'footnote-sidebar-modes', 'footnote-input-performance', 'footnote-auto-delete', 'footnote-completion',
   'footnote-callout', 'callout-input', 'callout-caret', 'callout-caret-blink', 'caret-outline-integration', 'callout-toolbar-persistence', 'callout-links', 'ai-notice-lock', 'footnote-rename', 'footnote-regressions', 'footnotes-print',
-  'version-display', 'properties-insert-guard', 'image-drop', 'image-insertion', 'image-reveal', 'image-tooltips', 'image-drag',
+  'version-display', 'properties-insert-guard', 'image-drop', 'image-insertion', 'image-reveal', 'image-tooltips', 'image-drag', 'tooltips', 'outline-rename-style', 'tooltip-platform-drag',
   'paragraph-blank-lines', 'paragraph-input',
   'body-fonts', 'outline-navigation', 'outline-reorder', 'property-note-geometry',
   'comments', 'annotation-tabs', 'composition-state', 'desktop-updates',

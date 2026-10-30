@@ -132,10 +132,10 @@ export function renderInline(target, text, footnotes, comments = {}) {
     if (tags[node.name]) {
       container = document.createElement(tags[node.name]); parent.append(container);
       if (node.name === 'Link') {
-        container.className = 'leaf-inline-link';
+        container.className = 'leaf-inline-link';container.dataset.tooltipKind='operation';
         const url = node.getChild('URL');
-        container.title = url ? text.slice(url.from, url.to) : referenceTarget(node, text, footnotes?.references) || '';
-        const target = safeLinkTarget(container.title); if (target) container.dataset.leafLink = target;
+        container.dataset.tooltip = url ? text.slice(url.from, url.to) : referenceTarget(node, text, footnotes?.references) || '';
+        const target = safeLinkTarget(container.dataset.tooltip); if (target) container.dataset.leafLink = target;
       }
     }
     let position = node.from;

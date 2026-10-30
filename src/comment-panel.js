@@ -37,7 +37,7 @@ export function setupCommentPanel({editor,getMode,open,status,locate}) {
     card._comment=note;card.dataset.kind=note.kind;card.classList.toggle('active',note.id===current);card.querySelector('.comment-quote').textContent=commentQuote(note.quote)||t('comments.position');
     const kindLabel=card.querySelector('.comment-actions span');kindLabel.hidden=note.kind!=='hidden';setText(kindLabel,()=>note.kind==='hidden'?t('comments.hidden'):'');
     const body=card.querySelector('.comment-body'),input=body.querySelector('textarea');
-    body.tabIndex=reading||editing===note.id?-1:0;setAttr(body,'data-tooltip',()=>reading?'':t('comments.edit_hint'));setAttr(body,'aria-description',()=>reading?'':t('comments.edit_hint'));
+    body.dataset.tooltipKind='operation';body.tabIndex=reading||editing===note.id?-1:0;setAttr(body,'data-tooltip',()=>reading?'':t('comments.edit_hint'));setAttr(body,'aria-description',()=>reading?'':t('comments.edit_hint'));
     if(editing===note.id&&!reading){
      if(!input){
       const area=document.createElement('textarea');area.value=note.text;area.rows=2;setAttr(area,'aria-label',()=>t('comments.body'));body.replaceChildren(area);

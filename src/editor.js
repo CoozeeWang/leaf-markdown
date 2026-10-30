@@ -120,11 +120,12 @@ class InlinePreview extends WidgetType {
       if (this.title) {
         if (span.querySelector('.leaf-image')) {
           span.dataset.tooltip = this.title;
-          span.dataset.tooltipKind = 'image';
-          span.dataset.tooltipPlacement = 'image-top-right';
+          span.dataset.tooltipKind = 'operation';
         } else {
-          span.title = this.title;
-          for (const link of span.querySelectorAll('[data-leaf-link]')) link.title = `${link.dataset.leafLink}\n${this.title}`;
+          span.dataset.tooltip = this.title;span.dataset.tooltipKind='operation';
+          for (const link of span.querySelectorAll('[data-leaf-link]')) {
+            link.dataset.tooltipKind='operation';link.dataset.tooltip = `${link.dataset.leafLink}\n${this.title}`;
+          }
         }
       }
     }
