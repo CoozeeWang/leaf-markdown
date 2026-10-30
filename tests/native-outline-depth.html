@@ -1,0 +1,21 @@
+<!doctype html><html><meta charset="utf-8"><title>Loading</title><body><div id="fixture" class="shell"></div><script type="module">
+import '/src/style.css';
+import {createLeafEditor} from '/src/editor.js';
+import {parseOutline} from '/src/outline-sections.js';
+const check=(ok,message)=>{if(!ok)throw Error(message);};
+window.startTest=async()=>{
+ try{
+ const e=createLeafEditor({parent:document.querySelector('#fixture'),doc:''});
+ const source='# Root\r\n\r\n## One\r\n\r\n### Child\r\n\r\n> [!note]\r\n> body\r\n\r\n## Two\r\n\r\nBody {>>note<<}\r\n\r\n# End\r\n';
+ e.setValue(source);let h=parseOutline(e.view.state.doc.toString());e.toggleOutlineCollapsed(h[1].from);
+ const move=(i,b,level)=>{const s=e.view.state.doc,hs=parseOutline(s.toString());return e.moveOutlineSection(s,e.mutationDocumentGeneration(),hs[i].from,b===null?null:hs[b].from,level);};
+ check(move(2,1,2),'upgrade before parent');h=parseOutline(e.view.state.doc.toString());check(h[1].text==='Child'&&h[1].level===2,'reparsed depth');check(e.isOutlineCollapsed(h.find(x=>x.text==='One').from),'fold mapped');check(e.getValue().includes('> [!note]\r\n> body'),'CRLF callout preserved');
+ e.undo();check(e.getValue()===source,'single undo');h=parseOutline(e.view.state.doc.toString());check(e.isOutlineCollapsed(h[1].from),'fold restored');e.redo();check(e.getValue()!==source,'redo');e.undo();
+ check(move(3,4,3),'demote into parent');check(e.getValue().includes('### Two\r\n'),'Markdown markers changed');e.undo();check(e.getValue()===source,'demotion undo');
+ const saved=e.getValue();e.setValue(saved);check(e.getValue()===source,'save/reopen roundtrip');check(!e.isOutlineCollapsed(parseOutline(e.view.state.doc.toString())[1].from),'new document clears fold');
+ const old=e.view.state.doc,gen=e.mutationDocumentGeneration();e.setValue(saved);check(!e.moveOutlineSection(old,gen,0,null,1),'stale document rejected');
+ e.setValue('# R\n\n### Jump\n\n# E\n');check(!move(1,null,1),'jump guarded');e.destroy();
+ document.title='LeafTest PASS WKWebView outline depth, Markdown/CRLF, subtree, folds, undo/redo, save/reopen and stale document guards';
+ }catch(error){document.title='LeafTest FAIL '+error.message;}
+};document.title='LeafSource';
+</script></body></html>

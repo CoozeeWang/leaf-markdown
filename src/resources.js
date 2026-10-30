@@ -174,7 +174,7 @@ function renderFailure(status, img, kind) {
   if (!revealLocal || !localImagePath(img)) return;
   const name = fileNameOf(img.dataset.resource);
   card.dataset.clickable = 'yes';
-  setAttr(card, 'title', revealLabel);
+  setAttr(card, 'data-tooltip', revealLabel);
   card.tabIndex = 0;
   card.setAttribute('role', 'button');
   setAttr(card, 'aria-label', () => `${revealLabel()} ${name}`);
@@ -198,7 +198,7 @@ export function imageNode(alt, path) {
   actions.type = 'button'; actions.className = 'leaf-image-actions';
   actions.innerHTML = uiIcon('folder', 14);
   setAttr(actions, 'data-tooltip', revealLabel);
-  actions.dataset.tooltipKind = 'image';
+  actions.dataset.tooltipKind = 'control';
   setAttr(actions, 'aria-label', revealLabel);
   actions.addEventListener('mousedown', event => { event.preventDefault(); event.stopPropagation(); });
   actions.addEventListener('click', event => {

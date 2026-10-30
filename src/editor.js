@@ -1,3 +1,5 @@
+import {outlineCollapsed,setOutlineCollapsed,outlineCollapseHistory} from './outline-collapse.js';
+import {planSectionMove,planOutlineMove} from './outline-sections.js';
 import { referenceLinks } from './reference-links.js';
 import { t, h, onLanguageChange, setAttr } from './i18n.js';
 import { createCompositionGuard, isCommittedCompositionInput } from './composition-state.js';
@@ -118,11 +120,12 @@ class InlinePreview extends WidgetType {
       if (this.title) {
         if (span.querySelector('.leaf-image')) {
           span.dataset.tooltip = this.title;
-          span.dataset.tooltipKind = 'image';
-          span.dataset.tooltipPlacement = 'image-top-right';
+          span.dataset.tooltipKind = 'operation';
         } else {
-          span.title = this.title;
-          for (const link of span.querySelectorAll('[data-leaf-link]')) link.title = `${link.dataset.leafLink}\n${this.title}`;
+          span.dataset.tooltip = this.title;span.dataset.tooltipKind='operation';
+          for (const link of span.querySelectorAll('[data-leaf-link]')) {
+            link.dataset.tooltipKind='operation';link.dataset.tooltip = `${link.dataset.leafLink}\n${this.title}`;
+          }
         }
       }
     }
@@ -1289,6 +1292,7 @@ export function createLeafEditor(options) {
     extensions: [
       editability.of([EditorState.readOnly.of(false),EditorView.contentAttributes.of({'aria-readonly':'false'})]),
       lineNumberCompartment.of(options.showLineNumbers ? leafLineNumbers() : []),
+      outlineCollapsed,outlineCollapseHistory,
       historyCompartment.of(history({joinToEvent:(tr,adjacent)=>tr.annotation(aiTaskAnnotation)!==undefined || adjacent})),
       sourceClass.of([]),
       EditorState.transactionExtender.of(tr=>aiTask && !tr.docChanged ? {annotations:Transaction.addToHistory.of(false)} : null),
@@ -1635,7 +1639,7 @@ export function createLeafEditor(options) {
         // A document opens in its body: the property block guards the top, and a
         // caret left in front of it would write into the YAML on the first key.
         selection: EditorSelection.cursor(bodyStart(view.state.toText(value).toString())),
-        effects: [documentName.of(view.state.field(structuredPreview).name), setLineEnding.of(endingOf(value)), toggleProperties.of(false)],
+        effects: [documentName.of(view.state.field(structuredPreview).name), setLineEnding.of(endingOf(value)), toggleProperties.of(false),setOutlineCollapsed.of([])],
         scrollIntoView: true,
       });
       view.dispatch({ effects: historyCompartment.reconfigure([]) });
@@ -1659,6 +1663,39 @@ export function createLeafEditor(options) {
       });
     },
     focus: () => view.focus(),
+    sectionMoveAllowed() {
+      return !reading && !view.state.readOnly && assertDocumentMutationAllowed(view) && !composition.status().pending;
+    },
+    moveSection(snapshot, generation, from, target, side) {
+      if (!this.sectionMoveAllowed() || snapshot !== view.state.doc || generation !== mutationDocumentGeneration) return false;
+      const plan = planSectionMove(snapshot.toString(), from, target, side);
+      if (!plan) return false;
+      const selection = view.state.selection;
+      const ranges = selection.ranges.map(r=>EditorSelection.range(plan.mapPosition(r.anchor,r.anchor>r.head?-1:1),plan.mapPosition(r.head,r.head>r.anchor?-1:1)));
+      const before = view.state.doc;
+      view.dispatch({changes:plan.changes, selection:EditorSelection.create(ranges,selection.mainIndex),
+        effects:EditorView.scrollIntoView(plan.heading,{y:'center'}),
+        userEvent:'move.section', annotations:isolateHistory.of('full')});
+      if (before === view.state.doc) return false;
+      view.focus();
+      return true;
+    },
+    isOutlineCollapsed(from) {return view.state.field(outlineCollapsed).has(from);},
+    toggleOutlineCollapsed(from) {const next=new Set(view.state.field(outlineCollapsed));next.has(from)?next.delete(from):next.add(from);view.dispatch({effects:setOutlineCollapsed.of(next),annotations:Transaction.addToHistory.of(false)});},
+    moveOutlineSection(snapshot, generation, from, before, level) {
+      if (!this.sectionMoveAllowed() || snapshot !== view.state.doc || generation !== mutationDocumentGeneration) return false;
+      const plan = planOutlineMove(snapshot.toString(), from, before, level);
+      if (!plan) return false;
+      const selection = view.state.selection;
+      const ranges = selection.ranges.map(r=>EditorSelection.range(plan.mapPosition(r.anchor,r.anchor>r.head?-1:1),plan.mapPosition(r.head,r.head>r.anchor?-1:1)));
+      const previousDoc = view.state.doc;
+      view.dispatch({changes:plan.changes, selection:selection.main.from>=plan.range.from&&selection.main.to<=plan.range.to?EditorSelection.create(ranges,selection.mainIndex):EditorSelection.single(plan.headingContent),
+        effects:[EditorView.scrollIntoView(plan.heading,{y:'center'}),setOutlineCollapsed.of([...view.state.field(outlineCollapsed)].map(p=>plan.mapPosition(p,-1)))],
+        userEvent:'move.section', annotations:isolateHistory.of('full')});
+      if (previousDoc === view.state.doc) return false;
+      view.focus();
+      return true;
+    },
     renameHeading(number, original, title) {
       if(!assertDocumentMutationAllowed(view))return false;
       if(number<1||number>view.state.doc.lines||!title.trim()||/[\r\n]/.test(title))return false;

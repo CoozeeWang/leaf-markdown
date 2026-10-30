@@ -69,7 +69,7 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
   let entries = [], selected = -1, content = null, generation = 0, clearing = false, busy = false, clearEntry = null;
   const resetClear = () => {
     clearing = false; clearEntry = null; confirmation.hidden = true; dialog.inert = false;
-    setAttr(clear, 'aria-label', () => entries[selected]?.kind === 'saved' ? t("recovery_dialog.delete_this_version") : t("recovery_dialog.delete_this_draft_mo0132")); clear.title = clear.getAttribute('aria-label'); apply.disabled = busy || content === null;
+    setAttr(clear, 'aria-label', () => entries[selected]?.kind === 'saved' ? t("recovery_dialog.delete_this_version") : t("recovery_dialog.delete_this_draft_mo0132")); setAttr(clear,'data-tooltip',()=>clear.getAttribute('aria-label')); apply.disabled = busy || content === null;
   };
   async function select() {
     const token = ++generation;
@@ -84,7 +84,7 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
     try {
       const value = await invoke('recovery_read', { key: entry.key, id: entry.id });
       if (token !== generation || !dialog.isConnected) return;
-      setAttr(clear, 'aria-label', () => entry.kind === 'saved' ? t("recovery_dialog.delete_this_version") : t("recovery_dialog.delete_this_draft_mo0132")); clear.title = clear.getAttribute('aria-label');
+      setAttr(clear, 'aria-label', () => entry.kind === 'saved' ? t("recovery_dialog.delete_this_version") : t("recovery_dialog.delete_this_draft_mo0132")); setAttr(clear,'data-tooltip',()=>clear.getAttribute('aria-label'));
       content = value; preview.value = value; apply.disabled = false; clear.disabled = false;
       setText(status, () => entry.source || t("desktop.untitled_document"));
     } catch (error) { if (token === generation) setText(status, () => t("recovery_dialog.failed_to_load", {"error": error})); }
@@ -107,12 +107,12 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
         const kind = entry.kind === 'draft' ? t("recovery_dialog.draft") : t("recovery_dialog.pre_save_version");
         setText(title, () => drafts ? name : (entry.kind === 'draft' ? t('recovery_dialog.draft') : t('recovery_dialog.pre_save_version')));
         setText(detail, () => t(drafts ? 'MO0244' : 'MO0243', {kind: entry.kind === 'draft' ? t('recovery_dialog.draft') : t('recovery_dialog.pre_save_version'), date: new Date(entry.timestamp).toLocaleString(currentLanguage()), size: Math.ceil(entry.bytes / 1024)}));
-        option.title = `${entry.source || name}\n${detail.textContent}`;
+        option.dataset.tooltipKind='operation';setAttr(option,'data-tooltip',()=>`${entry.source || name}\n${detail.textContent}`);
         const textCell = document.createElement('div'), deleteCell = document.createElement('div');
         textCell.setAttribute('role', 'gridcell'); deleteCell.setAttribute('role', 'gridcell');
         deleteCell.className = 'recovery-delete-cell';
         const remove = clear.cloneNode(true); remove.removeAttribute('data-clear'); remove.dataset.deleteRecord = ''; remove.disabled = false;
-        setAttr(remove, 'aria-label', () => t(entry.kind === 'saved' ? 'MO0240' : 'MO0241', {name})); remove.title = remove.getAttribute('aria-label');
+        setAttr(remove, 'aria-label', () => t(entry.kind === 'saved' ? 'MO0240' : 'MO0241', {name})); setAttr(remove,'data-tooltip',()=>remove.getAttribute('aria-label'));
         remove.onclick = event => { event.stopPropagation(); requestDelete(entry); }; deleteCell.append(remove);
         textCell.append(title, detail); option.append(textCell, deleteCell);
         option.onclick = () => { if (!busy) { selected = index; list.focus(); void select(); } };
@@ -188,7 +188,7 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
     setText(confirmation.querySelector('h2'), () => t(clearEntry.kind === 'saved' ? 'MO0242' : 'recovery_dialog.delete_this_draft'));
     setText(confirmClear, () => t(clearEntry.kind === 'saved' ? 'recovery_dialog.delete_this_version' : 'recovery_dialog.delete_this_draft_mo0132'));
     setText(confirmation.querySelector('strong'), () => clearEntry.source?.split(/[\\/]/).pop() || t("desktop.untitled_document"));
-    setAttr(confirmation.querySelector('strong'), 'title', () => clearEntry.source || t("desktop.untitled_document"));
+    confirmation.querySelector('strong').dataset.tooltipKind='operation';setAttr(confirmation.querySelector('strong'), 'data-tooltip', () => clearEntry.source || t("desktop.untitled_document"));
     confirmation.hidden = false; dialog.inert = true; apply.disabled = true;
     cancelClear.focus();
   };

@@ -1,4 +1,5 @@
 {
+  "main.outline_drag_hint": "Hold {{shortcut}} to rearrange",
   "main.leaf_a_lightweight_markdown_editor": "# Leaf\n\nA lightweight Markdown editor.\n",
   "main.untitled_md": "Untitled.md",
   "main.leaf": "Leaf",

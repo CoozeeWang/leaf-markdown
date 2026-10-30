@@ -23,7 +23,7 @@ class FootnoteRegion extends WidgetType {
     const root=document.createElement('section');root.className='leaf-footnote-region';
     root.setAttribute('contenteditable','false');setAttr(root,'aria-label',()=>t('print_document.footnotes'));
     const head=document.createElement('div');head.className='leaf-footnote-region-head';
-    const title=document.createElement('span');title.className='leaf-footnote-region-title';
+    const title=document.createElement('span');title.className='leaf-footnote-region-title';title.dataset.tooltipKind='operation';
     title.setAttribute('role','heading');title.setAttribute('aria-level','2');title.tabIndex=0;
     setText(title,()=>t('print_document.footnotes'));
     setAttr(title,'data-tooltip',()=>t('editor.edit_footnote_hint'));
@@ -63,7 +63,7 @@ class FootnoteRegion extends WidgetType {
             if(view.dom.isConnected) view.dispatch({effects:collectNotes.of(null),userEvent:'input.type.compose'});
           })});
         card._noteEditor=card._editor;
-        setAttr(body,'title',()=>t('editor.edit_footnote_hint'));
+        body.dataset.tooltipKind='operation';setAttr(body,'data-tooltip',()=>t('editor.edit_footnote_hint'));
         card.addEventListener('dblclick',event=>{
           if(!card._editor.view.state.readOnly)return;
           const at=card._editor.view.posAtCoords({x:event.clientX,y:event.clientY});

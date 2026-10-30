@@ -15,6 +15,15 @@
 .leaf-callout-edit.is-editing > .leaf-callout-preview { display: none; }
 .leaf-callout-preview { cursor: text; min-height: 1.6em; }
 .leaf-callout-edit textarea:focus { outline: none; box-shadow: none; }
+.leaf-callout-edit { position: relative; }
+/* Outrank CodeMirror's generated .theme .cm-content :focus !important rule,
+   otherwise the native and measured carets blink independently. */
+.cm-editor .cm-content .leaf-callout-edit textarea.leaf-measured-caret { caret-color: transparent !important; }
+.leaf-callout-caret-mirror { position: absolute; top: 0; left: 0; box-sizing: border-box; white-space: pre-wrap; visibility: hidden; pointer-events: none; }
+.leaf-callout-caret { position: absolute; width: 0; border-left: 1px solid var(--accent, currentColor); pointer-events: none; animation: leaf-callout-caret-blink 1.2s step-end infinite; }
+.leaf-callout-caret[hidden] { display: none; }
+@keyframes leaf-callout-caret-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .leaf-callout-caret { animation: none; } }
 .leaf-callout-widget > div > .leaf-callout { margin: 0; }
 .leaf-callout[data-type="info"],.leaf-callout[data-type="todo"] { --callout-ink: #236a9a; --callout-fill: #eef4f8; }
 .leaf-callout[data-type="warning"],.leaf-callout[data-type="question"] { --callout-ink: #926122; --callout-fill: #fbf4e7; }

@@ -23,6 +23,8 @@ macOS 原生字体检查使用独立 WKWebView：在 `src-tauri` 运行 `cargo r
 
 `npm run test:browser:all` 运行全部浏览器回归，包含公开合成的长表格样例。`npm run test:browser -- footnote-regressions-browser.mjs` 运行指定用例。入口自行管理 Vite，截图存放在忽略提交的 `test-results/`。可设置 `LEAF_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，默认使用锁定的 Chromium。不能将浏览器平台模拟算作原生 Windows 验收。
 
+`callout-caret-browser.mjs` 检查提示块原生输入框的视觉光标：三档字号、中文混排、空行、自动折行、选区、滚动、正文缩放、输入撤销、组合输入生命周期及销毁清理。配套 `native-callout-caret.html` 可由现有 `native-table-keys` 示例在独立后台 WKWebView 中运行；不需要 `--foreground`。这些合成组合输入检查不替代真实中文输入法候选窗口验收。正文仍由原生 textarea 接收输入；视觉测量失败、选区或组合输入期间使用原生光标，不改字号、行距或保存数据。
+
 The runner owns its Vite server on port 41732 and fails if that port is occupied. It runs pinned Chromium by default. Screenshots are written to ignored `test-results/`. Browser platform emulation does not replace native Windows testing.
 
 `editor-focus-selection-browser.mjs` checks both engines for source-marker focus transfer and real cross-callout selection pixels, copy boundaries, folded blocks, deletion and undo in light/dark themes and multiple font scales. `editor-input-performance-browser.mjs` compares cold versus incremental parsing on 16k/64k/128k synthetic mixed documents, verifies exact ordinary and callout-body input, and writes `test-results/editor-input-performance.json`. Its timing comparisons are diagnostics, not machine-independent thresholds or installed-app key-to-paint acceptance. `incremental-parse.test.js` compares edited trees against cold parses, including comments, fences, references, Unicode and CRLF.
@@ -255,8 +257,16 @@ See [Desktop updates](DESKTOP_UPDATES.md) for the one-confirmation flow, multi-d
 
 ### Application-link paste regression
 
-`app-links.test.js` and the native `app_links::tests` share synthetic URL fixtures: the verified Ripple Segment Dev v2 contract is accepted only as a link, never as an image/resource path. Unknown schemes, encoded payloads, credentials, extra fields and control characters remain rejected. Run `cargo test --locked --bin leaf app_links::tests` from `src-tauri`.
+`app-links.test.js` and the native `app_links::tests` share synthetic URL fixtures: the verified Ripple production (`ripple-transcript`) and development (`ripple-segment-dev`) v2 contracts are accepted only as links, never as image/resource paths. Unknown schemes, encoded payloads, credentials, extra fields and control characters remain rejected. Run `cargo test --locked --bin leaf app_links::tests` from `src-tauri`.
 
 `npm run test:browser -- app-links-browser.mjs writing-browser.mjs reference-links-browser.mjs` checks HTML paste in edit/source modes, named-link rendering, timestamp escaping and existing links. The app-link suite defaults to Chromium; use `LEAF_APP_LINK_ENGINE=webkit` for WebKit. Installed Chrome is available through `LEAF_BROWSER_CHANNEL=chrome`; `LEAF_REFERENCE_ENGINE=chromium` selects that engine for the reference suite when WebKit is unavailable. Report the engines actually tested. Routing tests mock native opening and never launch an application protocol; actual installed Leaf → Ripple navigation requires manual acceptance.
 
 富文本拖放回归：`npm run test:browser -- rich-drop-browser.mjs` 在 Chromium/WebKit 检查落点、一次撤销、源码模式、内部移动及转义字符显示。macOS 使用 `cargo test --locked --manifest-path src-tauri/Cargo.toml --bin leaf native_text_drop::tests -- --test-threads=1` 验证文本与文件路由，再运行 `cargo run --locked --manifest-path src-tauri/Cargo.toml --example native-text-drop` 检查隐藏非持久真实 WebView。测试不读取系统剪贴板内容、不打开应用协议，也不替代安装版真实跨应用拖放验收。升级 Wry 时需重新核对其 Objective-C 视图层级。
+
+光标闪烁回归 `callout-caret-blink-browser.mjs` 在真实获焦 Chromium/WebKit 中逐帧检查计算后的原生 caret-color 与深色／自绘光标像素，跨多个闪烁周期。保留 screenshot 的 `caret: initial`，否则测试框架会隐藏原生光标，掩盖双光标问题。后台 WKWebView 不具有真实窗口焦点，不能以其通过代替 `:focus` 级联或前台系统光标验证。CodeMirror 的生成主题会用 `.theme .cm-content :focus` 和 `!important` 恢复原生 caret-color；提示块自绘光标必须以更具体、仅限提示块的规则覆盖它。
+
+前台原生复验：Vite 服务启动后，使用 `swiftc tests/native-callout-blink.swift -o /tmp/leaf-wk-blink` 编译，再以测试页面 URL、截图输出目录及 `--foreground` 运行。该模式会短暂激活独立合成窗口，需先获用户同意；结束后关闭并恢复原应用焦点。随后 `node tests/check-callout-blink-frames.mjs <输出目录>` 核对 100 帧。工具仅调用 WKWebView 自身快照，不读取系统屏幕；后台、未完成、失焦或像素不符的记录不能算通过。实际中文输入法候选仍需人工验收。
+
+大纲章节排序由 `outline-sections.test.js` 与 `outline-reorder-browser.mjs` 覆盖：真实解析、重复／跳级标题、同父同级边界、原文与空行、无末尾换行、长大纲、选区、折叠、取消、过期拖动、一次撤销／重做和连续编辑。浏览器专项同时运行 Chromium／WebKit、中英文与真实鼠标拖动，编辑锁及 IME 使用合成事件；不代替安装版或真实输入法人工验收。排序、导航与树形专项支持 `LEAF_TEST_BASE_URL` 连接独立 Vite 服务，便于并行开发。
+
+`outline-depth.test.js` checks parsed Markdown position/depth moves, whole-subtree level changes, Setext conversion, source preservation and unsafe boundaries. `outline-collapse.test.js` checks fold history rebasing. `outline-reorder-browser.mjs` uses real pointer gestures in Chromium/WebKit; `outline-platform-browser.mjs` separately labels platform/modifier injection as simulation. `native-outline-depth.html` runs with `node scripts/test-native-fixture.mjs native-outline-depth.html` in a separate system WKWebView, without opening the installed app. Browser/platform simulation and synthetic native fixtures do not replace installed-app or real IME acceptance.

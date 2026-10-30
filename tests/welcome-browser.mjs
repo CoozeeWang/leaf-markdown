@@ -13,7 +13,7 @@ try {
  assert.ok(await page.locator('.welcome-name').evaluate(el=>getComputedStyle(el).fontFamily.startsWith('Palatino')));
  assert.ok(await page.locator('.welcome-card').evaluate(el=>Math.abs((el.getBoundingClientRect().top+el.getBoundingClientRect().bottom)/2-innerHeight/2)<60),'welcome content stays near the window center');
  assert.ok(await page.locator('.welcome-drop-hint').evaluate(el=>el.getBoundingClientRect().bottom>innerHeight-60));
- await page.hover('#welcomeRecentButton');await page.waitForTimeout(500);
+ await page.hover('#welcomeRecentButton');await page.locator('#tooltip').waitFor({state:'visible'});
  assert.ok(await page.locator('#tooltip').isVisible());
  await page.click('#welcomeRecentButton');assert.ok(await page.locator('#recentPopover').isVisible());
  await page.click('.welcome-title');assert.equal(await page.locator('#recentPopover').isVisible(),false);
@@ -102,7 +102,7 @@ try {
  assert.equal(await native.evaluate(()=>nativeRecent.length),3,'pathless legacy entries are not imported');
  await native.click('#welcomeRecentButton');
  assert.deepEqual(await native.locator('.recent-file-directory').allTextContents(),['/Users/test/项目 A','/Users/test/项目 B','C:\\']);
- assert.equal(await native.locator('#recentList button').nth(1).getAttribute('title'),'/Users/test/项目 B/同名.md');
+ assert.equal(await native.locator('#recentList button').nth(1).getAttribute('data-tooltip'),'/Users/test/项目 B/同名.md');
  assert.equal(await native.locator('#recentList button').nth(3).innerText(),'清理失效记录');
  await native.setViewportSize({width:720,height:480});
  await native.waitForFunction(()=>document.querySelector('#recentPopover').hidden);

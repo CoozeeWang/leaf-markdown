@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 const browser=await chromium.launch(launchOptions);
 try {
  for(const platform of ['MacIntel','Win32']) {
-  const page=await browser.newPage({viewport:{width:1100,height:850}});
+  const page=await browser.newPage({viewport:{width:1100,height:850}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(p=>Object.defineProperty(navigator,'platform',{get:()=>p}),platform);
   await page.goto('http://127.0.0.1:41732');await page.click('#welcomeNewButton');
   const original='# 测试\n\n| A | B |\n| --- | ---: |\n| one | two |\n| three | four |\n\n末段';
@@ -46,7 +46,7 @@ try {
    await page.keyboard.press(`${mod}+z`);assert.equal(await source(),original);
   }
   await page.locator('td').first().hover();await page.screenshot({path:artifactPath(`leaf-table-edges-${platform}.png`)});
-  await page.close();
+  assert.deepEqual(errors,[]);await page.close();
  }
  console.log('PASS Mac/Windows insertion shortcuts, focus, edge insertion, row deletion and undo');
 } finally {await browser.close();}

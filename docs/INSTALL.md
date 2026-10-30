@@ -106,11 +106,27 @@ Hover over a control to see its keyboard shortcut. You can gradually get comfort
 
 Turn on **Focus Mode** for a quieter writing space. Press `Esc` to leave it.
 
+### Rich-text copy, paste and drop (1.0.4)
+
+This section describes the upcoming 1.0.4. Download links above still point to released 1.0.3 and will change only when the new release is published.
+
+Use Copy as rich text (`⌘⇧C` on Mac, `Ctrl+Shift+C` on Windows) to supply formatted content and a readable plain-text fallback; the receiving application chooses a format. Ordinary copy is a separate action. Leaf converts incoming HTML to Markdown in both Edit and Source views, rather than preserving the original webpage layout. A plain-text-only source cannot supply a missing link target.
+
+A newly inserted callout has an empty body: title/body hints are placeholders, and existing words such as “Content” remain real text. Enter in the title moves into the body; Enter on its final empty ordinary paragraph exits the callout. Rich-text paste into a callout body also preserves validated named links, including a complete label such as “Filename, 00:00, (5)”, with one undo.
+
+Drop external rich text at a position in the body and undo the insertion in one step. Internal text moves, image imports and opening dropped Markdown files retain their existing behavior. Live preview hides valid escape markers away from the caret. Source view retains escapes such as `\[` to preserve literal brackets; the underlying file is unchanged.
+
+Valid Ripple v2 source links retain their named labels for production `ripple-transcript` and development `ripple-segment-dev`. Use Command-click on Mac or Ctrl-click on Windows in Edit view, or click in Reading view. Saving, pasting and dropping never launch another application. The matching Ripple application must be installed and its protocol registered. Other editors choose whether to retain or open these links. Existing web, email, anchor and relative-file links retain their behavior; arbitrary application schemes are not supported.
+
+The Mac daily fix build has user acceptance. Windows build checks and automated tests are separate from user installation acceptance; actual Windows cross-application drag and return links remain unverified by the user.
+
 ## Navigate and review
 
 ### Outline navigation
 
 The outline shows the document's heading hierarchy. Click a heading to jump to that section. If a section is missing, check that its title uses heading formatting.
+
+In Edit or Source view, hold ⌘ on Mac or Ctrl on Windows to start dragging an outline heading. Move vertically to choose a position and horizontally to choose a heading level; the indented line previews the drop. You can release the modifier after starting. The entire section and its children move together, and their Markdown heading levels change by the same amount. One undo restores the move. Escape or leaving the outline cancels. Reading view and protected documents do not allow moves; skipped levels and unsafe drops are rejected.
 
 ### Footnote sidebar
 

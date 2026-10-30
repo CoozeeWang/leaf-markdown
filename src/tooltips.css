@@ -1,0 +1,28 @@
+:root {
+  --tooltip-font: var(--ui-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  --tooltip-size: 12px;
+  --tooltip-radius: 6px;
+  --tooltip-padding: 5px 8px;
+  --tooltip-control-bg: #363d38;
+  --tooltip-control-text: #fff;
+}
+.ui-tooltip {
+  position:fixed; z-index:1200; box-sizing:border-box; width:max-content;
+  padding:var(--tooltip-padding); border-radius:var(--tooltip-radius);
+  border:1px solid color-mix(in srgb, var(--line, #dedfd7) 60%, transparent);
+  background:var(--tooltip-control-bg); color:var(--tooltip-control-text);
+  box-shadow:0 2px 8px #00000014;
+  font:400 var(--tooltip-size)/1.5 var(--tooltip-font); letter-spacing:normal;
+  white-space:normal; overflow-wrap:anywhere; overflow:auto;
+  pointer-events:auto; user-select:none;
+}
+.ui-tooltip[hidden] { display:none; }
+.ui-tooltip[data-kind="operation"] {
+  background:var(--surface-strong, #fff); color:var(--muted, #697164);
+}
+.ui-tooltip .shortcut-keys { display:inline-flex; align-items:center; gap:3px; vertical-align:-2px; white-space:nowrap; }
+.ui-tooltip .shortcut-keys svg { display:block; flex:none; width:14px; height:14px; }
+.ui-tooltip .shortcut-keys svg[data-modifier="Command"] { width:12px; height:12px; }
+.ui-tooltip .shortcut-keys > span { font:inherit; }
+
+@media print { .ui-tooltip { display:none !important; } }

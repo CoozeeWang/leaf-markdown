@@ -1,0 +1,13 @@
+<!doctype html><html><meta charset="utf-8"><title>Loading</title><body><div role="status" style="position:fixed;top:0;left:0;right:0;z-index:100000;background:#fff8dc;color:#222;padding:8px;text-align:center;font:14px sans-serif">自动光标测试（约 20 秒）：请勿点击、输入或切换窗口。关闭窗口可取消。</div><div id="fixture" style="position:fixed;inset:48px 20px 20px;overflow:auto;--editor-font-size:18px;--accent:rgb(255,0,0)"></div><script type="module">
+import '/src/style.css';
+import {createLeafEditor} from '/src/editor.js';
+window.e=createLeafEditor({parent:document.querySelector('#fixture'),doc:'> [!note] Title\n> Alpha\n> \n> Bravo中文\n> \n> Charlie\n\n'});
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+while(!document.querySelector('.leaf-callout-body textarea'))await wait(20);
+document.querySelector('.leaf-callout-body .leaf-callout-preview').click();
+const input=document.querySelector('.leaf-callout-body textarea');input.setSelectionRange(6,6);
+window.blinkState=()=>{const c=input.parentElement.querySelector('.leaf-callout-caret');return JSON.stringify({time:performance.now(),focus:document.activeElement===input,windowFocus:document.hasFocus(),nativeColor:getComputedStyle(input).caretColor,hidden:c.hidden,opacity:getComputedStyle(c).opacity,caret:c.getBoundingClientRect().toJSON(),input:input.getBoundingClientRect().toJSON(),selection:[input.selectionStart,input.selectionEnd]});};
+window.blinkStep=step=>{if(step===1)input.setSelectionRange(10,10);if(step===2){input.setRangeText('字',input.selectionStart,input.selectionEnd,'end');input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));}if(step===3){input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'拼'}));input.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'拼'}));}};
+window.blinkProgress=frame=>{document.querySelector('[role="status"]').textContent=frame>=100?'测试采样完成，窗口即将关闭。':`自动光标测试：${frame}/100 帧，约 ${Math.ceil((100-frame)/5)} 秒。请勿点击、输入或切换窗口；关闭窗口可取消。`;};
+document.title='LeafBlink READY';
+</script></body></html>

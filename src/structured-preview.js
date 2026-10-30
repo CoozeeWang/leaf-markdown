@@ -17,6 +17,8 @@ import { shortcutText } from './platform-shortcuts.js';
 import { tableOperation, tableShortcut } from './table-operations.js';
 import { tableEdgeControls } from './table-edge-controls.js';
 import { calloutEnter } from './callout-enter.js';
+import { htmlToMarkdown } from './html-markdown.js';
+import { textareaCaret } from './textarea-caret.js';
 
 export const toggleFileNameTitle = StateEffect.define();
 export const fileNameTitle = StateField.define({create:()=>true,update:(value,tr)=>tr.effects.reduce((v,e)=>e.is(toggleFileNameTitle)?e.value:v,value)});
@@ -39,7 +41,7 @@ const el = (tag, className, text) => {
 function button(label, text, action) {
   const b = el('button', 'leaf-block-button');
   if (text !== null) setText(b,()=>resolveMessage(text));
-  b.type = 'button';setAttr(b,'title',()=>shortcutText(resolveMessage(label)));setAttr(b,'aria-label',()=>shortcutText(resolveMessage(label)));
+  b.type = 'button';setAttr(b,'data-tooltip',()=>shortcutText(resolveMessage(label)));setAttr(b,'aria-label',()=>shortcutText(resolveMessage(label)));
   b.addEventListener('click', action);
   return b;
 }
@@ -57,7 +59,7 @@ class DefaultTitle extends WidgetType {
     box._heightObserver = new ResizeObserver(() => { this.layout.height = box.getBoundingClientRect().height; });
     box._heightObserver.observe(box);
     const title=el('h1','',this.name.replace(/\.(md|markdown|mdown)$/i,''));
-    title.tabIndex=0;setAttr(title, 'title', () => t("structured_preview.double_click_to_rename_the_file"));setAttr(title, 'aria-label', () => t("structured_preview.double_click_or_press_enter_to_rename", {"name": this.name}));
+    title.tabIndex=0;title.dataset.tooltipKind='operation';setAttr(title, 'data-tooltip', () => t("structured_preview.double_click_to_rename_the_file"));setAttr(title, 'aria-label', () => t("structured_preview.double_click_or_press_enter_to_rename", {"name": this.name}));
     const rename=()=>document.dispatchEvent(new CustomEvent('leaf-rename-document'));
     title.ondblclick=rename;title.onkeydown=e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();e.stopPropagation();rename();}};
     box.append(title);
@@ -240,7 +242,7 @@ class StructuredBlock extends WidgetType {
     box.addEventListener('toggle', () => view.requestMeasure());
     const typeControl = el('span', 'leaf-callout-type-control');
     const typeIcon = el('span', 'leaf-callout-type-icon'); typeIcon.setAttribute('aria-hidden', 'true');
-    const typeMenu = el('select'); setAttr(typeMenu, 'aria-label', () => t("structured_preview.callout_type")); setAttr(typeMenu, 'title', () => t("structured_preview.change_callout_type_or_edit_source"));
+    const typeMenu = el('select');typeMenu.dataset.tooltipKind='operation'; setAttr(typeMenu, 'aria-label', () => t("structured_preview.callout_type")); setAttr(typeMenu, 'data-tooltip', () => t("structured_preview.change_callout_type_or_edit_source"));
     for (const [value, label] of Object.entries(calloutLabels)) {
       const option = localizedElement('option', '', () => calloutLabels[value]); option.value = value; typeMenu.append(option);
     }
@@ -268,6 +270,16 @@ class StructuredBlock extends WidgetType {
       });
       input.addEventListener('focus', resize);
       input.addEventListener('blur', () => { wrap.classList.remove('is-editing'); view.requestMeasure(); });
+      if (field === 'body') input.addEventListener('paste', event => {
+        const html = event.clipboardData?.getData('text/html');
+        if (!html || event.clipboardData.files.length) return;
+        event.preventDefault(); event.stopPropagation();
+        if (view.assertDocumentMutationAllowed?.() === false) return;
+        // The body is Markdown, even though its editor is a native textarea.
+        // Use the same safe HTML conversion as ordinary document paste.
+        input.setRangeText(htmlToMarkdown(html), input.selectionStart, input.selectionEnd, 'end');
+        input.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertFromPaste'}));
+      });
       input.addEventListener('keydown', event => {
         if (event.isComposing || event.keyCode === 229) return;
         const b = root._widget.block;
@@ -312,13 +324,15 @@ class StructuredBlock extends WidgetType {
           lines[0] = lines[0].replace(/(\[![\w-]+\][+-]?)[^\r\n]*$/, (_, marker) => marker + ' ' + input.value.replace(/\r?\n/g, ' '));
           insert = lines.join(newline);
         } else insert = lines[0] + newline + input.value.split(/\r?\n/).map(line => '> ' + line).join(newline);
-        edit(view, {from:b.from, to:b.to, insert}, event.inputType === 'deleteByCut' ? 'delete.cut' : 'input');
+        edit(view, {from:b.from, to:b.to, insert}, event.inputType === 'deleteByCut' ? 'delete.cut' : event.inputType === 'insertFromPaste' ? 'input.paste' : 'input');
         if (input.isConnected) { input.setSelectionRange(...caret); resize(); }
       });
       if (field === 'title') wrap.append(typeControl);
       wrap.append(preview, input); box.append(wrap);
-      controls.push({field, preview, input});
+      const caret = textareaCaret(input);
+      controls.push({field, preview, input, caret});
     }
+    root._destroyCalloutCarets = () => controls.forEach(control => control.caret.destroy());
     root._syncCallout = () => {
       const b = root._widget.block; box.dataset.type = b.type;
       // A callout's words are drawn from a text area, so the citation pass never
@@ -328,7 +342,7 @@ class StructuredBlock extends WidgetType {
       const notes = { ...footnoteReader(view.state), references: root._widget.references };
       typeMenu.value = b.type;
       typeIcon.innerHTML = calloutBadge(b.type);
-      for (const {field, preview, input} of controls) {
+      for (const {field, preview, input, caret} of controls) {
         const value = field === 'title' ? b.customTitle : b.body;
         if (input.value !== value) input.value = value;
         if (field === 'title') setAttr(input, 'placeholder', () => calloutLabels[root._widget.block.type]);
@@ -336,6 +350,7 @@ class StructuredBlock extends WidgetType {
         if (field === 'title') renderInline(preview, b.title, notes);
         else renderPrintDocument(preview, b.body, {fallbackTitle:false, expandCallouts:false, footnotes: notes});
         if (!preview.textContent) setText(preview, () => field === 'title' ? t("structured_preview.title") : t("structured_preview.enter_content"));
+        caret.update();
       }
     };
     root._syncCallout();
@@ -484,7 +499,7 @@ class StructuredBlock extends WidgetType {
     root.append(after);
   }
   ignoreEvent() { return true; }
-  destroy(dom) { const root=dom.firstElementChild; root?._resizeObserver?.disconnect(); root?._heightObserver?.disconnect(); }
+  destroy(dom) { const root=dom.firstElementChild; root?._resizeObserver?.disconnect(); root?._heightObserver?.disconnect(); root?._destroyCalloutCarets?.(); }
 }
 
 function leaveTable(root, view, before = false) {

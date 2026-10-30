@@ -1,3 +1,6 @@
+import {parseOutline} from './outline-sections.js';
+import {dismissTooltips} from './tooltips.js';
+import {setupOutlineDrag} from './outline-drag.js';
 import {createDocumentReveal} from './document-reveal.js';
 import { t, h, aliases, currentLanguage, languagePreference, setLanguagePreference, onLanguageChange, refreshTranslations, setText, setAttr, message as translatedMessage } from './i18n.js';
 import { calloutBadge } from './callout-icons.js';
@@ -21,7 +24,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen as listenNative } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open as pickNativeFile } from '@tauri-apps/plugin-dialog';
-import { shortcutText, renderShortcutText, renderTooltipText } from './platform-shortcuts.js';
+import { shortcutText, renderShortcutText } from './platform-shortcuts.js';
 import { labels as calloutLabels } from './callout.js';
 import { indexFootnotes, notePanelRows } from './footnotes.js';
 import {setupCommentPanel} from './comment-panel.js';
@@ -205,12 +208,12 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <section id="readingPane" class="reading-pane" aria-label="${t("main.reading_mode")}" data-i18n-aria-label="main.reading_mode" tabindex="0" hidden><div class="reading-zoom-frame"><div class="reading-zoom-canvas"><article class="reading-document"></article></div></div></section>
       <button id="outlineButton" class="sidebar-rail sidebar-rail-left" aria-label="${t("main.expand_outline")}" data-i18n-aria-label="main.expand_outline" aria-controls="outlineDrawer" aria-expanded="false" data-tooltip="${t("main.expand_outline")}" data-i18n-data-tooltip="main.expand_outline">${icon('outline')}</button>
       <aside id="outlineDrawer" class="outline-drawer" aria-label="${t("main.document_outline")}" data-i18n-aria-label="main.document_outline">
-        <div class="outline-resizer" role="separator" aria-label="${t("main.resize_outline")}" data-i18n-aria-label="main.resize_outline" aria-orientation="vertical" tabindex="0" title="${t("main.drag_to_resize_double_click_to_reset")}" data-i18n-title="main.drag_to_resize_double_click_to_reset"></div>
+        <div class="outline-resizer" role="separator" aria-label="${t("main.resize_outline")}" data-i18n-aria-label="main.resize_outline" aria-orientation="vertical" tabindex="0" data-tooltip-kind="operation" data-tooltip="${t("main.drag_to_resize_double_click_to_reset")}" data-i18n-data-tooltip="main.drag_to_resize_double_click_to_reset"></div>
         <div class="drawer-header"><strong>${h("main.outline")}</strong><button data-close="outline" class="icon-control" aria-label="${t("main.collapse_outline")}" data-i18n-aria-label="main.collapse_outline" data-tooltip="${t("main.collapse_outline")}" data-i18n-data-tooltip="main.collapse_outline" aria-controls="outlineDrawer" aria-expanded="true">${icon('outline')}</button></div>
         <div id="outlineList" class="outline-list"></div>
       </aside>
       <aside id="notesDrawer" class="notes-drawer" aria-label="${t("comments.sidebar")}" data-i18n-aria-label="comments.sidebar">
-        <div class="notes-resizer" role="separator" aria-label="${t("comments.resize")}" data-i18n-aria-label="comments.resize" aria-orientation="vertical" tabindex="0" title="${t("main.drag_to_resize_double_click_to_reset")}" data-i18n-title="main.drag_to_resize_double_click_to_reset"></div>
+        <div class="notes-resizer" role="separator" aria-label="${t("comments.resize")}" data-i18n-aria-label="comments.resize" aria-orientation="vertical" tabindex="0" data-tooltip-kind="operation" data-tooltip="${t("main.drag_to_resize_double_click_to_reset")}" data-i18n-data-tooltip="main.drag_to_resize_double_click_to_reset"></div>
         <div class="drawer-header"><div class="annotation-tabs" role="tablist" aria-label="${t('comments.sidebar')}" data-i18n-aria-label="comments.sidebar"><button id="commentsTab" role="tab" aria-controls="commentsList" aria-selected="true" tabindex="0" aria-label="${t('comments.title')}" data-i18n-aria-label="comments.title" data-tooltip="${t('comments.title')}" data-i18n-data-tooltip="comments.title"><span class="annotation-tab-icon">${icon('comment',16)}</span><span class="annotation-tab-label">${h('comments.title')}</span><span id="commentsCount" class="drawer-count"></span></button><button id="notesTab" role="tab" aria-controls="notesList" aria-selected="false" tabindex="-1" aria-label="${t('main.footnotes')}" data-i18n-aria-label="main.footnotes" data-tooltip="${t('main.footnotes')}" data-i18n-data-tooltip="main.footnotes"><span class="annotation-tab-icon">${icon('notes',16)}</span><span class="annotation-tab-label">${h('main.footnotes')}</span><span id="notesCount" class="drawer-count"></span></button></div><button data-close="notes" class="icon-control" aria-label="${t('comments.collapse')}" data-i18n-aria-label="comments.collapse" data-tooltip="${t('comments.collapse')}" data-i18n-data-tooltip="comments.collapse" aria-controls="notesDrawer" aria-expanded="true">${icon('chevron')}</button></div>
         <div id="commentsList" class="comments-list" role="tabpanel" aria-labelledby="commentsTab"></div>
         <div id="notesList" class="notes-list" role="tabpanel" aria-labelledby="notesTab" hidden></div>
@@ -399,7 +402,6 @@ const palette = document.querySelector('#palette');
 const paletteInput = document.querySelector('#paletteInput');
 const paletteList = document.querySelector('#paletteList');
 const dropOverlay = document.querySelector('#dropOverlay');
-const tooltip = document.querySelector('#tooltip');
 const welcomeScreen = document.querySelector('#welcomeScreen');
 
 const statusNotices = setupStatusNotices({
@@ -544,19 +546,9 @@ window.addEventListener('keydown', event => {
   runBodyZoom(action);
 }, true);
 
-function parseOutline(markdown) {
-  const result = [];
-  let fenced = false;
-  markdown.split('\n').forEach((line, index) => {
-    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
-    if (fenced) return;
-    const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
-    if (heading) result.push({ level: heading[1].length, text: heading[2], line: index + 1 });
-  });
-  return result;
-}
 
-const collapsedOutline = new Set();
+const outlineDrag = setupOutlineDrag(outlineList, {editor:()=>editor, reading:()=>state.reading,hideTooltip});
+
 let outlineCursorLine = 1;
 let outlineFrame = 0;
 function scheduleOutlineCurrent() {
@@ -575,7 +567,8 @@ function scheduleOutlineCurrent() {
     for (const button of outlineList.querySelectorAll('.outline-item')) {
       if (Number(button.dataset.line) === current?.line) button.setAttribute('aria-current', 'location');
       else button.removeAttribute('aria-current');
-      setAttr(button, 'title', () => t(state.reading ? 'UI0147' : 'UI0148', { heading: button.textContent }));
+      button.removeAttribute('title');
+      setAttr(button,'data-tooltip',()=>t('main.outline_drag_hint',{shortcut:/mac|iphone|ipad/i.test(navigator.userAgentData?.platform||navigator.platform)?'⌘':'Ctrl'}));
     }
   });
 }
@@ -594,14 +587,10 @@ function renderOutline(markdown = state.content) {
   const root = document.createElement('ul');
   root.className = 'outline-tree';
   outlineList.append(root);
-  const stack = [{level: 0, children: root, key: '', counts: new Map()}];
+  const stack = [{level: 0, children: root}];
   for (const [index, item] of state.outline.entries()) {
     while (stack.at(-1).level >= item.level) stack.pop();
     const parent = stack.at(-1);
-    const identity = JSON.stringify([item.level, item.text]);
-    const occurrence = parent.counts.get(identity) || 0;
-    parent.counts.set(identity, occurrence + 1);
-    const key = `${parent.key}/${identity}:${occurrence}`;
     const node = document.createElement('li');
     const row = document.createElement('div');
     row.className = 'outline-row';
@@ -617,14 +606,13 @@ function renderOutline(markdown = state.content) {
       toggle.innerHTML = icon('chevron', 13);
       toggle.setAttribute('aria-controls', children.id);
       const update = () => {
-        const open = !collapsedOutline.has(key);
+        const open = !editor.isOutlineCollapsed(item.from);
         children.hidden = !open;
         toggle.setAttribute('aria-expanded', String(open));
-        setAttr(toggle, 'aria-label', () => t(!collapsedOutline.has(key) ? 'UI0150' : 'UI0151', { heading: item.text }));
+        setAttr(toggle, 'aria-label', () => t(!editor.isOutlineCollapsed(item.from) ? 'UI0150' : 'UI0151', { heading: item.text }));
       };
       toggle.addEventListener('click', () => {
-        if (collapsedOutline.has(key)) collapsedOutline.delete(key);
-        else collapsedOutline.add(key);
+        editor.toggleOutlineCollapsed(item.from);
         update();
       });
       update();
@@ -636,15 +624,19 @@ function renderOutline(markdown = state.content) {
       spacer.setAttribute('aria-hidden', 'true');
       row.append(spacer);
     }
-    stack.push({level: item.level, children, key, counts: new Map()});
+    stack.push({level: item.level, children});
     const button = document.createElement('button');
     button.className = 'outline-item';
+    button.dataset.tooltipKind = 'operation';
     button.dataset.line = item.line;
+    button.dataset.from = item.from;
+    button.draggable = false;
     button.dataset.level = item.level;
     button.style.setProperty('--level', item.level);
     button.textContent = item.text;
-    setAttr(button, 'title', () => t("main.click_to_jump_double_click_to_rename_ui0152"));
+    setAttr(button,'data-tooltip',()=>t('main.outline_drag_hint',{shortcut:/mac|iphone|ipad/i.test(navigator.userAgentData?.platform||navigator.platform)?'⌘':'Ctrl'}));
     button.addEventListener('click', () => {
+      if(outlineDrag.suppressClick()) return;
       if(state.reading) reader.querySelector(`[data-source-line="${item.line}"]`)?.scrollIntoView({block:'start'});
       else editor.goToLine(item.line, { headingContent: true });
     });
@@ -653,8 +645,16 @@ function renderOutline(markdown = state.content) {
       const original=editor.view.state.doc.line(item.line).text;
       const input=document.createElement('input');
       input.className='outline-rename';input.value=item.text;
+      // Keep the navigation label's metrics and colour; editing changes only
+      // its underline, never the outline row or document typography.
+      const labelStyle=getComputedStyle(button);
+      for(const property of ['fontFamily','fontSize','fontWeight','fontStyle','lineHeight','letterSpacing','color','paddingTop','paddingRight','paddingBottom','paddingLeft'])input.style[property]=labelStyle[property];
+      input.style.height=`${button.getBoundingClientRect().height}px`;
       setAttr(input, 'aria-label', () => t("main.rename_heading"));
-      button.replaceWith(input);input.focus();input.select();
+      button.replaceWith(input);input.focus();input.select();input.scrollLeft=0;
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        if(input.isConnected&&document.activeElement===input&&input.selectionStart===0&&input.selectionEnd===input.value.length)input.scrollLeft=0;
+      }));
       let finished=false;
       const finish=save=>{
         if(finished)return;finished=true;
@@ -802,13 +802,13 @@ function noteCard(row, measure) {
   // A note that has no definition yet has no number either, so the row is named
   // by the label as it is written in the file.
   number.textContent = row.number === null ? `[${row.label}]` : String(row.number);
-  setAttr(number, 'title', () => t("main.jump_to_footnote_marker_in_body"));
+  setAttr(number, 'data-tooltip', () => t("main.jump_to_footnote_marker_in_body"));
   setAttr(number, 'aria-label', () => t("main.jump_to_footnote", {"note": row.number ?? row.label}));
   number.addEventListener('click', () => gotoNote(row));
   if (row.state === 'unreferenced') head.append(statusNote(t("main.footnote_marker_no_longer_in_body")));
   if (row.state === 'undefined') {
     const hint = statusNote(t("main.missing_footnote_definition"));
-    setAttr(hint, 'title', () => t("main.no_definition_found_for_footnote_check_for", {"label": row.label}));
+    hint.dataset.tooltipKind='operation';setAttr(hint, 'data-tooltip', () => t("main.no_definition_found_for_footnote_check_for", {"label": row.label}));
     head.append(hint);
   }
 
@@ -853,7 +853,7 @@ function noteCard(row, measure) {
     remove.className = 'note-delete';
     remove.innerHTML = uiIcon('trash', 15);
     setAttr(remove, 'aria-label', () => t("main.delete_footnote"));
-    setAttr(remove, 'title', () => t("main.delete_this_footnote_and_all_its_references"));
+    setAttr(remove, 'data-tooltip', () => t("main.delete_this_footnote_and_all_its_references"));
     remove.addEventListener('mousedown', event => event.preventDefault());
     remove.addEventListener('click', () => editor.deleteFootnote(card._noteRow.label));
     card.append(remove);
@@ -1112,7 +1112,7 @@ new ResizeObserver(() => { syncReadingZoom(); scheduleOutlineCurrent(); }).obser
 function renderReading() {
   scheduleOutlineCurrent();
   renderPrintDocument(reader,state.content,{name:state.fileName,numbered:state.showHeadingNumbers,properties:true,expandCallouts:false,fallbackTitle:false,fileNameTitle:state.showFileNameTitle,sourcePositions:true,annotations:true,annotationNotes:editor.comments().notes});
-  const title=reader.querySelector('.leaf-file-name-title');if(title){title.tabIndex=0;setAttr(title, 'title', () => t("main.double_click_to_rename_the_file"));setAttr(title, 'aria-label', () => t("main.double_click_or_press_enter_to_rename", {"fileName": state.fileName}));}
+  const title=reader.querySelector('.leaf-file-name-title');if(title){title.tabIndex=0;title.dataset.tooltipKind='operation';setAttr(title, 'data-tooltip', () => t("main.double_click_to_rename_the_file"));setAttr(title, 'aria-label', () => t("main.double_click_or_press_enter_to_rename", {"fileName": state.fileName}));}
   for (const table of reader.querySelectorAll('table')) {
     const wrap = document.createElement('div'); wrap.className = 'reading-table-scroll';
     wrap.tabIndex = 0; wrap.setAttribute('role', 'region'); setAttr(wrap, 'aria-label', () => t("main.horizontally_scrollable_table"));
@@ -1332,10 +1332,10 @@ async function renderRecentFiles() {
         directory.className = 'recent-file-directory';
         const root = separator === 0 || separator === 2 && item.path[1] === ':';
         directory.textContent = item.path.slice(0, separator + (root ? 1 : 0));
-        directory.title = directory.textContent;
+        directory.dataset.tooltipKind='operation';directory.dataset.tooltip = directory.textContent;
         button.append(directory);
       }
-      button.title = item.path;
+      button.dataset.tooltipKind='operation';button.dataset.tooltip = item.path;
     }
     button.addEventListener('click', async () => {
       if(desktop){
@@ -1380,7 +1380,6 @@ async function setDocument(content, name, handle = null, file = null) {
   browserDocumentGeneration++;
   setMovedMissingImages();
   statusNotices.reset();
-  collapsedOutline.clear();
   state.outline = [];
   outlineList.replaceChildren();
   clearTimeout(state.saveTimer);
@@ -2253,7 +2252,7 @@ for (const [id, popup] of [['documentMenuButton', documentPopover], ['exportMenu
       for (const id of ['documentReveal', 'documentRename']) {
         const item = document.getElementById(id);
         item.disabled = unavailable;
-        setAttr(item, 'title', () => unavailable ? t("main.save_the_document_first") : '');
+        item.dataset.tooltipKind='operation';setAttr(item, 'data-tooltip', () => unavailable ? t("main.save_the_document_first") : '');
       }
     }
     popup.hidden = false;
@@ -2418,62 +2417,7 @@ document.addEventListener('mousedown', (event) => {
     if (!event.target.closest('.quick-language-button') && !event.target.closest('.popover') && !event.target.closest('#readingToggle') && !event.target.closest('#appearanceButton') && !event.target.closest('#welcomeSettings') && !event.target.closest('#recentButton') && !event.target.closest('#welcomeRecentButton') && !event.target.closest('#headingButton') && !event.target.closest('#documentMenuButton') && !event.target.closest('#exportMenuButton') && !event.target.closest('#displayButton') && !event.target.closest('#zoomLevel')) closePopovers();
 });
 
-let tooltipTimer = null;
-let tooltipTarget = null;
-
-function hideTooltip() {
-  clearTimeout(tooltipTimer);
-  tooltipTarget = null;
-  tooltip.hidden = true;
-}
-
-function showTooltip(target) {
-  if (!target?.isConnected || !target.dataset.tooltip) return;
-  tooltipTarget = target;
-  tooltip.dataset.kind = target.dataset.tooltipKind || 'default';
-  tooltip.dataset.placement = target.dataset.tooltipPlacement || 'default';
-  tooltip.style.maxWidth = '';
-  const imageRect = target.dataset.tooltipPlacement === 'image-top-right'
-    ? target.querySelector('.leaf-image')?.getBoundingClientRect() : null;
-  if (imageRect) {
-    // Leave room for the reveal button on small images.
-    if (imageRect.width <= 38) { hideTooltip(); return; }
-    tooltip.style.maxWidth = `${Math.min(window.innerWidth - 16, imageRect.width - 34)}px`;
-  }
-  renderTooltipText(tooltip, target.dataset.tooltip);
-  tooltip.hidden = false;
-  const targetRect = target.getBoundingClientRect();
-  const tooltipRect = tooltip.getBoundingClientRect();
-  const left = Math.min(
-    window.innerWidth - tooltipRect.width - 8,
-    Math.max(8, imageRect ? imageRect.right - tooltipRect.width - 4 : targetRect.left + targetRect.width / 2 - tooltipRect.width / 2),
-  );
-  let top = imageRect ? Math.max(8, imageRect.top + 4) : targetRect.bottom + 8;
-  if (!imageRect && top + tooltipRect.height > window.innerHeight - 8) top = targetRect.top - tooltipRect.height - 8;
-  tooltip.style.left = `${left}px`;
-  tooltip.style.top = `${top}px`;
-}
-
-function queueTooltip(target) {
-  clearTimeout(tooltipTimer);
-  tooltipTimer = setTimeout(() => showTooltip(target), 300);
-}
-
-document.addEventListener('pointerover', (event) => {
-  const target = event.target.closest('[data-tooltip]');
-  if (target && target !== tooltipTarget) queueTooltip(target);
-});
-document.addEventListener('pointerout', (event) => {
-  const target = event.target.closest('[data-tooltip]');
-  if (target && !target.contains(event.relatedTarget)) hideTooltip();
-});
-document.addEventListener('focusin', (event) => {
-  const target = event.target.closest('[data-tooltip]');
-  if (target) queueTooltip(target);
-});
-document.addEventListener('focusout', hideTooltip);
-document.addEventListener('click', hideTooltip);
-window.addEventListener('scroll', hideTooltip, true);
+function hideTooltip() { dismissTooltips(); }
 
 window.addEventListener('keydown', (event) => {
   if (!event.isComposing && (event.metaKey || event.ctrlKey) && event.code === 'Backslash' && event.shiftKey !== event.altKey) {

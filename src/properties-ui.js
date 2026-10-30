@@ -5,9 +5,9 @@ const el=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls||'
 const input=(label)=>{const n=el('input');setAttr(n,'aria-label',()=>resolveMessage(label));return n;};
 const button=(label,action)=>{const n=el('button','leaf-block-button');n.type='button';setText(n,()=>resolveMessage(label));setAttr(n,'aria-label',()=>resolveMessage(label));n.onclick=action;return n;};
 function typeSelect(label,value) {
-  const n=el('select','leaf-property-type');setAttr(n,'aria-label',()=>resolveMessage(label));setAttr(n, 'title', () => t("properties_ui.property_type"));
+  const n=el('select','leaf-property-type');n.dataset.tooltipKind='operation';setAttr(n,'aria-label',()=>resolveMessage(label));setAttr(n, 'data-tooltip', () => t("properties_ui.property_type"));
   for(const [key,name] of Object.entries(propertyTypes)){const o=localizedElement('option','',()=>propertyTypes[key]);o.value=key;n.append(o);}n.value=value;
-  const describe=()=>{setAttr(n, 'title', () => t("properties_ui.property_type_click_to_change", {"type": propertyTypes[n.value]}));};describe();n.addEventListener('change',describe);return n;
+  const describe=()=>{setAttr(n, 'data-tooltip', () => t("properties_ui.property_type_click_to_change", {"type": propertyTypes[n.value]}));};describe();n.addEventListener('change',describe);return n;
 }
 function propertyNameControl(name,type) {
   const paths={
@@ -23,7 +23,7 @@ function propertyNameControl(name,type) {
   const update=()=>{
     glyph.innerHTML=`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[type.value]}</svg>`;
     trigger.dataset.type=type.value;
-    setAttr(type, 'title', () => t("properties_ui.property_type_click_to_change", {"type": propertyTypes[type.value]}));
+    setAttr(type, 'data-tooltip', () => t("properties_ui.property_type_click_to_change", {"type": propertyTypes[type.value]}));
   };
   update();type.addEventListener('change',()=>queueMicrotask(update));
   trigger.append(glyph,type);wrap.append(trigger,name);return wrap;
@@ -80,7 +80,7 @@ export function renderProperties(body,getBlock,commit,focusEditor,discardEmpty=(
     if(!field.editable){row.append(name,el('span','leaf-property-unsupported',field.value));body.append(row);return;}
     const pref=preferences(field.key),inferred=inferType(field.value);
     const type=(pref.type==='enum'&&typeof field.value==='string')?'enum':pref.type==='text'&&typeof field.value==='string'?'text':inferred;
-    const keyInput=input(translatedMessage("properties_ui.property_name", {"key": field.key}));keyInput.className='leaf-property-key';keyInput.value=field.key;setAttr(keyInput, 'title', () => t("properties_ui.rename_property"));
+    const keyInput=input(translatedMessage("properties_ui.property_name", {"key": field.key}));keyInput.className='leaf-property-key';keyInput.dataset.tooltipKind='operation';keyInput.value=field.key;setAttr(keyInput, 'data-tooltip', () => t("properties_ui.rename_property"));
     let renaming=false,composing=false;
     const removeIfEmpty=()=>{
       if(renaming||composing||keyInput.value.trim())return false;

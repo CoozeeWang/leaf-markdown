@@ -1,0 +1,71 @@
+<!doctype html><html><meta charset="utf-8"><title>Loading</title><body><div id="fixture" class="shell" style="position:fixed;inset:0;overflow:auto;--editor-font-size:18px"></div><script type="module">
+import '/src/style.css';
+import {createLeafEditor} from '/src/editor.js';
+const check=(v,m)=>{if(!v)throw Error(m);};
+const until=async(fn)=>{const end=Date.now()+5000;while(!fn()){if(Date.now()>end)throw Error('state timeout');await new Promise(r=>setTimeout(r,20));}};
+window.runTest=async()=>{
+ const host=document.querySelector('#fixture');
+ const editor=window.e=createLeafEditor({parent:host,doc:''});
+ const sample='> [!note] 标题 Title\n> 中文 First line\n> \n> 第三行 Third line\n\n';
+ const load=async source=>{editor.focus();editor.restoreValue(source);await until(()=>host.querySelector('.leaf-callout-body textarea'));};
+ const open=async()=>{host.querySelector('.leaf-callout-body .leaf-callout-preview').click();const input=host.querySelector('.leaf-callout-body textarea');await until(()=>input.classList.contains('leaf-measured-caret'));return input;};
+ const measure=async(input,pos)=>{
+  input.setSelectionRange(pos,pos);input.dispatchEvent(new Event('select'));
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  const caret=input.parentElement.querySelector('.leaf-callout-caret'),style=getComputedStyle(input);
+  check(!caret.hidden&&input.classList.contains('leaf-measured-caret'),'measured caret missing at '+pos);
+  check(getComputedStyle(input).caretColor==='rgba(0, 0, 0, 0)','native caret still visible beside measured caret');
+  return {pos,height:caret.getBoundingClientRect().height,left:parseFloat(caret.style.left),top:parseFloat(caret.style.top),fontSize:parseFloat(style.fontSize),lineHeight:parseFloat(style.lineHeight)};
+ };
+ const results=[];
+ for(const size of [14,18,26]) {
+  host.style.setProperty('--editor-font-size',size+'px');await load(sample);
+  const preview=host.querySelector('.leaf-callout-body .leaf-callout-preview');
+  const originalPreview=preview.getBoundingClientRect().height;
+  host.querySelector('.leaf-callout-title .leaf-callout-preview').click();
+  const title=host.querySelector('.leaf-callout-title textarea');await until(()=>title.classList.contains('leaf-measured-caret'));
+  const titleCaret=await measure(title,1);check(titleCaret.height<size*1.5,'title caret too tall');title.blur();
+  const input=await open();const originalValue=editor.getValue(), originalHeight=input.getBoundingClientRect().height;
+  const positions=[0,3,input.value.indexOf('\n')+1,input.value.lastIndexOf('\n')+1,input.value.length];
+  const measurements=[];for(const pos of positions)measurements.push(await measure(input,pos));
+  for(const m of measurements){check(m.height>size*.8&&m.height<size*1.5,'caret must follow font metrics, not full leading '+JSON.stringify({size,m}));check(Math.abs(m.lineHeight-size*1.85)<.1,'line height changed');}
+  check(Math.max(...measurements.map(m=>m.height))-Math.min(...measurements.map(m=>m.height))<1,'blank/nonblank caret heights diverge');
+  check(Math.abs(measurements[2].top-measurements[0].top-size*1.85)<1,'blank row position changed');
+  check(input.getBoundingClientRect().height===originalHeight&&editor.getValue()===originalValue,'caret changed layout or source');
+  input.setSelectionRange(0,3);input.dispatchEvent(new Event('select'));await until(()=>input.parentElement.querySelector('.leaf-callout-caret').hidden);
+  check(!input.classList.contains('leaf-measured-caret'),'selection must keep native control');
+  input.setSelectionRange(3,3);await measure(input,3);
+  input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'拼'}));
+  check(!input.classList.contains('leaf-measured-caret'),'IME must retain native caret');
+  input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true,cancelable:true}));check(editor.getValue()===originalValue,'IME Enter changed structure');
+  input.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'拼'}));
+  check(input.classList.contains('leaf-measured-caret')&&getComputedStyle(input).caretColor==='rgba(0, 0, 0, 0)','composition end left a native-caret frame');
+  window.dispatchEvent(new Event('blur'));check(input.parentElement.querySelector('.leaf-callout-caret').hidden,'inactive window retained visual caret');
+  window.dispatchEvent(new Event('focus'));await until(()=>input.classList.contains('leaf-measured-caret'));
+  input.blur();await until(()=>input.parentElement.querySelector('.leaf-callout-caret').hidden);
+  check(preview.getBoundingClientRect().height===originalPreview,'rendered paragraph geometry changed');
+  check(input.parentElement.querySelector('.leaf-callout-caret-mirror').textContent==='','blur retained mirror copy');
+  await open();window.dispatchEvent(new Event('blur'));input.blur();window.dispatchEvent(new Event('focus'));
+  await open();check(input.classList.contains('leaf-measured-caret'),'refocus after window blur lost caret');input.blur();
+  results.push({size,measurements});
+ }
+ // Wrapped mixed-script text, tabs, emoji and a final empty line retain data.
+ const long='中文 🙂 English\t'.repeat(30)+'\n';
+ await load('> [!note]\n'+long.split('\n').map(s=>'> '+s).join('\n')+'\n\n');
+ const input=await open();for(const pos of [0,6,50,input.value.length]){const m=await measure(input,pos);check(Number.isFinite(m.left)&&m.height<39,'wrapped caret invalid');}
+ const beforeZoom=await measure(input,50);
+ editor.view.dom.style.transform='scale(1.5)';editor.view.dom.style.transformOrigin='top left';
+ const zoomed=await measure(input,50);check(Math.abs(zoomed.height-beforeZoom.height*1.5)<1,'zoom scaled caret twice');check(Math.abs(zoomed.top-beforeZoom.top)<1,'zoom changed logical caret row');
+ editor.view.dom.style.transform='';
+ input.style.height='60px';input.style.overflow='auto';input.scrollTop=input.scrollHeight;input.dispatchEvent(new Event('scroll'));
+ const scrolled=await measure(input,input.value.length);check(scrolled.top>=-1&&scrolled.top<61,'scrolled caret not inside control');
+ const saved=editor.getValue();input.blur();await load(saved);check(editor.getValue()===saved,'reload changed whitespace');
+ // Removing a focused widget must remove its observers/listeners and mirror.
+ await open();editor.restoreValue('Ordinary text');await until(()=>!host.querySelector('.leaf-callout-caret'));check(editor.getValue()==='Ordinary text','widget destruction wrote text');
+ window.caretResults=results;return {pass:true,measurements:results,nativeIME:false};
+};
+if(!new URLSearchParams(location.search).has('browser')) {
+ try{await window.runTest();document.title='LeafTest PASS callout caret geometry, selection, synthetic IME and rendering';}
+ catch(error){document.title='LeafTest FAIL '+error.message;}
+}
+</script></body></html>
