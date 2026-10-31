@@ -15,8 +15,16 @@ on:
       suite:
         description: 'Test suites to run'
         type: choice
-        options: [all, browser, native, launcher-close]
+        options: [all, browser, native, launcher-close, package-security]
         default: all
+      artifact_id:
+        description: 'Original Windows installer artifact ID; required for package-security'
+        type: string
+        default: ''
+      artifact_sha256:
+        description: 'Expected original artifact ZIP SHA-256; required for package-security'
+        type: string
+        default: ''
       browser_suites:
         description: 'Optional space-separated browser suite filenames; empty runs every browser suite'
         type: string
@@ -35,6 +43,59 @@ concurrency:
   group: full-tests-${{ inputs.source_ref }}-${{ inputs.platform }}-${{ inputs.suite }}-${{ inputs.update_test_filter }}-${{ inputs.update_test_exact }}
   cancel-in-progress: true
 jobs:
+  package-security:
+    if: inputs.suite == 'package-security' && inputs.platform == 'windows'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Download and scan the original installer artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ inputs.artifact_id }}
+          ARTIFACT_SHA256: ${{ inputs.artifact_sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:ARTIFACT_ID -notmatch '^[1-9][0-9]*$' -or $env:ARTIFACT_SHA256 -notmatch '^[a-fA-F0-9]{64}$') {
+            throw 'Provide an artifact ID and its expected ZIP SHA-256'
+          }
+          $scanDir = Join-Path $env:RUNNER_TEMP 'leaf-package-security'
+          New-Item -ItemType Directory -Path $scanDir | Out-Null
+          $zip = Join-Path $scanDir 'installer-artifact.zip'
+          $uri = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:ARTIFACT_ID/zip"
+          Invoke-WebRequest -Uri $uri -Headers @{Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json'} -OutFile $zip
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:ARTIFACT_SHA256.ToLowerInvariant()) { throw 'Original artifact checksum mismatch' }
+          Write-Output "Original ZIP SHA-256: $actual"
+          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $scanDir 'unpacked')
+          $installers = @(Get-ChildItem (Join-Path $scanDir 'unpacked') -Recurse -Filter '*.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one installer in the artifact' }
+          $installer = $installers[0]
+          $beforeHash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash
+          Write-Output "Installer SHA-256: $beforeHash"
+          Get-AuthenticodeSignature $installer.FullName | Select-Object Status, StatusMessage | Format-List
+          $status = Get-MpComputerStatus
+          $status | Select-Object AMServiceEnabled, AntivirusEnabled, AMEngineVersion, AntivirusSignatureVersion, AntivirusSignatureLastUpdated | Format-List
+          if (!$status.AMServiceEnabled -or !$status.AntivirusEnabled) { throw 'Defender is unavailable; no scan result' }
+          Update-MpSignature
+          $status = Get-MpComputerStatus
+          if ($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)) { throw 'Defender signatures are too old' }
+          $status | Select-Object AMEngineVersion, AntivirusSignatureVersion, AntivirusSignatureLastUpdated | Format-List
+          $mpCmd = Get-ChildItem "$env:ProgramData/Microsoft/Windows Defender/Platform/*/MpCmdRun.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (!$mpCmd) { $mpCmd = Get-Item "$env:ProgramFiles/Windows Defender/MpCmdRun.exe" }
+          # This scans archives and ignores file exclusions without remediating files.
+          # Without DisableRemediation, exit 0 may also mean malware was remediated.
+          & $mpCmd.FullName -Scan -ScanType 3 -File $scanDir -DisableRemediation
+          $scanExit = $LASTEXITCODE
+          Write-Output "Defender custom scan exit code: $scanExit"
+          if ($scanExit -ne 0) { throw 'Defender reported a detection or scan error; inspect command output' }
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $actual -or (Get-FileHash $installer.FullName -Algorithm SHA256).Hash -ne $beforeHash) {
+            throw 'Artifact changed during the scan'
+          }
+          Write-Output 'Defender scan completed with no detection. This does not establish Chrome Safe Browsing clearance or installed-app acceptance.'
   launcher-close:
     if: inputs.suite == 'launcher-close' && inputs.platform == 'windows'
     runs-on: windows-latest
