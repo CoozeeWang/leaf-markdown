@@ -270,3 +270,9 @@ See [Desktop updates](DESKTOP_UPDATES.md) for the one-confirmation flow, multi-d
 大纲章节排序由 `outline-sections.test.js` 与 `outline-reorder-browser.mjs` 覆盖：真实解析、重复／跳级标题、同父同级边界、原文与空行、无末尾换行、长大纲、选区、折叠、取消、过期拖动、一次撤销／重做和连续编辑。浏览器专项同时运行 Chromium／WebKit、中英文与真实鼠标拖动，编辑锁及 IME 使用合成事件；不代替安装版或真实输入法人工验收。排序、导航与树形专项支持 `LEAF_TEST_BASE_URL` 连接独立 Vite 服务，便于并行开发。
 
 `outline-depth.test.js` checks parsed Markdown position/depth moves, whole-subtree level changes, Setext conversion, source preservation and unsafe boundaries. `outline-collapse.test.js` checks fold history rebasing. `outline-reorder-browser.mjs` uses real pointer gestures in Chromium/WebKit; `outline-platform-browser.mjs` separately labels platform/modifier injection as simulation. `native-outline-depth.html` runs with `node scripts/test-native-fixture.mjs native-outline-depth.html` in a separate system WKWebView, without opening the installed app. Browser/platform simulation and synthetic native fixtures do not replace installed-app or real IME acceptance.
+
+## Windows reinstall association checks
+
+The per-user NSIS hooks preserve the previous `.md`, `.markdown`, and `.mdown` class before Tauri registers Leaf, including repeated installations. They preserve the class currently selected by another application; they do not edit Explorer UserChoice. A legacy backup already overwritten with Leaf itself is cleared rather than restoring a self-reference. Existing adapter and retired-updater guards still run before installation proceeds.
+
+`tests/windows-i18n-installer.ps1` exercises distinct synthetic previous handlers, an unassociated extension, repeated language installations, uninstall restoration, and a legacy self-referencing backup on a disposable Windows Actions runner. The standard Windows package job already runs this script. `node tests/windows-i18n-nsis.mjs` only compiles the hook fixture, including PREINSTALL; successful compilation on macOS does not establish Windows registry behavior.

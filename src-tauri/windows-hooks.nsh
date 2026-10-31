@@ -1,4 +1,5 @@
 !include "${__FILEDIR__}\windows-locales.nsh"
+!include "${__FILEDIR__}\windows-file-associations.nsh"
 !include "${__FILEDIR__}\windows-adapter-upgrade.nsh"
 
 LangString LeafLegacyUpdaterBusy 1033 "Cannot remove the previous Leaf update helper. Quit Leaf normally and retry. Only the registered installation folder can be cleaned; documents and settings are kept."
@@ -31,10 +32,13 @@ LangString LeafLegacyUpdaterBusy 1028 "無法移除舊版 Leaf 更新助手。�
   Pop $1
   Pop $0
   !insertmacro LeafPrepareAdapterUpgrade ""
+  !insertmacro LeafCaptureAssociations
 !macroend
 
 ; Per-user folder context actions. Do not modify Windows' UserChoice keys.
 !macro NSIS_HOOK_POSTINSTALL
+  ; Tauri has just registered Leaf; put back the original uninstall target.
+  !insertmacro LeafRestoreAssociationBackups
   ; Preserve an unambiguous executable path even when the install directory or
   ; user name contains spaces. Older Tauri NSIS associations omitted quotes.
   WriteRegStr HKCU "Software\Classes\Markdown document\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
