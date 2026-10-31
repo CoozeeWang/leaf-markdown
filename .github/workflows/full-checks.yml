@@ -80,8 +80,11 @@ jobs:
           $status = Get-MpComputerStatus
           $status | Select-Object AMServiceEnabled, AntivirusEnabled, AMEngineVersion, AntivirusSignatureVersion, AntivirusSignatureLastUpdated | Format-List
           if (!$status.AMServiceEnabled -or !$status.AntivirusEnabled) { throw 'Defender is unavailable; no scan result' }
-          Update-MpSignature
+          try { Update-MpSignature } catch {
+            Write-Warning 'Signature refresh failed; the existing signatures must still satisfy the freshness check.'
+          }
           $status = Get-MpComputerStatus
+          if (!$status.AMServiceEnabled -or !$status.AntivirusEnabled) { throw 'Defender is unavailable; no scan result' }
           if ($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)) { throw 'Defender signatures are too old' }
           $status | Select-Object AMEngineVersion, AntivirusSignatureVersion, AntivirusSignatureLastUpdated | Format-List
           $mpCmd = Get-ChildItem "$env:ProgramData/Microsoft/Windows Defender/Platform/*/MpCmdRun.exe" | Sort-Object FullName -Descending | Select-Object -First 1
