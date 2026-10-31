@@ -8,17 +8,18 @@ try {
  await page.evaluate(async()=>{const {EditorView}=await import('/node_modules/@codemirror/view/dist/index.js');window.v=EditorView.findFromDOM(document.querySelector('.cm-content'));});
  for(const prefix of ['- 前面的列表', '- 父项\n  - 子项', '> 前面的引用', '```\ncode\n```', Array.from({length:120},(_,i)=>'- 列表 '+i).join('\n')]) {
   const source=prefix+'\n\n正文甲乙\n\n### 问题02\n\n![截图](assets/'+'abc'.repeat(55)+'.png)\n\n最后';
-  for(const reverse of [false,true]) {
-   await page.evaluate(({source,reverse})=>{
-    const from=source.indexOf('正文甲乙')+2,to=source.indexOf('\n\n最后');
+  for(const endpoint of ['line-end','partial-image']) for(const reverse of [false,true]) {
+   await page.evaluate(({source,reverse,endpoint})=>{
+    // Keep the line-end case and also stop strictly inside the image source.
+    const from=source.indexOf('正文甲乙')+2,to=source.indexOf('\n\n最后')-(endpoint==='partial-image'?3:0);
     v.dispatch({changes:{from:0,to:v.state.doc.length,insert:source},selection:{anchor:reverse?to:from,head:reverse?from:to},scrollIntoView:true});v.focus();
-   },{source,reverse});
-   await page.waitForTimeout(100);
-   const geometry=await page.evaluate(()=>{
+   },{source,reverse,endpoint});
+   await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+   const geometry=await page.evaluate(endpoint=>{
     const rects=[...document.querySelectorAll('.leaf-selectionLayer .cm-selectionBackground')].map(e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};});
-    const start=v.coordsAtPos(v.state.selection.main.from),end=v.coordsAtPos(v.state.selection.main.to,-1);
+    const start=v.coordsAtPos(v.state.selection.main.from,endpoint==='partial-image'?2:1),end=v.coordsAtPos(v.state.selection.main.to,endpoint==='partial-image'?-2:-1);
     return {rects,start,end,rawEnd:v.coordsAtPos(v.state.selection.main.to,-2),fonts:document.querySelector('.shell').dataset.bodyFonts,left:v.contentDOM.getBoundingClientRect().left+6,source:v.state.doc.toString()};
-   });
+   },endpoint);
    assert.equal(geometry.source,source);
    assert.ok(geometry.rects.length>=3);
    assert.ok(Math.abs(geometry.rects[0].left-geometry.start.left)<1,'partial first row remains exact');

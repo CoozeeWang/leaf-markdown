@@ -11,10 +11,13 @@ OutFile "${__FILEDIR__}\..\test-results\windows-i18n-hooks.exe"
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "SimpChinese"
 !insertmacro MUI_LANGUAGE "TradChinese"
+Function CheckPreInstallSyntax
+  !insertmacro NSIS_HOOK_PREINSTALL
+FunctionEnd
 Function CheckPostInstallSyntax
   !insertmacro NSIS_HOOK_POSTINSTALL
 FunctionEnd
-Function CheckPreUninstallSyntax
+Function un.CheckPreUninstallSyntax
   !insertmacro NSIS_HOOK_PREUNINSTALL
 FunctionEnd
 Section
