@@ -80,8 +80,8 @@ jobs:
           $status = Get-MpComputerStatus
           $status | Select-Object AMServiceEnabled, AntivirusEnabled, AMEngineVersion, AntivirusSignatureVersion, AntivirusSignatureLastUpdated | Format-List
           if (!$status.AMServiceEnabled -or !$status.AntivirusEnabled) { throw 'Defender is unavailable; no scan result' }
-          try { Update-MpSignature } catch {
-            Write-Warning 'Signature refresh failed; the existing signatures must still satisfy the freshness check.'
+          if ($status.AntivirusSignatureLastUpdated -lt (Get-Date).AddDays(-2)) {
+            Update-MpSignature
           }
           $status = Get-MpComputerStatus
           if (!$status.AMServiceEnabled -or !$status.AntivirusEnabled) { throw 'Defender is unavailable; no scan result' }
