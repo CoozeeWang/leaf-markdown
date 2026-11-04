@@ -10,8 +10,8 @@ Leaf 是一款可实时预览的 Markdown 编辑器，兼顾专注写作与文�
 
 | 电脑 | 安装包 | 安装方式 |
 | --- | --- | --- |
-| Windows x64 | [Leaf-1.0.4-windows-x64-setup.exe](https://github.com/CoozeeWang/leaf-markdown/releases/download/v1.0.4/Leaf-1.0.4-windows-x64-setup.exe) | 双击安装包，按提示安装。 |
-| Mac（M 系列芯片） | [Leaf-1.0.4-macOS-arm64.dmg](https://github.com/CoozeeWang/leaf-markdown/releases/download/v1.0.4/Leaf-1.0.4-macOS-arm64.dmg) | 打开 DMG，将 Leaf 拖入“应用程序”文件夹，再从该文件夹打开。 |
+| Windows x64 | [Leaf-1.0.5-windows-x64-setup.exe](https://github.com/CoozeeWang/leaf-markdown/releases/download/v1.0.5/Leaf-1.0.5-windows-x64-setup.exe) | 双击安装包，按提示安装。 |
+| Mac（M 系列芯片） | [Leaf-1.0.5-macOS-arm64.dmg](https://github.com/CoozeeWang/leaf-markdown/releases/download/v1.0.5/Leaf-1.0.5-macOS-arm64.dmg) | 打开 DMG，将 Leaf 拖入“应用程序”文件夹，再从该文件夹打开。 |
 
 以上 Mac 安装包适用于 Apple Silicon，不适用于 Intel Mac。Windows 首次安装时，如果电脑缺少 WebView2 运行环境，安装器可能需要联网准备。
 
@@ -28,7 +28,7 @@ Leaf 是一款可实时预览的 Markdown 编辑器，兼顾专注写作与文�
 
 ### 首次打开安全提示
 
-本版 Mac 仅有临时签名（ad-hoc），没有 Developer ID 发行签名或 Apple 公证；Windows 没有 Authenticode 数字签名。请先确认安装包来自 [Leaf 官方发布页](https://github.com/CoozeeWang/leaf-markdown/releases/tag/v1.0.4)，并核对文件。
+本版 Mac 仅有临时签名（ad-hoc），没有 Developer ID 发行签名或 Apple 公证；Windows 没有 Authenticode 数字签名。请先确认安装包来自 [Leaf 官方发布页](https://github.com/CoozeeWang/leaf-markdown/releases/tag/v1.0.5)，并核对文件。
 
 - **Mac**：先尝试打开 Leaf。如果提示 Apple 无法验证或无法验证开发者，前往“系统设置” → “隐私与安全性”，点击“仍要打开”（如有），按提示确认。参阅 [Apple 说明](https://support.apple.com/zh-cn/102445)。
 - **Windows**：如果 SmartScreen 提示“Windows 已保护你的电脑”，点击“更多信息” → “仍要运行”（如有）。按钮文字可能因系统版本而不同。参阅 [Microsoft 说明](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)。
@@ -106,9 +106,7 @@ Leaf 是一款可实时预览的 Markdown 编辑器，兼顾专注写作与文�
 
 需要更安静的写作界面时，可以开启“专注模式”。按 `Esc` 退出。
 
-### 富文本复制、粘贴与拖放（1.0.4）
-
-以下说明适用于准备中的 1.0.4；本页上方下载链接仍指向已发布的 1.0.4，待新版正式发布后更新。
+### 富文本复制、粘贴与拖放
 
 使用“复制为富文本”（Mac `⌘⇧C`，Windows `Ctrl+Shift+C`）可以复制带格式的内容，同时提供可读纯文本回退；接收软件决定采用哪一种。普通复制与“复制为富文本”是不同入口。粘贴时，Leaf 将来源提供的 HTML 转换为 Markdown，而非保存原始网页排版；编辑和源码视图使用相同转换。若来源只提供标题纯文本，Leaf 无法还原其中未包含的链接目标。
 
@@ -250,13 +248,13 @@ Markdown 中的空行用于分隔段落和不同内容块。“整理段落空�
 
 ### 检查更新
 
-Leaf 1.0.4 可在应用内检查更新并查看发布说明，然后通过浏览器前往官方下载页面。请保存文稿并正常退出 Leaf，再手动安装新版：Mac 在“应用程序”原位置替换 Leaf，Windows 按安装器提示覆盖原安装。本版不会在应用内下载安装或自动退出重启。
+Leaf 1.0.5 可在应用内检查更新并查看发布说明，然后通过浏览器前往官方下载页面。请保存文稿并正常退出 Leaf，再手动安装新版：Mac 在“应用程序”原位置替换 Leaf，Windows 按安装器提示覆盖原安装。本版不会在应用内下载安装或自动退出重启。
 
 在同一系统用户下，保留原安装位置、不卸载也不清空数据目录，正常覆盖安装会保留持久设置与应用数据。此说明不包含更换用户、迁移数据或移动隧道程序目录的情况。临时连接需要重新建立；外部 AI 软件（包括 ChatGPT）的 MCP 授权可能需要重新确认。
 
 **Windows 更新提醒：** 如果安装过程中出现卸载步骤，请保持“删除应用程序数据”未勾选。在普通卸载中勾选此项会清除 Leaf 设置和 MCP 连接配置。正常替换旧程序文件是另一回事，可按提示继续。
 
-使用 1.0.1 或 1.0.2 时，请先从发布页手动安装一次 1.0.4。
+使用 1.0.1 或 1.0.2 时，请先从发布页手动安装一次 1.0.5。
 
 ## AI 辅助编辑
 

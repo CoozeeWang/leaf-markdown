@@ -10,8 +10,8 @@ Visit the [Leaf download page](https://github.com/CoozeeWang/leaf-markdown/relea
 
 | Computer | Package | How to install |
 | --- | --- | --- |
-| Windows x64 | [Leaf-1.0.4-windows-x64-setup.exe](https://github.com/CoozeeWang/leaf-markdown/releases/download/v1.0.4/Leaf-1.0.4-windows-x64-setup.exe) | Double-click the installer and follow the instructions. |
-| Mac (Apple silicon) | [Leaf-1.0.4-macOS-arm64.dmg](https://github.com/CoozeeWang/leaf-markdown/releases/download/v1.0.4/Leaf-1.0.4-macOS-arm64.dmg) | Open the DMG, drag Leaf into Applications, then open it from Applications. |
+| Windows x64 | [Leaf-1.0.5-windows-x64-setup.exe](https://github.com/CoozeeWang/leaf-markdown/releases/download/v1.0.5/Leaf-1.0.5-windows-x64-setup.exe) | Double-click the installer and follow the instructions. |
+| Mac (Apple silicon) | [Leaf-1.0.5-macOS-arm64.dmg](https://github.com/CoozeeWang/leaf-markdown/releases/download/v1.0.5/Leaf-1.0.5-macOS-arm64.dmg) | Open the DMG, drag Leaf into Applications, then open it from Applications. |
 
 The Mac package above is for Apple silicon, not Intel Macs. On Windows, the installer may need an internet connection to set up WebView2 if it is not already installed.
 
@@ -28,7 +28,7 @@ This release does not yet have physical-device acceptance records covering all t
 
 ### First-launch security prompts
 
-The Mac build uses an ad-hoc signature, without Developer ID signing or Apple notarization. The Windows installer is not Authenticode-signed. Confirm that your package comes from the [official Leaf release](https://github.com/CoozeeWang/leaf-markdown/releases/tag/v1.0.4) and verify the file before proceeding.
+The Mac build uses an ad-hoc signature, without Developer ID signing or Apple notarization. The Windows installer is not Authenticode-signed. Confirm that your package comes from the [official Leaf release](https://github.com/CoozeeWang/leaf-markdown/releases/tag/v1.0.5) and verify the file before proceeding.
 
 - **Mac**: Try opening Leaf once. If Apple cannot verify the app or its developer, go to **System Settings → Privacy & Security → Open Anyway**, if available, and confirm. See [Apple’s instructions](https://support.apple.com/en-us/102445).
 - **Windows**: If SmartScreen displays **Windows protected your PC**, choose **More info → Run anyway**, if available. Labels may vary by Windows version. See [Microsoft’s explanation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
@@ -106,9 +106,7 @@ Hover over a control to see its keyboard shortcut. You can gradually get comfort
 
 Turn on **Focus Mode** for a quieter writing space. Press `Esc` to leave it.
 
-### Rich-text copy, paste and drop (1.0.4)
-
-This section describes the upcoming 1.0.4. Download links above still point to released 1.0.4 and will change only when the new release is published.
+### Rich-text copy, paste and drop
 
 Use Copy as rich text (`⌘⇧C` on Mac, `Ctrl+Shift+C` on Windows) to supply formatted content and a readable plain-text fallback; the receiving application chooses a format. Ordinary copy is a separate action. Leaf converts incoming HTML to Markdown in both Edit and Source views, rather than preserving the original webpage layout. A plain-text-only source cannot supply a missing link target.
 
@@ -250,13 +248,13 @@ Saving & Recovery also lets you set how long recovery records are kept and resto
 
 ### Check for updates
 
-Leaf 1.0.4 checks for updates and shows release notes within the app, then opens the official download page in your browser. Save your documents and quit Leaf normally before installing the update manually: replace Leaf in Applications on Mac, or run the Windows installer over the existing installation. This version does not download or install updates within the app, or quit and restart automatically.
+Leaf 1.0.5 checks for updates and shows release notes within the app, then opens the official download page in your browser. Save your documents and quit Leaf normally before installing the update manually: replace Leaf in Applications on Mac, or run the Windows installer over the existing installation. This version does not download or install updates within the app, or quit and restart automatically.
 
 An in-place update preserves persistent settings and app data when you use the same OS user account and installation location, without uninstalling Leaf or clearing its data folders. This does not cover changing users, migrating data, or moving the tunnel client directory. Temporary connections must be re-established, and external AI apps, including ChatGPT, may ask you to authorize MCP access again.
 
 **Windows updates:** Keep **Delete the application data** unchecked if an uninstall step appears. Selecting it during a normal uninstall deletes Leaf’s settings and MCP connection configuration. Replacing old program files is different and can proceed normally.
 
-If you use 1.0.1 or 1.0.2, install 1.0.4 manually from the release page first.
+If you use 1.0.1 or 1.0.2, install 1.0.5 manually from the release page first.
 
 ## AI-assisted editing
 
