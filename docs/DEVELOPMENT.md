@@ -21,6 +21,8 @@ npm run test:browser
 
 macOS 原生字体检查使用独立 WKWebView：在 `src-tauri` 运行 `cargo run --locked --example native-table-keys -- ../tests/native-body-fonts.html http://127.0.0.1:41732/tests/native-body-fonts.html`。它检查本机 Palatino、Georgia、宋体、真实斜体、视图边界、偏好与撤销；不启动或更新日用 Leaf，不代替 macOS／Windows 安装版人工验收。
 
+`live-dialog-i18n-browser.mjs` 覆盖已打开的草稿／历史版本窗口跨窗口切换三语，检查所选记录、预览、焦点、正文及撤销记录不变；同时用模拟 Mac／Windows 连接检查代理输入提示翻译、未保存输入与已保存配置保留。`document-titlebar-browser.mjs` 交叉检查文件名与格式工具栏换行、提示区边界及关闭按钮真实点击；这些检查不读取真实恢复记录或凭据。综合 UI 测试等待提示实际出现，提示延迟由 `tooltips-browser.mjs` 单独验证。
+
 `npm run test:browser:all` 运行全部浏览器回归，包含公开合成的长表格样例。`npm run test:browser -- footnote-regressions-browser.mjs` 运行指定用例。入口自行管理 Vite，截图存放在忽略提交的 `test-results/`。可设置 `LEAF_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，默认使用锁定的 Chromium。不能将浏览器平台模拟算作原生 Windows 验收。
 
 `callout-caret-browser.mjs` 检查提示块原生输入框的视觉光标：三档字号、中文混排、空行、自动折行、选区、滚动、正文缩放、输入撤销、组合输入生命周期及销毁清理。配套 `native-callout-caret.html` 可由现有 `native-table-keys` 示例在独立后台 WKWebView 中运行；不需要 `--foreground`。这些合成组合输入检查不替代真实中文输入法候选窗口验收。正文仍由原生 textarea 接收输入；视觉测量失败、选区或组合输入期间使用原生光标，不改字号、行距或保存数据。
@@ -124,9 +126,9 @@ macOS 构建入口会为打包子进程设置 `en_US.UTF-8`，避免系统 Perl 
 
 ## 限制 / Limits
 
-目前是未正式签名的内部构建；尚不能保证其他机器安装顺利。最低系统要求以实际完成的验收记录为准，不能仅凭配置中的最低版本宣传支持。
+Leaf 已通过 GitHub Releases 公开发布。公开发行与平台签名／安装验收是不同状态：当前 macOS 包使用 ad-hoc 签名，未提供 Developer ID 签名或 Apple 公证；Windows 包未提供 Authenticode 签名。发布页的分离签名不等于上述系统签名。不同机器的安装体验和最低系统要求仍以实际完成的原生验收记录为准，不能仅凭配置中的最低版本宣传支持。
 
-These are internal builds without distribution signing. Installation on another computer is not yet certified. Claim only operating-system versions that have passed the native checklist.
+Leaf is publicly distributed through GitHub Releases. Current macOS packages are ad-hoc signed, without Developer ID signing or Apple notarization; Windows packages do not have Authenticode signing. Detached release signatures do not replace platform signing. Public availability does not certify installation on every machine. Claim only operating-system versions that have passed the native checklist.
 
 ## 文档图标 / Document icons
 

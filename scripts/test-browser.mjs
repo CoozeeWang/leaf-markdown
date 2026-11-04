@@ -15,7 +15,7 @@ const core = [
   'comments', 'annotation-tabs', 'composition-state', 'desktop-updates',
   'ai-edit-lock', 'mcp-file-identity', 'mcp-comments', 'mcp-footnotes-tables', 'mcp-properties-markdown', 'mcp-panel',
   'list-images', 'clipboard-images',
-  'recovery-notice', 'file-feedback', 'status-notices', 'pdf-export-native',
+  'recovery-notice', 'file-feedback', 'status-notices', 'document-titlebar', 'live-dialog-i18n', 'ui-series', 'pdf-export-native',
 ].map(name => `${name}-browser.mjs`);
 const available = (await readdir('tests')).filter(name => name.endsWith('-browser.mjs')).sort();
 const args = process.argv.slice(2);

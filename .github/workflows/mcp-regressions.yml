@@ -32,7 +32,8 @@ concurrency:
 jobs:
   native:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: macos-latest
+    # Keep native regression coverage available during hosted arm64 capacity shortages.
+    runs-on: macos-15-intel
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4

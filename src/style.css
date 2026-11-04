@@ -1193,7 +1193,7 @@ input::placeholder, textarea::placeholder, .footnote-box textarea::placeholder, 
 .document-title #dirty { position:absolute; left:calc(100% + 3px); top:50%; transform:translateY(-50%); }
 .topbar-actions > .document-controls:has(.document-primary > :not([hidden])) { display:flex; }
 .topbar-actions > .document-controls:not(:has(.document-primary > :not([hidden]))) { display:none; }
-.shell.titlebar-stacked:not(.welcome-state):not(.focus-mode) { grid-template-rows:104px 42px auto minmax(0, 1fr) auto; }
+.shell.titlebar-stacked:not(.welcome-state):not(.focus-mode) { grid-template-rows:104px auto auto minmax(0, 1fr) auto; }
 .titlebar-stacked .topbar { padding-bottom:40px; }
 .titlebar-stacked .document-title { top:auto; bottom:8px; transform:translateX(-50%); }
 
