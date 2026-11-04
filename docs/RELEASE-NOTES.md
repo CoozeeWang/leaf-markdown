@@ -1,39 +1,35 @@
-# Leaf 1.0.4 — release preparation draft
+# Leaf 1.0.4
 
-[简体中文](RELEASE-NOTES.zh-CN.md) · **English**
+[简体中文](RELEASE-NOTES.zh-CN.md) · [繁體中文](RELEASE-NOTES.zh-TW.md) · **English**
 
-This version is not published. [1.0.3](https://github.com/CoozeeWang/leaf-markdown/releases/tag/v1.0.3) remains the public release; this draft does not imply that 1.0.4 downloads exist.
+This release improves everyday editing, outline organization and text selection, and fixes callout editing, rich-text drops and Windows reinstalls. See the [changelog](../CHANGELOG.md) for the full list.
 
-## Changes
+## Highlights
 
-- Reorder sibling sections by dragging outline headings in Edit or Source view, preserving child sections and supporting a single undo.
+- Drag outline headings to reorder sections and change their hierarchy, preserving child sections, content and fold state, with a single undo.
+- Correct callout caret height and duplicate blinking. Enter in a title focuses the body; Enter in the trailing empty ordinary paragraph exits the callout. Placeholder hints are no longer written into new callouts.
+- Keep a single lock icon across successive AI editing tasks.
+- Preserve validated Ripple source links in rich-text paste. External text drops on Mac insert at the drop position with a single undo; callout paste uses the same conversion.
+- Reduce repeated parsing of long and nested documents, improve editing focus and selection, and hide valid escape markers in live preview without changing Markdown source or code.
+- Use consistent lightweight tooltips and center the document-name menu. Mac uses “Show in Finder”; Windows keeps “Show in File Explorer”.
+- Stop triple-click selection backgrounds from extending into the next line's indentation. Whole-line selection still includes the newline; ordinary cross-line selections remain unchanged.
+- Preserve the original file-association restoration information across Windows reinstalls.
 
-- Keep a single lock icon throughout AI editing tasks. PR #112.
-- Empty callout bodies use UI-only hints. Title Enter focuses the body; Enter on its trailing empty ordinary paragraph exits the callout. Preserve existing literal content. PR #115.
-- Callout-body rich-text paste uses the same safe conversion as ordinary text, preserving validated named deep links, selection replacement and single undo.
+Leaf converts rich text to Markdown; it does not reproduce every source application's layout. Application source links are limited to supported Ripple protocols. Paste, drop and save never launch another application. Command-click on Mac or Ctrl-click on Windows in Edit view, or click in Reading view, to request opening a link.
 
-- Preserve validated named Ripple production/development source links in rich-text paste, consistently in Edit and Source views and after saving. PRs #120 and #121.
-- Fix external text drops being consumed on macOS. Insert rich text at the drop position with one undo, preserving file drops and internal text moves. PR #121.
-- Hide parsed escape markers around literal brackets such as timestamps in live preview. Markdown source and code remain unchanged. PR #121.
-- Reduce repeated parsing of long and nested content, restore editing focus, and improve callout text-selection feedback. PR #119.
-- Document rich text, application links and Windows update data preservation in all three user guides.
+## Downloads and updates
 
-Leaf converts HTML to Markdown; it does not reproduce every source application's layout. Application links are limited to the verified Ripple production/development v2 contracts. Paste, drop and save never launch another application. Command-click on Mac or Ctrl-click on Windows in Edit view, or click in Reading view, to request opening a link. The matching application and protocol registration must be present.
+Download from the [GitHub Release](https://github.com/CoozeeWang/leaf-markdown/releases/tag/v1.0.4):
 
-## Installation and updates
+- `Leaf-1.0.4-macOS-arm64.dmg`: Apple Silicon Mac.
+- `Leaf-1.0.4-windows-x64-setup.exe`: Windows x64.
 
-Planned filenames: `Leaf-1.0.4-windows-x64-setup.exe` and `Leaf-1.0.4-macOS-arm64.dmg`. Final download links, checksums and build provenance must be added before publication.
+The release page includes SHA256 checksums, detached Minisign signatures and build provenance. Save your work and quit Leaf normally before replacing it. On Windows, leave **Delete the application data** unchecked if an uninstall option appears. Preserve settings and MCP configuration. Updates still use browser downloads and manual installation; Leaf does not automatically quit or restart.
 
-Save your work and quit Leaf normally before replacing it. On Mac, use the existing Applications location. On Windows, install at the existing location and leave **Delete the application data** unchecked if an uninstall step appears. Application identity and data locations remain unchanged. Leaf checks for updates and opens official downloads in the browser; it does not install updates or restart itself.
+Mac builds use ad-hoc signing without Developer ID signing or notarization. Windows installers lack Authenticode signing. Download signatures do not provide OS publisher signing. See the [installation guide](INSTALL.md) for system requirements and first-launch prompts.
 
-See the [installation guide](INSTALL.md) for system requirements and security prompts. Mac builds use ad-hoc signing without Developer ID/notarization; Windows installers lack Authenticode signing. Checksums and detached Minisign signatures do not provide OS publisher signing. Keep system protection enabled.
+## Verification scope
 
-## Verification and publication boundary
-
-- The previous caret candidate `fc33d316` failed user acceptance because native and measured carets blinked independently. This branch corrects the CodeMirror focus-rule override and adds continuous-frame verification. It remains a callout-caret follow-up candidate. It retains text spacing and uses a measured visual caret outside native composition. Daily installation and user acceptance of this combined caret/outline candidate must be recorded separately; the accepted `49841a3c` baseline does not establish acceptance of the new candidate.
-- Previous Mac/Windows candidates from `e92db721` exclude PRs #112/#115 and the callout paste follow-up. They are superseded and retained only as historical evidence.
-- Final application source: `49841a3c1aba0e3ab59ddb1368b96918506afd37`. Source/native CI and local Chromium/WebKit regressions passed. PRs #112/#115 are merged; the callout paste follow-up is included in this preparation branch.
-- Mac 1.0.4 / `49841a3c` was rebuilt, signature-verified, installed with application/state backups and explicitly accepted by the user. Windows standard packaging and automated verification [passed](https://github.com/CoozeeWang/leaf-markdown/actions/runs/40893319389). Both installers passed checksum and detached-signature verification with the existing release public key. Windows user installation remains deferred.
-- No 1.0.4 tag, Release or public release assets have been created.
+The editing fixes passed local unit tests and Chromium/WebKit regressions. The Mac daily build has been installed. Refer to the release page for Windows automated checks, final package provenance and integrity results. Windows user installation acceptance remains pending; automated checks do not establish that acceptance, and the related issues retain this status.
 
 [User guide](INSTALL.md) · [AI / MCP connections](AI_CONNECTIONS.md) · [Support Leaf](SUPPORT.md)

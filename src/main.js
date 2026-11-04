@@ -1,7 +1,8 @@
 import {parseOutline} from './outline-sections.js';
 import {dismissTooltips} from './tooltips.js';
 import {setupOutlineDrag} from './outline-drag.js';
-import {createDocumentReveal} from './document-reveal.js';
+import {setupDocumentTitlebar} from './document-titlebar.js';
+import {documentRevealLabelKey,createDocumentReveal} from './document-reveal.js';
 import { t, h, aliases, currentLanguage, languagePreference, setLanguagePreference, onLanguageChange, refreshTranslations, setText, setAttr, message as translatedMessage } from './i18n.js';
 import { calloutBadge } from './callout-icons.js';
 import { inlineRename } from './inline-rename.js';
@@ -131,14 +132,16 @@ document.querySelector('#app').innerHTML = shortcutText(`
         <img class="brand-mark" src="/leaf-icon.png" alt="" aria-hidden="true" />
         <span class="brand-copy"><strong>${leafName}</strong><small>${leafDev ? h('dev.subtitle') : h('main.markdown_editor')}</small></span>
       </div>
+      <div class="document-title">
+        <button id="documentMenuButton" class="filename" aria-label="${t("main.document_actions")}" data-i18n-aria-label="main.document_actions" aria-haspopup="menu" aria-expanded="false"><span id="fileName"></span>${icon('chevron', 13)}</button>
+        <span id="dirty" class="dirty" aria-label="${t("main.unsaved")}" data-i18n-aria-label="main.unsaved"></span>
+      </div>
       <div class="topbar-actions">
         <div class="document-controls">
           <div class="document-primary">
             ${desktop ? '' : `<button id="openButton" class="primary icon-control" aria-label="${t("main.open_file")}" data-i18n-aria-label="main.open_file" data-tooltip="${t("main.open_file_o")}" data-i18n-data-tooltip="main.open_file_o">${icon('open')}</button>`}
             <button id="recentButton" class="icon-control" aria-label="${t("main.open_recent")}" data-i18n-aria-label="main.open_recent" data-tooltip="${t("main.open_recent")}" data-i18n-data-tooltip="main.open_recent">${icon('history')}</button>
-            <button id="documentMenuButton" class="filename" aria-label="${t("main.document_actions")}" data-i18n-aria-label="main.document_actions" aria-haspopup="menu" aria-expanded="false"><span id="fileName"></span>${icon('chevron', 13)}</button>
           </div>
-          <span id="dirty" class="dirty" aria-label="${t("main.unsaved")}" data-i18n-aria-label="main.unsaved"></span>
         </div>
         <button id="readingToggle" class="icon-control" aria-label="${t("main.switch_to_reading_mode")}" data-i18n-aria-label="main.switch_to_reading_mode" aria-pressed="false" data-tooltip="${t("main.switch_to_reading_mode_r")}" data-i18n-data-tooltip="main.switch_to_reading_mode_r">${icon('edit')}</button>
         <button id="searchButton" class="icon-control" aria-label="${t("main.find")}" data-i18n-aria-label="main.find" data-tooltip="${t("main.find_in_document_f")}" data-i18n-data-tooltip="main.find_in_document_f">${icon('search')}</button>
@@ -314,7 +317,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
       <button type="button" role="menuitemradio" data-language="en" aria-checked="false">English</button>
     </section>
     <section id="documentPopover" class="popover action-popover" role="menu" aria-label="${t("main.current_document_actions")}" data-i18n-aria-label="main.current_document_actions" hidden>
-      ${desktop ? `<button id="documentReveal" role="menuitem">${h("main.show_in_file_manager")}</button><button id="documentRename" role="menuitem">${h("main.rename")}</button>` : ''}
+      ${desktop ? `<button id="documentReveal" role="menuitem">${h(documentRevealLabelKey())}</button><button id="documentRename" role="menuitem">${h("main.rename")}</button>` : ''}
       <button id="documentHistory" role="menuitem">${h(desktop ? "main.versions_drafts" : "main.restore_version_before_last_save_ui0107")}</button>
     </section>
 
@@ -366,6 +369,7 @@ document.querySelector('#app').innerHTML = shortcutText(`
     </section>
   </main>
 `);
+setupDocumentTitlebar(document.querySelector('.topbar'));
 
 const shell = document.querySelector('.shell');
 setupBodyFontSettings({ root: shell });

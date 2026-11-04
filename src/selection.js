@@ -25,9 +25,14 @@ export const leafSelection = layer({
       const start = view.coordsAtPos(range.from, 1);
       const end = view.coordsAtPos(range.to, -1);
       const endLine=view.state.doc.lineAt(range.to);
+      const endsAtLineStart = range.to === endLine.from;
       const ltrEnd=view.textDirection===Direction.LTR && view.bidiSpans(endLine).every(span=>span.dir===Direction.LTR);
       for (const marker of RectangleMarker.forRange(view, 'cm-selectionBackground', range)) {
         const top = marker.top + baseTop, bottom = top + marker.height;
+        // Selecting a newline ends at the next line's start, without selecting
+        // any of that line. CodeMirror still paints its leading indentation;
+        // omit that endpoint piece, including its shared inter-line gap.
+        if (endsAtLineStart && end && top < end.bottom && bottom > end.top) continue;
         let x = marker.left, edge = x + marker.width;
         // The first/last visual row contains real selection endpoints; never
         // expand those into unselected characters, even if coordinates coincide.
