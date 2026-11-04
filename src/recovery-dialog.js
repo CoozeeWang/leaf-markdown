@@ -44,11 +44,11 @@ export async function showRecovery({ invoke, restore, drafts = false }) {
   dialog.setAttribute('aria-modal', 'true');
   dialog.tabIndex = -1;
   dialog.className = 'recovery-dialog';
-  dialog.innerHTML = `<header><h2 id="recovery-title">${drafts ? t("recovery_dialog.recover_drafts") : t("recovery_dialog.versions_drafts")}</h2><button type="button" data-close aria-label="${t("recovery_dialog.close_recovery_dialog")}" data-i18n-aria-label="recovery_dialog.close_recovery_dialog">${h("editor.close")}</button></header>
-    <p class="recovery-intro">${drafts ? t("recovery_dialog.preview_and_open_as_a_new_document") : t("recovery_dialog.restoring_replaces_the_content_in_the_editor")}</p>
+  dialog.innerHTML = `<header><h2 id="recovery-title">${h(drafts ? "recovery_dialog.recover_drafts" : "recovery_dialog.versions_drafts")}</h2><button type="button" data-close aria-label="${t("recovery_dialog.close_recovery_dialog")}" data-i18n-aria-label="recovery_dialog.close_recovery_dialog">${h("editor.close")}</button></header>
+    <p class="recovery-intro">${h(drafts ? "recovery_dialog.preview_and_open_as_a_new_document" : "recovery_dialog.restoring_replaces_the_content_in_the_editor")}</p>
     <div class="recovery-layout"><div class="recovery-list" role="grid" tabindex="0" aria-label="${t("recovery_dialog.recoverable_versions")}" data-i18n-aria-label="recovery_dialog.recoverable_versions"></div><textarea readonly aria-label="${t("recovery_dialog.version_source_preview")}" data-i18n-aria-label="recovery_dialog.version_source_preview" spellcheck="false"></textarea></div>
     <p class="recovery-status" role="status"></p>
-    <footer><button type="button" data-apply disabled>${drafts ? t("recovery_dialog.open_as_new_document") : t("recovery_dialog.restore_to_editor")}</button></footer>
+    <footer><button type="button" data-apply disabled>${h(drafts ? "recovery_dialog.open_as_new_document" : "recovery_dialog.restore_to_editor")}</button></footer>
     <p class="recovery-help">${h("recovery_dialog.stored_only_on_this_device_up_to")}</p>`;
   dialog.setAttribute('aria-labelledby', 'recovery-title');
   const confirmation = document.createElement('div');

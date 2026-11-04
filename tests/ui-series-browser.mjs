@@ -43,8 +43,8 @@ try {
  await page.click('#settingsTab-appearance');await page.selectOption('#themeSelect','dark');
  await page.waitForTimeout(250);
  await page.screenshot({path:artifactPath('leaf-series-dark.png')});
- await page.click('#appearanceButton'); await page.hover('#readingToggle'); await page.waitForTimeout(400);
- assert.ok(await page.locator('#tooltip').isVisible());
+ await page.click('#appearanceButton'); await page.hover('#readingToggle');
+ await page.locator('#tooltip').waitFor({state:'visible'});
  assert.equal(await page.locator('#tooltip').evaluate(el=>getComputedStyle(el).fontSize),'12px');
  await page.click('#searchButton');
  await page.locator('.cm-search button[name="close"] svg').waitFor();
